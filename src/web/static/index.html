@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Dev Platform — 说出想法，代码自现</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#f2f1ed; color:#26251e; font-family:'Inter',system-ui,sans-serif; min-height:100vh; }
+
+/* ── 导航 ── */
+nav { display:flex; justify-content:space-between; align-items:center; padding:16px 40px; border-bottom:1px solid rgba(38,37,30,0.1); }
+nav .logo { font-size:16px; font-weight:600; }
+nav span { font-size:13px; color:rgba(38,37,30,0.4); }
+
+/* ── 主区域 ── */
+main { max-width:800px; margin:0 auto; padding:40px 20px; }
+
+/* ── 输入区 ── */
+.input-area { background:#f7f7f4; border:1px solid rgba(38,37,30,0.1); border-radius:12px; padding:32px; margin-bottom:32px; }
+.input-area h1 { font-size:36px; font-weight:400; letter-spacing:-0.72px; margin-bottom:8px; }
+.input-area p { font-size:16px; color:rgba(38,37,30,0.5); margin-bottom:24px; }
+.input-area textarea { width:100%; background:#fff; border:1px solid rgba(38,37,30,0.1); border-radius:8px; padding:16px; font-size:15px; font-family:inherit; color:#26251e; resize:vertical; min-height:100px; outline:none; }
+.input-area textarea:focus { border-color:rgba(38,37,30,0.3); }
+.input-area .row { display:flex; gap:12px; margin-top:16px; align-items:center; }
+.btn-build { background:#f54e00; color:#fff; border:none; padding:12px 28px; border-radius:8px; font-size:15px; font-weight:500; cursor:pointer; }
+.btn-build:hover { opacity:0.9; }
+.btn-build:disabled { opacity:0.4; cursor:not-allowed; }
+.examples { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.example { font-size:13px; color:rgba(38,37,30,0.5); background:#fff; border:1px solid rgba(38,37,30,0.08); padding:6px 12px; border-radius:9999px; cursor:pointer; }
+.example:hover { border-color:rgba(38,37,30,0.2); color:#26251e; }
+
+/* ── 进度区 ── */
+.progress { display:none; margin-bottom:32px; }
+.progress.visible { display:block; }
+.stage-list { display:flex; gap:24px; flex-wrap:wrap; }
+.stage-item { display:flex; align-items:center; gap:10px; font-size:14px; color:rgba(38,37,30,0.3); }
+.stage-item.active { color:#26251e; font-weight:500; }
+.stage-item.done { color:#1f8a65; }
+.stage-dot { width:10px; height:10px; border-radius:50%; background:#e1e0db; }
+.stage-item.active .stage-dot { background:#f54e00; animation:pulse 1.5s infinite; }
+.stage-item.done .stage-dot { background:#1f8a65; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── 追问框 ── */
+.clarify { display:none; background:#f7f7f4; border:1px solid rgba(38,37,30,0.1); border-radius:12px; padding:24px; margin-bottom:32px; }
+.clarify.visible { display:block; }
+.clarify .question { font-size:16px; font-weight:500; margin-bottom:16px; }
+.clarify textarea { width:100%; background:#fff; border:1px solid rgba(38,37,30,0.1); border-radius:8px; padding:12px; font-size:14px; font-family:inherit; resize:vertical; min-height:60px; outline:none; margin-bottom:12px; }
+.btn-answer { background:#26251e; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; cursor:pointer; }
+.btn-answer:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* ── 结果区 ── */
+.result { display:none; }
+.result.visible { display:block; }
+.result-card { background:#f7f7f4; border:1px solid rgba(38,37,30,0.1); border-radius:12px; padding:24px; margin-bottom:16px; }
+.result-card h3 { font-size:15px; font-weight:600; margin-bottom:12px; color:rgba(38,37,30,0.5); text-transform:uppercase; letter-spacing:0.5px; }
+.result-card .content { font-size:15px; line-height:1.7; white-space:pre-wrap; max-height:400px; overflow-y:auto; font-family:system-ui; }
+.code-block { background:#1e1e1e; color:#d4d4d4; padding:16px; border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:13px; line-height:1.6; max-height:400px; overflow-y:auto; white-space:pre-wrap; }
+
+.download-bar { text-align:center; padding:32px; background:#f7f7f4; border:1px solid rgba(38,37,30,0.1); border-radius:12px; margin-bottom:16px; }
+.download-bar .done-text { font-size:20px; font-weight:500; margin-bottom:16px; }
+.btn-download { background:#f54e00; color:#fff; border:none; padding:14px 36px; border-radius:8px; font-size:16px; font-weight:500; cursor:pointer; text-decoration:none; display:inline-block; }
+
+/* ── 错误 ── */
+.error { display:none; background:#fff0f0; border:1px solid #cf2d56; border-radius:12px; padding:24px; margin-bottom:32px; color:#cf2d56; }
+.error.visible { display:block; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">AI Dev Platform</div>
+  <span>6 Agents · 全自动开发</span>
+</nav>
+
+<main>
+
+  <!-- 输入区 -->
+  <div class="input-area">
+    <h1>说出你的想法</h1>
+    <p>描述你想要什么程序，AI Agent 团队帮你从需求分析到代码生成全搞定</p>
+    <textarea id="idea" placeholder="例如：我要做一个团队任务看板，能创建任务、指派成员、拖拽改变状态..."></textarea>
+    <div class="row">
+      <button class="btn-build" id="btnBuild" onclick="startBuild()">开始构建</button>
+    </div>
+    <div class="examples">
+      <span class="example" onclick="setIdea('我要做一个个人博客，能写文章、按标签分类、有评论区')">📝 个人博客</span>
+      <span class="example" onclick="setIdea('我要做一个团队任务看板，能创建任务、指派给同事、拖拽改变状态为待办/进行中/已完成')">📋 任务看板</span>
+      <span class="example" onclick="setIdea('我要做一个简单的待办事项应用，能添加、完成、删除任务')">✅ 待办事项</span>
+    </div>
+  </div>
+
+  <!-- 进度 -->
+  <div class="progress" id="progress">
+    <div class="stage-list">
+      <div class="stage-item" id="s-requirement"><div class="stage-dot"></div>需求分析</div>
+      <div class="stage-item" id="s-architecture"><div class="stage-dot"></div>架构设计</div>
+      <div class="stage-item" id="s-backend"><div class="stage-dot"></div>后端开发</div>
+      <div class="stage-item" id="s-frontend"><div class="stage-dot"></div>前端开发</div>
+      <div class="stage-item" id="s-testing"><div class="stage-dot"></div>测试验证</div>
+      <div class="stage-item" id="s-deployment"><div class="stage-dot"></div>打包交付</div>
+    </div>
+  </div>
+
+  <!-- 追问 -->
+  <div class="clarify" id="clarify">
+    <div class="question" id="clarifyQuestion"></div>
+    <textarea id="clarifyAnswer" placeholder="输入你的回答…"></textarea>
+    <button class="btn-answer" id="btnAnswer" onclick="sendAnswer()">回答</button>
+  </div>
+
+  <!-- 错误 -->
+  <div class="error" id="error"></div>
+
+  <!-- 结果 -->
+  <div class="result" id="result"></div>
+
+</main>
+
+<script>
+// ── WebSocket ──
+const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+let currentIdea = '';
+
+ws.onopen = () => console.log('WebSocket 已连接');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('收到:', data.type, data);
+
+  if (data.type === 'progress') {
+    setStageActive(data.stage);
+  }
+  else if (data.type === 'update') {
+    setStageDone(data.stage);
+    appendResult(data.state);
+  }
+  else if (data.type === 'clarify') {
+    // BUG-4/9: 后端推送专门的追问消息
+    setStageDone(data.state?.stage || 'requirement');
+    appendResult(data.state);
+    showClarify(data.question, data.state);
+  }
+  else if (data.type === 'done') {
+    allStagesDone();
+    showFinalResult(data.state);
+  }
+  else if (data.type === 'error') {
+    showError(data.message);
+  }
+};
+
+ws.onerror = () => showError('WebSocket 连接失败，请刷新页面');
+ws.onclose = () => console.log('WebSocket 已断开');
+
+// ── 操作 ──
+function setIdea(text) {
+  document.getElementById('idea').value = text;
+}
+
+function startBuild() {
+  const idea = document.getElementById('idea').value.trim();
+  if (!idea) return alert('请先输入你的想法');
+  currentIdea = idea;
+
+  document.getElementById('btnBuild').disabled = true;
+  document.getElementById('btnBuild').textContent = '构建中…';
+  document.getElementById('progress').classList.add('visible');
+  document.getElementById('result').innerHTML = '';
+  document.getElementById('result').classList.remove('visible');
+  document.getElementById('clarify').classList.remove('visible');
+  document.getElementById('error').classList.remove('visible');
+  resetStages();
+
+  ws.send(JSON.stringify({ action: 'build', idea }));
+}
+
+function sendAnswer() {
+  const answer = document.getElementById('clarifyAnswer').value.trim();
+  if (!answer) return;
+
+  // BUG-7: 禁用按钮等待后端响应
+  const btn = document.getElementById('btnAnswer');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  document.getElementById('clarifyAnswer').disabled = true;
+
+  ws.send(JSON.stringify({ action: 'answer', answer }));
+}
+
+function showClarify(question, state) {
+  // BUG-7: 显示追问框，重置按钮状态
+  document.getElementById('clarifyQuestion').textContent = question;
+  document.getElementById('clarify').classList.add('visible');
+  document.getElementById('clarifyAnswer').value = '';
+  document.getElementById('clarifyAnswer').disabled = false;
+
+  const btn = document.getElementById('btnAnswer');
+  btn.disabled = false;
+  btn.textContent = '回答';
+
+  document.getElementById('btnBuild').disabled = false;
+  document.getElementById('btnBuild').textContent = '继续构建';
+}
+
+// ── 阶段控制 ──
+const stageOrder = ['requirement','architecture','backend','frontend','testing','deployment'];
+
+function resetStages() {
+  stageOrder.forEach(s => {
+    const el = document.getElementById('s-' + s);
+    el.classList.remove('active','done');
+  });
+}
+
+function setStageActive(stage) {
+  stageOrder.forEach(s => {
+    const el = document.getElementById('s-' + s);
+    el.classList.remove('active');
+  });
+  const el = document.getElementById('s-' + stage);
+  if (el) el.classList.add('active');
+}
+
+function setStageDone(stage) {
+  const el = document.getElementById('s-' + stage);
+  if (el) { el.classList.remove('active'); el.classList.add('done'); }
+}
+
+function allStagesDone() {
+  stageOrder.forEach(s => setStageDone(s));
+}
+
+// ── 结果显示 ──
+function appendResult(state) {
+  // BUG-8: 递增拼接，不覆盖之前阶段产出
+  const container = document.getElementById('result');
+  container.classList.add('visible');
+
+  let html = '';
+  if (state.prd && !document.getElementById('card-prd')) html += card('📋 PRD 需求文档', state.prd, 'card-prd');
+  if (state.tech_plan && !document.getElementById('card-tech-plan')) html += card('🏗 技术方案', state.tech_plan, 'card-tech-plan');
+  if (state.backend_code && !document.getElementById('card-backend')) html += codeCard('⚙️ 后端代码', state.backend_code, 'card-backend');
+  if (state.frontend_code && !document.getElementById('card-frontend')) html += codeCard('🎨 前端代码', state.frontend_code, 'card-frontend');
+  if (state.test_report && !document.getElementById('card-test')) html += card('🧪 测试报告', state.test_report, 'card-test');
+
+  container.innerHTML += html;
+}
+
+function showFinalResult(state) {
+  document.getElementById('btnBuild').disabled = false;
+  document.getElementById('btnBuild').textContent = '开始构建';
+  document.getElementById('clarify').classList.remove('visible');
+
+  // BUG-10: 下载条放在结果区底部
+  let html = '';
+  if (state.zip_path) {
+    html += `<div class="download-bar">
+      <div class="done-text">🎉 构建完成！</div>
+      <a class="btn-download" href="/download/${encodeURIComponent(state.zip_path)}" download>下载项目 zip</a>
+    </div>`;
+  }
+  document.getElementById('result').innerHTML += html;
+  document.getElementById('result').classList.add('visible');
+}
+
+function card(title, content, id) {
+  return `<div class="result-card" id="${id || ''}"><h3>${title}</h3><div class="content">${escapeHtml(content)}</div></div>`;
+}
+
+function codeCard(title, code, id) {
+  return `<div class="result-card" id="${id || ''}"><h3>${title}</h3><div class="code-block">${escapeHtml(code)}</div></div>`;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = '❌ ' + msg;
+  el.classList.add('visible');
+  document.getElementById('btnBuild').disabled = false;
+  document.getElementById('btnBuild').textContent = '重试';
+  const answerBtn = document.getElementById('btnAnswer');
+  answerBtn.disabled = false;
+  answerBtn.textContent = '回答';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

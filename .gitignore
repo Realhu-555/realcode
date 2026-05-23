@@ -1,0 +1,9 @@
+__pycache__/
+.env
+venv/
+*.pyc
+.claude/
+.pytest_cache/
+.playwright-cli/
+.agent/
+src/web/static/downloads/
