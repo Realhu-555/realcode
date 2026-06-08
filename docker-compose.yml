@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  # 开发环境 — 运行测试
+  test:
+    build:
+      context: .
+      target: development
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    command: pytest tests/ -v
+
+  # 开发环境 — Web 服务（热重载）
+  web:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src:/app/src
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    command: uvicorn src.web.server:app --reload --host 0.0.0.0 --port 8080
+
+  # 生产环境
+  production:
+    build:
+      context: .
+      target: production
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=INFO
+      - APP_ENV=production
