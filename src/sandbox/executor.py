@@ -3,13 +3,23 @@
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass
+class SandboxConfig:
+    """沙箱配置"""
+
+    timeout: int = 60  # 秒
+    allowed_commands: tuple[str, ...] = ("python", "pip", "node", "npm", "npx")
 
 
 class SandboxExecutor:
     """在临时目录中执行代码，支持文件读写、命令执行和 zip 打包"""
 
-    def __init__(self):
+    def __init__(self, config: SandboxConfig | None = None):
+        self.config = config or SandboxConfig()
         self.work_dir: Path | None = None
 
     def create(self, project_name: str) -> Path:
@@ -31,19 +41,28 @@ class SandboxExecutor:
             raise RuntimeError("沙箱未初始化，请先调用 create()")
         return (self.work_dir / relative_path).read_text(encoding="utf-8")
 
-    def run_command(self, command: str, timeout: int = 60) -> tuple[str, int]:
+    def run_command(self, command: str, timeout: int | None = None) -> tuple[str, int]:
         """在沙箱中执行命令，返回 (输出, 退出码)"""
         if not self.work_dir:
             raise RuntimeError("沙箱未初始化，请先调用 create()")
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=self.work_dir,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return result.stdout + result.stderr, result.returncode
+
+        # 命令白名单检查
+        base_cmd = command.split()[0] if command.strip() else ""
+        if base_cmd not in self.config.allowed_commands:
+            return f"命令不允许: {base_cmd}（允许: {', '.join(self.config.allowed_commands)}）", 1
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=self.work_dir,
+                capture_output=True,
+                text=True,
+                timeout=timeout or self.config.timeout,
+            )
+            return result.stdout + result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return f"执行超时（{timeout or self.config.timeout}秒）", -1
 
     def file_exists(self, relative_path: str) -> bool:
         """检查文件是否存在"""

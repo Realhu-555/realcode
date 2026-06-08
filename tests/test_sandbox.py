@@ -77,9 +77,10 @@ def test_run_command_nonzero_exit(sandbox):
 
 
 def test_run_command_timeout(sandbox):
-    """超时抛异常"""
-    with pytest.raises(subprocess.TimeoutExpired):
-        sandbox.run_command('python -c "import time; time.sleep(10)"', timeout=1)
+    """超时返回错误信息"""
+    output, code = sandbox.run_command('python -c "import time; time.sleep(10)"', timeout=1)
+    assert code == -1
+    assert "超时" in output
 
 
 def test_file_exists(sandbox):
