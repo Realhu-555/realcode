@@ -1,7 +1,8 @@
 """本地沙箱执行器（MVP 阶段代替 Docker）"""
-import tempfile
-import subprocess
+
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -55,9 +56,7 @@ class SandboxExecutor:
         if not self.work_dir:
             return []
         return [
-            p.relative_to(self.work_dir).as_posix()
-            for p in self.work_dir.rglob("*")
-            if p.is_file()
+            p.relative_to(self.work_dir).as_posix() for p in self.work_dir.rglob("*") if p.is_file()
         ]
 
     def pack_zip(self, output_path: str) -> str:

@@ -1,8 +1,7 @@
 """端到端测试：后端 Agent"""
-import pytest
+
 from src.agents.backend import BackendAgent
 from src.orchestrator.state import Stage
-
 
 TECH_PLAN_FIXTURE = """---TECH_PLAN_START---
 ## 技术选型

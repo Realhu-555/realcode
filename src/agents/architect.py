@@ -1,11 +1,12 @@
 """架构师 Agent"""
+
 from src.agents.base import BaseAgent
-from src.llm.provider import LLMProvider
 from src.llm.prompts.architect import ARCHITECT_PROMPT
+from src.llm.provider import LLMProvider
 
 
 class ArchitectAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="architect", system_prompt=ARCHITECT_PROMPT)
         self.llm = LLMProvider()
 
@@ -29,10 +30,13 @@ class ArchitectAgent(BaseAgent):
             **state,
             "tech_plan": response,
             "current_stage": "backend",
-            "messages": state.get("messages", []) + [{
-                "from": "architect",
-                "to": "backend",
-                "type": "output",
-                "content": response,
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "from": "architect",
+                    "to": "backend",
+                    "type": "output",
+                    "content": response,
+                }
+            ],
         }

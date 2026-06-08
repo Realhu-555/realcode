@@ -1,11 +1,13 @@
 """部署 Agent"""
+
 import os
 import re
 import shutil
 from pathlib import Path
+
 from src.agents.base import BaseAgent
-from src.llm.provider import LLMProvider
 from src.llm.prompts.deployer import DEPLOYER_PROMPT
+from src.llm.provider import LLMProvider
 from src.sandbox.executor import SandboxExecutor
 
 
@@ -16,16 +18,16 @@ def _parse_backend_files(backend_output: str) -> dict[str, str]:
     """
     files: dict[str, str] = {}
     pattern = re.compile(
-        r'###\s+([^\n]+?)\s*\n+```(?:[^\n]*?)\n(.*?)```',
+        r"###\s+([^\n]+?)\s*\n+```(?:[^\n]*?)\n(.*?)```",
         re.DOTALL,
     )
     matches = pattern.findall(backend_output)
     for filepath, code in matches:
-        filepath = filepath.strip().lstrip('`').strip()
+        filepath = filepath.strip().lstrip("`").strip()
         code = code.strip()
         if not code or not filepath:
             continue
-        if filepath in ('requirements.txt',):
+        if filepath in ("requirements.txt",):
             continue  # 不单独生成 requirements.txt
         files[filepath] = code
     return files
@@ -45,13 +47,13 @@ def _parse_frontend_files(frontend_output: str) -> dict[str, str]:
 
     # 匹配: ### 可选路径的 文件名\n```可选语言\n代码\n```
     pattern = re.compile(
-        r'###\s+([^\n]+?)\s*\n+```(?:[^\n]*?)\n(.*?)```',
+        r"###\s+([^\n]+?)\s*\n+```(?:[^\n]*?)\n(.*?)```",
         re.DOTALL,
     )
 
     matches = pattern.findall(frontend_output)
     for filepath, code in matches:
-        filepath = filepath.strip().lstrip('`').strip()
+        filepath = filepath.strip().lstrip("`").strip()
         code = code.strip()
         if not code or not filepath:
             continue
@@ -65,7 +67,7 @@ _DOWNLOADS_DIR = Path(__file__).parent.parent / "web" / "static" / "downloads"
 
 
 class DeployerAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="deployer", system_prompt=DEPLOYER_PROMPT)
         self.llm = LLMProvider()
 
@@ -124,9 +126,7 @@ class DeployerAgent(BaseAgent):
             dest_path = _DOWNLOADS_DIR / zip_name
 
             # 先用沙箱打包，再复制到持久化目录
-            tmp_zip = sandbox.pack_zip(
-                os.path.join(str(work_dir.parent), f"{project_name}_output")
-            )
+            tmp_zip = sandbox.pack_zip(os.path.join(str(work_dir.parent), f"{project_name}_output"))
             shutil.copy2(tmp_zip, dest_path)
 
             return {
@@ -134,11 +134,14 @@ class DeployerAgent(BaseAgent):
                 "deploy_doc": deploy_doc,
                 "zip_path": zip_name,
                 "current_stage": "done",
-                "messages": state.get("messages", []) + [{
-                    "from": "deployer",
-                    "type": "output",
-                    "content": f"项目已打包: {zip_name}",
-                }],
+                "messages": state.get("messages", [])
+                + [
+                    {
+                        "from": "deployer",
+                        "type": "output",
+                        "content": f"项目已打包: {zip_name}",
+                    }
+                ],
             }
         finally:
             sandbox.cleanup()

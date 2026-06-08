@@ -1,5 +1,5 @@
 """端到端测试：架构师 Agent"""
-import pytest
+
 from src.agents.architect import ArchitectAgent
 from src.orchestrator.state import Stage
 

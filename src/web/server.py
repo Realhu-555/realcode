@@ -1,22 +1,19 @@
 """Web 服务 — FastAPI + WebSocket 实时推送"""
 
-import json
-import asyncio
 import uuid
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
 
-from src.orchestrator.state import ProjectState, Stage
-from src.orchestrator.graph import create_graph
-from src.agents.requirement import RequirementAgent
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
 from src.agents.architect import ArchitectAgent
 from src.agents.backend import BackendAgent
-from src.agents.frontend import FrontendAgent
-from src.agents.tester import TesterAgent
 from src.agents.deployer import DeployerAgent
-
+from src.agents.frontend import FrontendAgent
+from src.agents.requirement import RequirementAgent
+from src.agents.tester import TesterAgent
+from src.orchestrator.state import ProjectState, Stage
 
 app = FastAPI(title="AI Dev Platform")
 
@@ -40,6 +37,7 @@ async def download_file(filename: str):
 
 
 # ─── WebSocket 管理 ──────────────────────────────────────
+
 
 class ConnectionManager:
     def __init__(self):
@@ -66,6 +64,7 @@ manager = ConnectionManager()
 _pipelines: dict[str, dict] = {}
 
 # ─── Agent 初始化 ──────────────────────────────────────
+
 
 def _build_agents():
     return {
@@ -94,6 +93,7 @@ STAGE_ORDER = ["requirement", "architecture", "backend", "frontend", "testing", 
 
 
 # ─── WebSocket 端点 ────────────────────────────────────
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -142,10 +142,9 @@ async def resume_pipeline(client_id: str, answer_text: str):
     """用户回答追问后恢复流水线"""
     saved = _pipelines.get(client_id)
     if not saved:
-        await manager.send(client_id, {
-            "type": "error",
-            "message": "没有正在进行的构建任务，请重新开始。"
-        })
+        await manager.send(
+            client_id, {"type": "error", "message": "没有正在进行的构建任务，请重新开始。"}
+        )
         return
 
     agents = _build_agents()
@@ -153,12 +152,14 @@ async def resume_pipeline(client_id: str, answer_text: str):
     next_index = saved["next_index"]
 
     # 注入用户答案
-    state["messages"] = state.get("messages", []) + [{
-        "from": "user",
-        "to": "requirement",
-        "type": "answer",
-        "content": answer_text,
-    }]
+    state["messages"] = state.get("messages", []) + [
+        {
+            "from": "user",
+            "to": "requirement",
+            "type": "answer",
+            "content": answer_text,
+        }
+    ]
     state["ask_user"] = None
 
     await _execute_stages(client_id, agents, state, stage_index=next_index)
@@ -167,7 +168,7 @@ async def resume_pipeline(client_id: str, answer_text: str):
 async def _execute_stages(
     client_id: str,
     agents: dict,
-    state: dict,
+    state: ProjectState,
     stage_index: int,
 ):
     """从指定阶段开始执行流水线，每阶段检查是否需要追问"""
@@ -183,21 +184,23 @@ async def _execute_stages(
     for i in range(stage_index, len(stage_specs)):
         stage_name, agent_names = stage_specs[i]
 
-        await manager.send(client_id, {
-            "type": "progress",
-            "stage": stage_name,
-            "label": STAGE_LABELS.get(stage_name, stage_name),
-        })
+        await manager.send(
+            client_id,
+            {
+                "type": "progress",
+                "stage": stage_name,
+                "label": STAGE_LABELS.get(stage_name, stage_name),
+            },
+        )
 
         for name in agent_names:
             try:
                 agent = agents[name]
                 state = agent.run(state)
             except Exception as e:
-                await manager.send(client_id, {
-                    "type": "error",
-                    "message": f"{name} 执行失败: {str(e)}"
-                })
+                await manager.send(
+                    client_id, {"type": "error", "message": f"{name} 执行失败: {str(e)}"}
+                )
                 _pipelines.pop(client_id, None)
                 return
 
@@ -207,52 +210,63 @@ async def _execute_stages(
                 "state": state,
                 "next_index": i,  # 从当前阶段重试
             }
-            await manager.send(client_id, {
-                "type": "clarify",
-                "question": state["ask_user"],
-                "state": _serialize_state(state, stage_name),
-            })
+            await manager.send(
+                client_id,
+                {
+                    "type": "clarify",
+                    "question": state["ask_user"],
+                    "state": _serialize_state(state, stage_name),
+                },
+            )
             return
 
         # 推送本阶段产出
-        await manager.send(client_id, {
-            "type": "update",
-            "stage": stage_name,
-            "state": _serialize_state(state, stage_name),
-        })
+        await manager.send(
+            client_id,
+            {
+                "type": "update",
+                "stage": stage_name,
+                "state": _serialize_state(state, stage_name),
+            },
+        )
 
     # 全部完成
     _pipelines.pop(client_id, None)
-    await manager.send(client_id, {
-        "type": "done",
-        "state": _serialize_state(state, "done"),
-    })
+    await manager.send(
+        client_id,
+        {
+            "type": "done",
+            "state": _serialize_state(state, "done"),
+        },
+    )
 
 
-def _serialize_state(state: dict, stage: str) -> dict:
+def _serialize_state(state: ProjectState, stage: str) -> dict:
     """提取当前阶段可展示的内容"""
-    result = {"stage": stage}
+    result: dict[str, str | int] = {"stage": stage}
     if state.get("ask_user"):
-        result["ask_user"] = state["ask_user"]
+        result["ask_user"] = str(state["ask_user"])
     if state.get("prd"):
-        result["prd"] = state["prd"][:2000]
+        result["prd"] = str(state["prd"])[:2000]
     if state.get("tech_plan"):
-        result["tech_plan"] = state["tech_plan"][:2000]
+        result["tech_plan"] = str(state["tech_plan"])[:2000]
     if state.get("backend_code"):
-        result["backend_code"] = state["backend_code"][:2000]
+        result["backend_code"] = str(state["backend_code"])[:2000]
     if state.get("frontend_code"):
-        result["frontend_code"] = state["frontend_code"][:2000]
+        result["frontend_code"] = str(state["frontend_code"])[:2000]
     if state.get("test_report"):
-        result["test_report"] = state["test_report"][:1000]
+        result["test_report"] = str(state["test_report"])[:1000]
     if state.get("zip_path"):
-        result["zip_path"] = state["zip_path"]
+        result["zip_path"] = str(state["zip_path"])
     return result
 
 
 # ─── 启动入口 ──────────────────────────────────────────
 
+
 def start():
     import uvicorn
+
     uvicorn.run("src.web.server:app", host="0.0.0.0", port=8080, reload=True)
 
 

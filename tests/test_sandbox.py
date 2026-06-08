@@ -1,6 +1,9 @@
 """SandboxExecutor 单元测试"""
-import pytest
+
+import subprocess
 from pathlib import Path
+
+import pytest
 from src.sandbox.executor import SandboxExecutor
 
 
@@ -69,14 +72,14 @@ def test_run_command_captures_stderr(sandbox):
 
 def test_run_command_nonzero_exit(sandbox):
     """非零退出码"""
-    output, code = sandbox.run_command("python -c \"exit(1)\"")
+    output, code = sandbox.run_command('python -c "exit(1)"')
     assert code == 1
 
 
 def test_run_command_timeout(sandbox):
     """超时抛异常"""
-    with pytest.raises(Exception):
-        sandbox.run_command("python -c \"import time; time.sleep(10)\"", timeout=1)
+    with pytest.raises(subprocess.TimeoutExpired):
+        sandbox.run_command('python -c "import time; time.sleep(10)"', timeout=1)
 
 
 def test_file_exists(sandbox):

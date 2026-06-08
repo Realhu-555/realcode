@@ -1,9 +1,13 @@
 """LangGraph 状态图 — Agent 编排核心"""
-from langgraph.graph import StateGraph, END
+
+from typing import Any
+
+from langgraph.graph import END, StateGraph
+
 from src.orchestrator.state import ProjectState
 
 
-def create_graph(agents: dict) -> StateGraph:
+def create_graph(agents: dict[str, Any]) -> Any:
     """创建 Agent 编排图"""
     graph = StateGraph(ProjectState)
 

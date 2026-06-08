@@ -1,11 +1,12 @@
 """后端开发 Agent"""
+
 from src.agents.base import BaseAgent
-from src.llm.provider import LLMProvider
 from src.llm.prompts.backend import BACKEND_PROMPT
+from src.llm.provider import LLMProvider
 
 
 class BackendAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="backend", system_prompt=BACKEND_PROMPT)
         self.llm = LLMProvider()
 
@@ -29,10 +30,13 @@ class BackendAgent(BaseAgent):
             **state,
             "backend_code": response,
             "current_stage": "testing",
-            "messages": state.get("messages", []) + [{
-                "from": "backend",
-                "to": "tester",
-                "type": "output",
-                "content": response,
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "from": "backend",
+                    "to": "tester",
+                    "type": "output",
+                    "content": response,
+                }
+            ],
         }

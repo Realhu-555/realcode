@@ -1,7 +1,8 @@
 """共享状态定义"""
-from typing import TypedDict, Optional, Annotated
-from enum import Enum
+
 import operator
+from enum import Enum
+from typing import Annotated, TypedDict
 
 
 def _latest_stage(a: "Stage", b: "Stage") -> "Stage":
@@ -24,13 +25,13 @@ class ProjectState(TypedDict):
     """多 Agent 共享的全局状态"""
 
     user_idea: str
-    prd: Optional[str]
-    tech_plan: Optional[str]
-    frontend_code: Optional[str]
-    backend_code: Optional[str]
-    test_report: Optional[str]
-    zip_path: Optional[str]
+    prd: str | None
+    tech_plan: str | None
+    frontend_code: str | None
+    backend_code: str | None
+    test_report: str | None
+    zip_path: str | None
     current_stage: Annotated[Stage, _latest_stage]
-    error_message: Optional[str]
+    error_message: str | None
     messages: Annotated[list[dict], operator.add]
-    ask_user: Optional[str]
+    ask_user: str | None

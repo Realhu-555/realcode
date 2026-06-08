@@ -1,8 +1,8 @@
 """LangGraph 状态图单元测试"""
-import pytest
-from src.orchestrator.state import ProjectState, Stage
-from src.orchestrator.graph import create_graph, _route_after_requirement
+
 from src.agents.base import BaseAgent
+from src.orchestrator.graph import _route_after_requirement, create_graph
+from src.orchestrator.state import ProjectState, Stage
 
 
 class DummyAgent(BaseAgent):
@@ -18,11 +18,13 @@ class DummyAgent(BaseAgent):
         return {
             self.output_key: self.output_value,
             "current_stage": self.next_stage,
-            "messages": [{
-                "from": self.name,
-                "type": "output",
-                "content": self.output_value,
-            }],
+            "messages": [
+                {
+                    "from": self.name,
+                    "type": "output",
+                    "content": self.output_value,
+                }
+            ],
         }
 
 

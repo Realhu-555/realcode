@@ -1,10 +1,12 @@
 """BaseAgent 单元测试"""
+
 import pytest
 from src.agents.base import BaseAgent
 
 
 class FakeAgent(BaseAgent):
     """实现抽象方法的测试子类"""
+
     def run(self, state: dict) -> dict:
         return {**state, "result": "done"}
 

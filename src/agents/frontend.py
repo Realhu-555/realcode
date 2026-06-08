@@ -1,11 +1,12 @@
 """前端开发 Agent"""
+
 from src.agents.base import BaseAgent
-from src.llm.provider import LLMProvider
 from src.llm.prompts.frontend import FRONTEND_PROMPT
+from src.llm.provider import LLMProvider
 
 
 class FrontendAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="frontend", system_prompt=FRONTEND_PROMPT)
         self.llm = LLMProvider()
 
@@ -29,10 +30,13 @@ class FrontendAgent(BaseAgent):
             **state,
             "frontend_code": response,
             "current_stage": "testing",
-            "messages": state.get("messages", []) + [{
-                "from": "frontend",
-                "to": "tester",
-                "type": "output",
-                "content": response,
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "from": "frontend",
+                    "to": "tester",
+                    "type": "output",
+                    "content": response,
+                }
+            ],
         }

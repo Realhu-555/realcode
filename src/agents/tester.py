@@ -1,11 +1,12 @@
 """测试 Agent"""
+
 from src.agents.base import BaseAgent
-from src.llm.provider import LLMProvider
 from src.llm.prompts.tester import TESTER_PROMPT
+from src.llm.provider import LLMProvider
 
 
 class TesterAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(name="tester", system_prompt=TESTER_PROMPT)
         self.llm = LLMProvider()
 
@@ -41,10 +42,13 @@ class TesterAgent(BaseAgent):
             **state,
             "test_report": response,
             "current_stage": "deployment",
-            "messages": state.get("messages", []) + [{
-                "from": "tester",
-                "to": "deployer",
-                "type": "output",
-                "content": response,
-            }],
+            "messages": state.get("messages", [])
+            + [
+                {
+                    "from": "tester",
+                    "to": "deployer",
+                    "type": "output",
+                    "content": response,
+                }
+            ],
         }

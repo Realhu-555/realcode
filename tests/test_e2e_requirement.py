@@ -1,5 +1,5 @@
 """端到端测试：需求分析 Agent"""
-import pytest
+
 from src.agents.requirement import RequirementAgent
 from src.orchestrator.state import Stage
 
@@ -70,12 +70,15 @@ def test_multiround_clarification():
     state2 = {
         **result,
         "ask_user": None,
-        "messages": result["messages"] + [{
-            "from": "user",
-            "to": "requirement",
-            "type": "answer",
-            "content": "团队内部用，能创建任务、指派给同事、拖拽改变状态为待办/进行中/已完成"
-        }]
+        "messages": result["messages"]
+        + [
+            {
+                "from": "user",
+                "to": "requirement",
+                "type": "answer",
+                "content": "团队内部用，能创建任务、指派给同事、拖拽改变状态为待办/进行中/已完成",
+            }
+        ],
     }
 
     agent2 = RequirementAgent()
@@ -85,12 +88,15 @@ def test_multiround_clarification():
         state3 = {
             **result2,
             "ask_user": None,
-            "messages": result2["messages"] + [{
-                "from": "user",
-                "to": "requirement",
-                "type": "answer",
-                "content": "不需要登录，3-5 人的小团队用，就这三个状态够了"
-            }]
+            "messages": result2["messages"]
+            + [
+                {
+                    "from": "user",
+                    "to": "requirement",
+                    "type": "answer",
+                    "content": "不需要登录，3-5 人的小团队用，就这三个状态够了",
+                }
+            ],
         }
         agent3 = RequirementAgent()
         result3 = agent3.run(state3)

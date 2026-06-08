@@ -1,15 +1,21 @@
 """LLMProvider 单元测试"""
+
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from src.llm.provider import LLMProvider
 
 
 def test_model_map_has_all_agent_types():
     """所有 Agent 类型都有对应的模型配置"""
     expected_agents = [
-        "requirement", "architect", "backend", "frontend",
-        "tester", "deployer", "documenter",
+        "requirement",
+        "architect",
+        "backend",
+        "frontend",
+        "tester",
+        "deployer",
+        "documenter",
     ]
     for agent_type in expected_agents:
         assert agent_type in LLMProvider.MODEL_MAP
@@ -29,19 +35,13 @@ def test_chat_routes_to_correct_provider():
 
         # DeepSeek 路由
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-ds-key"}):
-            result = provider.chat(
-                [{"role": "user", "content": "hello"}],
-                agent_type="architect"
-            )
+            result = provider.chat([{"role": "user", "content": "hello"}], agent_type="architect")
             # DeepSeek client 被调用，base_url 应该是 deepseek 的
             assert result == "response from llm"
 
         # MiniMax 路由
         with patch.dict(os.environ, {"MINIMAX_API_KEY": "test-mm-key"}):
-            result = provider.chat(
-                [{"role": "user", "content": "hello"}],
-                agent_type="requirement"
-            )
+            result = provider.chat([{"role": "user", "content": "hello"}], agent_type="requirement")
             assert result == "response from llm"
 
 
@@ -56,10 +56,7 @@ def test_chat_returns_string():
         mock_openai_cls.return_value = mock_client
 
         provider = LLMProvider()
-        result = provider.chat(
-            [{"role": "user", "content": "Hi"}],
-            agent_type="backend"
-        )
+        result = provider.chat([{"role": "user", "content": "Hi"}], agent_type="backend")
 
         assert isinstance(result, str)
         assert result == "Hello, world!"

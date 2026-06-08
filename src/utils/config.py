@@ -1,6 +1,7 @@
 """配置类（环境变量读取）"""
-import os
+
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 

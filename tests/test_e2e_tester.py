@@ -1,8 +1,7 @@
 """端到端测试：测试 Agent"""
-import pytest
+
 from src.agents.tester import TesterAgent
 from src.orchestrator.state import Stage
-
 
 TECH_PLAN = """---TECH_PLAN_START---
 ## API 设计

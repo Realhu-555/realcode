@@ -1,13 +1,19 @@
 """共享状态单元测试"""
-import pytest
-from src.orchestrator.state import Stage, ProjectState
+
+from src.orchestrator.state import ProjectState, Stage
 
 
 def test_stage_enum_has_all_stages():
     """Stage 枚举包含所有阶段"""
     expected_stages = {
-        "REQUIREMENT", "ARCHITECTURE", "FRONTEND", "BACKEND",
-        "TESTING", "DEPLOYMENT", "DONE", "ERROR",
+        "REQUIREMENT",
+        "ARCHITECTURE",
+        "FRONTEND",
+        "BACKEND",
+        "TESTING",
+        "DEPLOYMENT",
+        "DONE",
+        "ERROR",
     }
     actual_stages = {s.name for s in Stage}
     assert actual_stages == expected_stages

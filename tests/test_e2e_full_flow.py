@@ -1,7 +1,7 @@
 """端到端完整流程测试：Requirement → Architect"""
-import pytest
-from src.agents.requirement import RequirementAgent
+
 from src.agents.architect import ArchitectAgent
+from src.agents.requirement import RequirementAgent
 from src.orchestrator.state import Stage
 
 
@@ -25,10 +25,15 @@ def _run_requirement_with_clarification(state: dict, max_rounds: int = 6) -> dic
         result = {
             **result,
             "ask_user": None,
-            "messages": result["messages"] + [{
-                "from": "user", "to": "requirement",
-                "type": "answer", "content": answer,
-            }],
+            "messages": result["messages"]
+            + [
+                {
+                    "from": "user",
+                    "to": "requirement",
+                    "type": "answer",
+                    "content": answer,
+                }
+            ],
         }
     return result
 
@@ -86,10 +91,15 @@ def test_full_flow_with_interactive_clarification():
         state2 = {
             **r1,
             "ask_user": None,
-            "messages": r1["messages"] + [{
-                "from": "user", "to": "requirement", "type": "answer",
-                "content": "给项目团队用的，要能创建任务、指派成员、拖拽改状态"
-            }]
+            "messages": r1["messages"]
+            + [
+                {
+                    "from": "user",
+                    "to": "requirement",
+                    "type": "answer",
+                    "content": "给项目团队用的，要能创建任务、指派成员、拖拽改状态",
+                }
+            ],
         }
         r2 = req2.run(state2)
 
@@ -99,10 +109,15 @@ def test_full_flow_with_interactive_clarification():
             state3 = {
                 **r2,
                 "ask_user": None,
-                "messages": r2["messages"] + [{
-                    "from": "user", "to": "requirement", "type": "answer",
-                    "content": "不需要登录，5人的小组，状态分为待办/进行中/已完成"
-                }]
+                "messages": r2["messages"]
+                + [
+                    {
+                        "from": "user",
+                        "to": "requirement",
+                        "type": "answer",
+                        "content": "不需要登录，5人的小组，状态分为待办/进行中/已完成",
+                    }
+                ],
             }
             final = req3.run(state3)
         else:
@@ -115,10 +130,12 @@ def test_full_flow_with_interactive_clarification():
 
     # 传给架构师
     arch = ArchitectAgent()
-    arch_result = arch.run({
-        **final,
-        "current_stage": Stage.ARCHITECTURE,
-    })
+    arch_result = arch.run(
+        {
+            **final,
+            "current_stage": Stage.ARCHITECTURE,
+        }
+    )
 
     tech_plan = arch_result.get("tech_plan")
     assert tech_plan is not None

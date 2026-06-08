@@ -1,9 +1,11 @@
 """统一 LLM Provider"""
+
 import os
 import re
 from pathlib import Path
-from openai import OpenAI
+
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # 自动加载项目根目录的 .env
 _env_path = Path(__file__).parent.parent.parent / ".env"
@@ -25,11 +27,11 @@ class LLMProvider:
     """统一的 LLM 调用接口"""
 
     MODEL_MAP = {
-        "requirement": "deepseek:deepseek-ai/deepseek-v4-pro",  # MiniMax 不跟进对话格式，换 DeepSeek
-        "architect": "deepseek:deepseek-ai/deepseek-v4-pro",  # 技术推理要求高
-        "backend": "deepseek:deepseek-ai/deepseek-v4-pro",    # 代码质量要求最高
-        "frontend": "minimax:MiniMax-M2.7",       # 分担 DeepSeek 压力
-        "tester": "minimax:MiniMax-M2.7",         # 测试用例生成
+        "requirement": "deepseek:deepseek-v4-pro",  # 需求分析多用 DeepSeek
+        "architect": "deepseek:deepseek-v4-pro",  # 技术推理要求高
+        "backend": "deepseek:deepseek-v4-pro",  # 代码质量要求最高
+        "frontend": "minimax:MiniMax-M2.7",  # 分担 DeepSeek 压力
+        "tester": "minimax:MiniMax-M2.7",  # 测试用例生成
         "deployer": "minimax:MiniMax-M2.7",
         "documenter": "minimax:MiniMax-M2.7",
     }
@@ -37,8 +39,8 @@ class LLMProvider:
     def __init__(self):
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
         self.deepseek_client = OpenAI(
-            api_key=os.getenv("NVIDIA_API_KEY", ""),
-            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+            base_url="https://api.deepseek.com",
         )
         self.minimax_client = OpenAI(
             api_key=os.getenv("MINIMAX_API_KEY", ""),
