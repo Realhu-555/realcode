@@ -19,14 +19,16 @@ ai-dev-platform/
 │   ├── sandbox/         # 本地代码执行沙箱
 │   ├── llm/             # LLM Provider + Prompts
 │   ├── web/             # Web 界面（Phase 3）
-│   └── utils/           # 配置工具
-├── tests/               # 测试代码
-├── SPEC.md              # 完整需求规格 & 技术方案
-├── requirements.txt     # Python 依赖
+│   └── utils/           # 配置工具、日志、健康检查
+├── tests/               # 测试代码（unit/integration/e2e）
+├── docs/                # 文档
+├── pyproject.toml       # 项目配置 + 依赖
 └── .env                 # API Key（不入 git）
 ```
 
 ## 编码规范
+
+### Python 风格
 - **Python 版本**: 3.12+
 - **类型注解**: 所有公共函数必须标注参数和返回值类型
 - **命名**: 类名 PascalCase，函数/变量 snake_case，常量 UPPER_SNAKE
@@ -35,39 +37,41 @@ ai-dev-platform/
 - **行宽**: 不超过 100 字符
 - **禁止**: `from module import *`，魔法数字（用常量）
 
+### 代码质量工具
+- **Linter/Formatter**: Ruff（替代 flake8 + isort + black）
+- **类型检查**: MyPy（初期宽松，逐步收紧）
+- **Pre-commit**: 提交前自动运行 ruff + mypy
+
+### Git 提交规范
+- **格式**: `<type>(<scope>): <description>`
+- **类型**: feat / fix / docs / style / refactor / test / chore
+- **示例**: `feat(agents): 添加 RequirementAgent 状态机`
+
+### 测试规范
+- **框架**: pytest + pytest-asyncio
+- **覆盖率**: 核心模块 ≥70%
+- **结构**: `tests/unit/`、`tests/integration/`、`tests/e2e/`
+- **命名**: `test_<功能>_<场景>`，如 `test_requirement_agent_asks_when_vague`
+
 ## 命令
 ```bash
-# 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate
-
 # 安装依赖
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
-# 运行测试
+# 代码检查（提交前必须通过）
+ruff check src/ tests/
+ruff format --check src/ tests/
+mypy src/
+
+# 测试
 pytest tests/ -v
-
-# 运行单个测试
-pytest tests/test_e2e_requirement.py::test_requirement_agent_asks_when_vague -v
-
-# 代码检查（如有 ruff）
-ruff check src/
+pytest tests/ -v --cov=src --cov-report=html
 ```
-
-## Agent 模型分配
-| Agent | 模型 | 原因 |
-|-------|------|------|
-| 需求分析 | MiniMax 2.7 | 中文对话多 |
-| 架构师 | DeepSeek V4 | 推理要求高 |
-| 后端开发 | DeepSeek V4 | 代码质量最高 |
-| 前端开发 | MiniMax 2.7 | 分担压力 |
-| 测试 | MiniMax 2.7 | 任务相对简单 |
-| 部署/文档 | MiniMax 2.7 | 任务简单 |
 
 ## 开发原则
 1. **TDD**: 先写测试，确认失败，再写实现，确认通过
 2. **测试不过不准走**: 每个功能写完必须跑测试，全绿才算完成。一个红灯都不能留
-3. **小步提交**: 每个 Task 完成后立即 git commit
+3. **小步提交**: 每个 Task 完成后立即 git commit，提交前必须通过代码检查
 4. **DRY**: 不重复代码，提取公共逻辑
 5. **YAGNI**: 只实现当前需要的，不做"以后可能用到"的功能
 

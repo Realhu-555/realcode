@@ -1,9 +1,17 @@
 __pycache__/
 .env
 venv/
+.venv/
 *.pyc
 .claude/
 .pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 .playwright-cli/
 .agent/
 src/web/static/downloads/
+*.egg-info/
+dist/
+build/
