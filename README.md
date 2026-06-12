@@ -122,7 +122,6 @@ python -m uvicorn src.web.server:app --host 0.0.0.0 --port 8080 --reload
 ## 技术文档
 
 - [技术架构文档](docs/AI_Dev_Platform_技术文档.md)
-- [面试准备手册](docs/AI_Dev_Platform_面试准备手册.docx)
 
 ## License
 
