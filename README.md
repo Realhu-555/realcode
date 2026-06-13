@@ -88,7 +88,7 @@ ai-dev-platform/
 
 ```bash
 # 克隆项目
-git clone https://github.com/Realhu-555/ai-dev-platform.git
+git clone https://github.com/Realhu-555/realcode.git
 cd ai-dev-platform
 
 # 安装依赖
