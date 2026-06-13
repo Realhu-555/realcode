@@ -13,5 +13,12 @@ htmlcov/
 .agent/
 src/web/static/downloads/
 *.egg-info/
+
+# 不上传的文档
+SPEC.md
+PROGRESS.md
+AGENTS.md
+docs/engineering-improvement-tasks.md
+docs/上线准备清单.md
 dist/
 build/
