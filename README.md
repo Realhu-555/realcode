@@ -1,87 +1,120 @@
-# AI Dev Platform — 多 Agent 智能开发流水线
+# 素宣 Suxuan — 营销内容多 Agent 平台
 
-基于 LangGraph 的自动化软件开发平台。用户输入自然语言需求，系统通过 6 个分工协作的 AI Agent 自动完成**需求分析 → 架构设计 → 代码生成 → 测试 → 部署**全流程。
+> *一张白宣铺开，AI 蘸墨，写出千万种可能。*
 
-## 核心架构
+基于 LangGraph 的营销内容自动化生成平台。用户输入产品信息，系统通过 **6 个协作 AI Agent** 自动完成**策略分析 → 三渠道并行生成（公众号/知乎/小红书）→ 审校**全流程。
+
+## 核心流程
 
 ```
-用户输入想法
+用户输入产品信息（引导表单 / 自由文本）
     ↓
 ┌─────────────┐
-│  Requirement │ ← 需求分析 Agent（可追问用户补充细节）
-│    Agent     │
+│   策略 Agent  │ ← 分析产品 → 输出内容策略 → 用户确认
+│  (DeepSeek)  │
 └──────┬──────┘
        ↓
-┌─────────────┐
-│  Architect   │ ← 架构设计 Agent（输出技术方案）
-│    Agent     │
-└──┬───────┬──┘
-   ↓       ↓
-┌──────┐ ┌──────┐
-│Backend│ │Frontend│ ← 并行开发（后端 + 前端）
-│Agent  │ │Agent   │
-└──┬───┘ └──┬───┘
-   ↓        ↓
-┌─────────────┐
-│   Tester    │ ← 测试 Agent（生成测试用例 + 执行）
-│    Agent    │
-└──────┬──────┘
-       ↓
-┌─────────────┐
-│  Deployer   │ ← 部署 Agent（打包 + 输出可下载产物）
-│    Agent    │
-└─────────────┘
+┌───┴───┬───────┬──────────┐
+│  公众号  │  知乎   │  小红书    │ ← 三路并行生成
+│ Agent   │ Agent  │  Agent    │   公众号→DeepSeek
+│ 深度长文  │ 专业回答 │ 种草笔记   │   知乎→DeepSeek
+└───┬───┴───┬───┴────┬─────┘   小红书→MiniMax
+    ↓       ↓        ↓
+┌─────────────────────────┐
+│      审校 Agent          │ ← 五项检查（调性/卖点/用户/事实/渠道）
+│      (MiniMax)           │
+└───────────┬─────────────┘
+            ↓
+┌─────────────────────────┐
+│      导出                │ ← 复制到剪贴板 / 下载 Markdown
+└─────────────────────────┘
 ```
 
 ## 技术栈
 
-- **编排框架**: LangGraph（状态图驱动的 Agent 编排）
-- **LLM**: DeepSeek V4（推理/代码生成）+ MiniMax 2.7（文档/测试）多模型智能路由
-- **后端**: Python 3.12+、FastAPI、WebSocket
-- **前端**: Vue 3 + TypeScript + Element Plus
-- **沙箱**: 本地代码执行沙箱（安全隔离）
-- **部署**: Docker
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 编排框架 | **LangGraph** | StateGraph 驱动的 Agent 编排，支持条件分支 + 并行执行 |
+| LLM | DeepSeek V4 + MiniMax 2.7 | **多模型智能路由**：深度内容→DeepSeek，轻松内容→MiniMax |
+| 子系统 | 工具系统 / Prompt 系统 / 记忆系统 | 借鉴 [grok-build](https://github.com/xai-org/grok-build) 架构设计 |
+| 后端 | Python 3.12+、FastAPI、WebSocket | 异步 API + 实时进度推送 |
+| 前端 | Vue 3 + TypeScript + Naive UI + UnoCSS | 暗/亮双主题 SPA |
+| 记忆 | SQLite | 品牌档案持久化 + 项目历史 |
+| 部署 | Docker | 容器化部署 |
 
-## 项目亮点
+## 架构设计亮点（借鉴 grok-build）
 
-### 1. 多模型智能路由
-按任务场景动态分配模型——推理密集型用 DeepSeek（架构设计、代码生成），中文对话型用 MiniMax（需求理解、文档生成），平衡成本与质量。
+### 1. 工具系统 — 执行/描述分离
 
-### 2. LangGraph 状态图编排
-用 LangGraph 的 StateGraph 管理 6 个 Agent 的执行流程。支持条件分支（需求分析后可追问用户）、并行执行（前后端同时开发）、状态持久化。
+```python
+# Tool 协议：给 AI 看的描述和执行逻辑完全分离
+ToolDescription(name, description, parameters)  # 注入 system prompt
+Tool.execute(ctx, **kwargs)                     # 实际逻辑
 
-### 3. 共享状态架构
-所有 Agent 读写同一个 ProjectState（TypedDict），包含需求文档、技术方案、代码、测试报告等。信息在 Agent 间自动流转，不存在信息孤岛。
+# 单例注册表 + Builder 模式
+tool_registry.register(WebSearchTool()).register(ContentSaveTool())
 
-### 4. 安全沙箱
-代码在隔离的本地沙箱中执行，限制文件系统访问和网络权限。
+# 按 Agent 权限过滤：Agent 看不到它无权使用的工具
+tool_registry.build_descriptions(["content_save"])  # 策略 Agent 看不到这个
+```
+
+### 2. Prompt 系统 — 三阶段分离
+
+```
+PromptContext（纯数据）  →  TemplateRenderer（Jinja2 渲染）  →  Agent.run()（注入 LLM）
+产品信息 + 策略 + 工具描述 + 品牌偏好   模板文件独立于代码        最终 system prompt
+```
+
+模板文件独立于 Python 代码，改 prompt 不需要改源码。
+
+### 3. 多 Agent 编排 — LangGraph 状态图
+
+四个判断标准全部满足，是真正的多 Agent 场景：
+- ✅ **不同的 System Prompt**：公众号深度长文 / 知乎专业知识 / 小红书轻松种草
+- ✅ **不同的工具集**：策略 Agent 有 web_search，审校 Agent 有 content_read
+- ✅ **并行执行**：三渠道同时生成，总耗时 = max(三路) 而非 sum
+- ✅ **不同的模型**：DeepSeek（深度内容）vs MiniMax（轻松内容 + 审校）
+
+### 4. 记忆系统 — 品牌档案
+
+用户第一次推广"A 产品"填完整表单。第二次推广"B 产品"时，系统自动检索已有品牌档案，预填调性和偏好。越用越省事。
 
 ## 项目结构
 
 ```
 ai-dev-platform/
+├── frontend/                # Vue 3 前端（SPA）
+│   └── src/
+│       ├── views/           # 3 个页面：创建/策略确认/内容预览
+│       ├── components/      # 8 个组件：表单/策略卡/内容面板/进度时间线...
+│       ├── stores/          # Pinia 状态管理
+│       ├── composables/     # 可组合函数（useTheme/useExport/useAgentProgress）
+│       └── api/             # Axios 客户端 + API 类型定义
 ├── src/
-│   ├── agents/          # 6 个专职 Agent
-│   │   ├── base.py      # Agent 抽象基类
-│   │   ├── requirement.py   # 需求分析
-│   │   ├── architect.py     # 架构设计
-│   │   ├── backend.py       # 后端代码生成
-│   │   ├── frontend.py      # 前端代码生成
-│   │   ├── tester.py        # 测试用例生成
-│   │   └── deployer.py      # 打包部署
-│   ├── orchestrator/    # 编排层
-│   │   ├── graph.py     # LangGraph 状态图
-│   │   └── state.py     # 共享状态定义（ProjectState）
-│   ├── llm/             # LLM 调用层
-│   │   ├── provider.py  # 统一 LLM Provider（多模型路由）
-│   │   └── prompts/     # 各 Agent 的 Prompt 模板
-│   ├── sandbox/         # 代码执行沙箱
-│   ├── web/             # FastAPI Web 服务
-│   └── utils/           # 配置、日志、健康检查
-├── tests/               # 测试代码
-├── docs/                # 项目文档
-├── pyproject.toml       # 项目配置
-└── .env                 # API Key（不入 git）
+│   ├── agents/              # Agent 层（6 个 Agent）
+│   │   └── base.py          # Agent 基类（支持工具调用 + PromptContext）
+│   ├── tools/               # 工具系统
+│   │   ├── protocol.py      # Tool/Description/Context/Result 协议
+│   │   ├── registry.py      # 单例注册表（Builder 模式）
+│   │   └── implementations/ # web_search / content_io
+│   ├── prompt/              # Prompt 系统
+│   │   ├── context.py       # PromptContext 多源数据组装
+│   │   ├── renderer.py      # Jinja2 模板渲染器
+│   │   └── templates/       # 5 个 Agent 模板（.md 文件）
+│   ├── orchestrator/        # 编排层
+│   │   ├── graph.py         # LangGraph 状态图
+│   │   ├── state.py         # ContentProjectState 共享状态
+│   │   └── long_term_memory.py  # 长期记忆（SQLite）
+│   ├── llm/                 # LLM 调用层
+│   │   ├── provider.py      # 统一 LLM Provider（多模型路由）
+│   │   └── prompts/         # 历史 Prompt（逐步迁移到 src/prompt/）
+│   ├── sandbox/             # 代码执行沙箱
+│   ├── web/                 # FastAPI Web 服务
+│   └── utils/               # 配置、日志、健康检查
+├── tests/                   # 测试代码
+├── docs/                    # 设计文档
+│   └── 营销内容多Agent平台-系统设计.md
+└── .env                     # API Key（不入 git）
 ```
 
 ## 快速开始
@@ -91,37 +124,45 @@ ai-dev-platform/
 git clone https://github.com/Realhu-555/realcode.git
 cd ai-dev-platform
 
-# 安装依赖
+# --- 后端 ---
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
 # 配置 API Key
 cp .env.example .env
-# 编辑 .env 填入你的 DeepSeek 和 MiniMax API Key
+# 编辑 .env 填入 DeepSeek 和 MiniMax API Key
 
-# 启动服务
+# 启动后端
 python -m uvicorn src.web.server:app --host 0.0.0.0 --port 8080 --reload
 
-# 访问 http://localhost:8080
+# --- 前端 ---
+cd frontend
+npm install
+npm run dev
+# 访问 http://localhost:5173
 ```
 
 ## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/projects | 提交项目需求（自然语言描述） |
-| GET  | /api/v1/projects/{id} | 查询项目状态和中间产出 |
-| GET  | /api/v1/projects/{id}/prd | 获取需求文档（PRD） |
-| GET  | /api/v1/projects/{id}/tech-plan | 获取技术方案 |
-| GET  | /api/v1/projects/{id}/code | 获取生成的代码 |
-| GET  | /api/v1/projects/{id}/test-report | 获取测试报告 |
-| GET  | /api/v1/projects/{id}/download | 下载打包产物 |
-| WS   | /ws | WebSocket 实时推送 Agent 执行进度 |
+| POST | `/api/v1/content-projects` | 创建营销内容项目（表单/自由模式） |
+| GET | `/api/v1/content-projects/{id}` | 查询项目状态和所有产出 |
+| POST | `/api/v1/content-projects/{id}/confirm-strategy` | 确认/修改策略 |
+| GET | `/api/v1/content-projects/{id}/content/{channel}` | 获取指定渠道内容 |
+| GET | `/api/v1/content-projects/{id}/review` | 获取审校报告 |
+| GET | `/api/v1/content-projects/{id}/export` | 导出全部内容（Markdown） |
+| POST | `/api/v1/brand-profiles` | 保存品牌档案 |
+| GET | `/api/v1/brand-profiles` | 查询已有品牌档案 |
+| WS | `/ws` | WebSocket 实时推送 Agent 执行进度 |
 
-## 技术文档
+## 实施进度
 
-- [技术架构文档](docs/AI_Dev_Platform_技术文档.md)
+- [x] Phase 1：子系统层 — 工具系统 + Prompt 系统 + 记忆系统 + Agent 基类改造
+- [ ] Phase 2：Agent 实现 — 6 个 Agent（策略/公众号/知乎/小红书/审校/导出）
+- [ ] Phase 3：编排 + API — LangGraph 集成 + FastAPI 路由 + WebSocket 进度推送
+- [x] Phase 4：前端 — Vue 3 SPA 完整可用（创建/策略确认/内容预览）
 
 ## License
 
