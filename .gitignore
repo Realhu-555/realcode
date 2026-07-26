@@ -22,3 +22,4 @@ docs/engineering-improvement-tasks.md
 docs/上线准备清单.md
 dist/
 build/
+.worktrees/
