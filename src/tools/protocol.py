@@ -1,4 +1,4 @@
-"""工具协议定义 —— 借鉴 grok-build 的 Tool trait 双接口设计
+"""工具协议定义
 
 核心设计理念：
 - 执行和描述分离：ToolDescription（给 AI 看）和 Tool.execute()（实际逻辑）独立
@@ -12,7 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 
 
 class ToolKind(Enum):
-    """工具分类 —— 对应 grok-build 的 ToolKind"""
+    """工具分类"""
     SEARCH = "search"   # 搜索类（网络搜索、知识库查询）
     READ = "read"       # 读取类（读取内容、文件）
     WRITE = "write"     # 写入类（保存、导出）
@@ -22,7 +22,6 @@ class ToolKind(Enum):
 class ToolDescription:
     """给 AI 看的工具说明 —— 和执行逻辑完全分离
 
-    对应 grok-build 中 ToolMetadata trait 的作用：
     这段描述会被注入到 Agent 的 system prompt 中，
     Agent 只能看到它有权限使用的工具描述。
     """
@@ -35,7 +34,6 @@ class ToolDescription:
 class ToolContext:
     """工具执行上下文 —— 统一注入所有运行时资源
 
-    对应 grok-build 的 ToolCallContext：
     所有工具通过同一个上下文对象获取资源，
     不各自 import config / get_db / read_file。
     """
@@ -58,7 +56,6 @@ class ToolResult:
 class Tool(Protocol):
     """所有工具的接口协议
 
-    对应 grok-build 的 Tool trait：
     - execute() — 执行逻辑
     - description 属性 — 给 AI 看的能力声明
     """

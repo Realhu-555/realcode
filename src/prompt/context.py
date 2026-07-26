@@ -1,4 +1,4 @@
-"""Prompt 上下文组装 —— 借鉴 grok-build 的 PromptContext 结构体
+"""Prompt 上下文组装
 
 设计理念：
 - 内容、渲染、注入三阶段分离
@@ -16,7 +16,6 @@ from src.tools.protocol import ToolDescription
 class PromptContext:
     """统一的 prompt 组装上下文 —— 所有内容来源的聚合点
 
-    对应 grok-build 的 PromptContext 结构体：
     收集来自用户输入、上游 Agent 输出、工具注册表、长期记忆的数据，
     统一传递给模板渲染器。
 

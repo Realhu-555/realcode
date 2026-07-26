@@ -36,13 +36,13 @@
 |------|------|------|
 | 编排框架 | **LangGraph** | StateGraph 驱动的 Agent 编排，支持条件分支 + 并行执行 |
 | LLM | DeepSeek V4 + MiniMax 2.7 | **多模型智能路由**：深度内容→DeepSeek，轻松内容→MiniMax |
-| 子系统 | 工具系统 / Prompt 系统 / 记忆系统 | 借鉴 [grok-build](https://github.com/xai-org/grok-build) 架构设计 |
+| 子系统 | 工具系统 / Prompt 系统 / 记忆系统 | 执行/描述分离 + Jinja2 模板化 + SQLite 品牌档案 |
 | 后端 | Python 3.12+、FastAPI、WebSocket | 异步 API + 实时进度推送 |
 | 前端 | Vue 3 + TypeScript + Naive UI + UnoCSS | 暗/亮双主题 SPA |
 | 记忆 | SQLite | 品牌档案持久化 + 项目历史 |
 | 部署 | Docker | 容器化部署 |
 
-## 架构设计亮点（借鉴 grok-build）
+## 架构设计亮点
 
 ### 1. 工具系统 — 执行/描述分离
 

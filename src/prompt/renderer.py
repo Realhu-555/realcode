@@ -1,4 +1,4 @@
-"""Jinja2 模板渲染器 —— 对应 grok-build 的 TemplateRenderer
+"""Jinja2 模板渲染器
 
 设计理念：
 - 模板文件独立于代码：改 prompt 不需要改 Python
@@ -10,11 +10,7 @@ from pathlib import Path
 
 
 class PromptRenderer:
-    """Jinja2 模板渲染器
-
-    和 grok-build 的 TemplateRenderer (MiniJinja) 对应。
-    grok-build 用 XOR 混淆模板文件，本项目去混淆用明文 .md。
-    """
+    """Jinja2 模板渲染器"""
 
     def __init__(self, template_dir: str | None = None) -> None:
         if template_dir is None:

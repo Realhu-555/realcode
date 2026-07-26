@@ -1,8 +1,8 @@
-"""工具注册表 —— 借鉴 grok-build 的 Builder+Finalize 模式
+"""工具注册表
 
 单例注册表，支持：
 - 链式注册（Builder 模式）
-- 按 Agent 权限过滤工具描述（对应 FinalizedToolset）
+- 按 Agent 权限过滤工具描述
 - 运行时查找工具实例
 """
 
@@ -10,11 +10,7 @@ from src.tools.protocol import Tool, ToolDescription
 
 
 class ToolRegistry:
-    """单例工具注册表
-
-    对应 grok-build 的 ToolRegistryBuilder → FinalizedToolset 流程。
-    简化版：不需要 finalize 步骤，直接在注册时完成。
-    """
+    """单例工具注册表"""
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
@@ -28,7 +24,6 @@ class ToolRegistry:
         """为指定 Agent 生成工具描述列表
 
         只返回该 Agent 有权限的工具描述 ——
-        和 grok-build 的 {%- if tools.by_kind.X %} 条件渲染一个道理：
         Agent 看不到它无权使用的工具。
 
         Args:

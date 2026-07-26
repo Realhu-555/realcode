@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Dev Platform</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0F172A;
+  --bg-card: #1E293B;
+  --bg-input: #334155;
+  --border: #475569;
+  --text: #E2E8F0;
+  --text-dim: #94A3B8;
+  --accent: #38BDF8;
+  --green: #4ADE80;
+  --yellow: #FACC15;
+  --red: #F87171;
+  --purple: #A78BFA;
+  --orange: #FB923C;
+}
+/* 亮色主题 */
+[data-theme="light"] {
+  --bg: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-input: #F1F5F9;
+  --border: #E2E8F0;
+  --text: #1E293B;
+  --text-dim: #64748B;
+  --accent: #0284C7;
+  --green: #16A34A;
+  --yellow: #CA8A04;
+  --red: #DC2626;
+  --purple: #7C3AED;
+  --orange: #EA580C;
+}
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+
+/* 左侧边栏 */
+.sidebar {
+  width: 280px; background: var(--bg-card); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.sidebar-header {
+  padding: 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.sidebar-header .logo { font-size: 24px; }
+.sidebar-header h1 { font-size: 16px; font-weight: 600; }
+.sidebar-header span { font-size: 11px; color: var(--text-dim); }
+.new-project-btn {
+  margin: 16px; padding: 10px; background: var(--accent); color: #0F172A;
+  border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.new-project-btn:hover { opacity: 0.85; }
+.project-list { flex: 1; overflow-y: auto; padding: 8px; }
+.project-item {
+  padding: 12px 16px; border-radius: 8px; cursor: pointer;
+  margin-bottom: 4px; transition: background 0.15s;
+}
+.project-item:hover { background: var(--bg-input); }
+.project-item.active { background: var(--bg-input); border-left: 3px solid var(--accent); }
+.project-item .name { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.project-item .meta { font-size: 12px; color: var(--text-dim); }
+
+/* 主区域 */
+.main { flex: 1; display: flex; flex-direction: column; }
+
+/* 顶部状态栏 */
+.topbar {
+  height: 56px; background: var(--bg-card); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-left h2 { font-size: 15px; font-weight: 600; }
+.status-badge {
+  padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+}
+.status-running { background: rgba(74,222,128,0.15); color: var(--green); }
+.status-done { background: rgba(56,189,248,0.15); color: var(--accent); }
+.status-error { background: rgba(248,113,113,0.15); color: var(--red); }
+.topbar-right { display: flex; gap: 8px; }
+.topbar-btn {
+  padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text); font-size: 12px; cursor: pointer;
+  transition: all 0.15s;
+}
+.topbar-btn:hover { background: var(--bg-input); }
+.topbar-btn.primary { background: var(--accent); color: #0F172A; border-color: var(--accent); }
+
+/* 内容区 */
+.content { flex: 1; display: flex; overflow: hidden; }
+
+/* 流水线面板 */
+.pipeline-panel {
+  width: 320px; background: var(--bg-card); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 20px; flex-shrink: 0;
+}
+.pipeline-title { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+.pipeline-step {
+  display: flex; gap: 12px; padding: 12px 0; position: relative;
+}
+.pipeline-step:not(:last-child)::after {
+  content: ''; position: absolute; left: 15px; top: 40px; bottom: -4px;
+  width: 2px; background: var(--border);
+}
+.step-icon {
+  width: 32px; height: 32px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 14px;
+  flex-shrink: 0; border: 2px solid var(--border); background: var(--bg);
+  z-index: 1;
+}
+.step-icon.done { border-color: var(--green); background: rgba(74,222,128,0.15); }
+.step-icon.active { border-color: var(--accent); background: rgba(56,189,248,0.15); animation: pulse 2s infinite; }
+.step-icon.error { border-color: var(--red); background: rgba(248,113,113,0.15); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.4); } 50% { box-shadow: 0 0 0 8px rgba(56,189,248,0); } }
+.step-info { flex: 1; min-width: 0; }
+.step-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.step-desc { font-size: 12px; color: var(--text-dim); }
+.step-time { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* 输出面板 */
+.output-panel { flex: 1; display: flex; flex-direction: column; }
+.output-tabs {
+  display: flex; background: var(--bg-card); border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+}
+.output-tab {
+  padding: 12px 20px; font-size: 13px; color: var(--text-dim);
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s;
+}
+.output-tab:hover { color: var(--text); }
+.output-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.output-content {
+  flex: 1; overflow-y: auto; padding: 24px; font-size: 14px; line-height: 1.8;
+}
+.output-content pre {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px; overflow-x: auto; font-size: 13px; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  line-height: 1.6;
+}
+.output-content .section-title {
+  font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--accent);
+}
+.output-content .tag {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; margin-right: 6px;
+}
+.tag-blue { background: rgba(56,189,248,0.15); color: var(--accent); }
+.tag-green { background: rgba(74,222,128,0.15); color: var(--green); }
+.tag-purple { background: rgba(167,139,250,0.15); color: var(--purple); }
+
+/* 输入区 */
+.input-area {
+  padding: 16px 24px; background: var(--bg-card); border-top: 1px solid var(--border);
+}
+.input-row { display: flex; gap: 10px; }
+.input-box {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 16px; color: var(--text); font-size: 14px;
+  resize: none; outline: none; font-family: inherit; min-height: 48px;
+  max-height: 120px; transition: border-color 0.15s;
+}
+.input-box:focus { border-color: var(--accent); }
+.send-btn {
+  padding: 12px 24px; background: var(--accent); color: #0F172A;
+  border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+  cursor: pointer; align-self: flex-end; transition: opacity 0.2s;
+}
+.send-btn:hover { opacity: 0.85; }
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.input-hint { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+
+/* 欢迎页 */
+.welcome {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; padding: 40px;
+}
+.welcome h2 { font-size: 28px; font-weight: 700; margin-bottom: 12px; }
+.welcome p { color: var(--text-dim); font-size: 15px; margin-bottom: 32px; }
+.examples { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 600px; }
+.example-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; cursor: pointer; text-align: left; transition: all 0.15s;
+}
+.example-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.example-card .title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.example-card .desc { font-size: 12px; color: var(--text-dim); }
+
+/* 动画 */
+.fade-in { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- 左侧边栏 -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <span class="logo">⚡</span>
+    <div>
+      <h1>AI Dev Platform</h1>
+      <span>Multi-Agent Development Pipeline</span>
+    </div>
+  </div>
+  <button class="new-project-btn" onclick="newProject()">+ 新建项目</button>
+  <div class="project-list" id="projectList">
+    <div class="project-item active" onclick="selectProject(0)">
+      <div class="name">电商平台后台管理系统</div>
+      <div class="meta"><span class="status-badge status-running">运行中</span> · 3分钟前</div>
+    </div>
+    <div class="project-item" onclick="selectProject(1)">
+      <div class="name">在线协作文档编辑器</div>
+      <div class="meta"><span class="status-badge status-done">已完成</span> · 2小时前</div>
+    </div>
+    <div class="project-item" onclick="selectProject(2)">
+      <div class="name">智能客服聊天系统</div>
+      <div class="meta"><span class="status-badge status-done">已完成</span> · 昨天</div>
+    </div>
+  </div>
+</div>
+
+<!-- 主区域 -->
+<div class="main">
+  <!-- 顶部状态栏 -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <h2 id="projectTitle">电商平台后台管理系统</h2>
+      <span class="status-badge status-running" id="statusBadge">● 运行中</span>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-btn" onclick="togglePipeline()">📊 流水线</button>
+      <button class="topbar-btn" onclick="downloadProject()">⬇ 下载产物</button>
+      <button class="topbar-btn" id="themeBtn" onclick="toggleTheme()" title="切换主题">🌙 暗色</button>
+      <button class="topbar-btn primary">⚙ 设置</button>
+    </div>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="content">
+    <!-- 流水线面板 -->
+    <div class="pipeline-panel" id="pipelinePanel">
+      <div class="pipeline-title">开发流水线</div>
+      
+      <div class="pipeline-step">
+        <div class="step-icon done">✓</div>
+        <div class="step-info">
+          <div class="step-name">需求分析 Agent</div>
+          <div class="step-desc">解析用户需求，输出 PRD 文档</div>
+          <div class="step-time">耗时 12s · DeepSeek V4</div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-icon done">✓</div>
+        <div class="step-info">
+          <div class="step-name">架构设计 Agent</div>
+          <div class="step-desc">设计技术方案，确定技术栈</div>
+          <div class="step-time">耗时 18s · DeepSeek V4</div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-icon active">⟳</div>
+        <div class="step-info">
+          <div class="step-name">后端开发 Agent</div>
+          <div class="step-desc">生成后端代码（API + 数据库）</div>
+          <div class="step-time" id="backendTime">执行中...</div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-icon done">✓</div>
+        <div class="step-info">
+          <div class="step-name">前端开发 Agent</div>
+          <div class="step-desc">生成 Vue3 前端代码</div>
+          <div class="step-time">耗时 22s · MiniMax 2.7</div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-icon">4</div>
+        <div class="step-info">
+          <div class="step-name">测试 Agent</div>
+          <div class="step-desc">生成测试用例并执行</div>
+          <div class="step-time">等待中</div>
+        </div>
+      </div>
+
+      <div class="pipeline-step">
+        <div class="step-icon">5</div>
+        <div class="step-info">
+          <div class="step-name">部署 Agent</div>
+          <div class="step-desc">打包项目，生成可下载产物</div>
+          <div class="step-time">等待中</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输出面板 -->
+    <div class="output-panel">
+      <div class="output-tabs">
+        <div class="output-tab active" onclick="switchTab(this, 'prd')">📋 PRD 文档</div>
+        <div class="output-tab" onclick="switchTab(this, 'tech')">🏗 技术方案</div>
+        <div class="output-tab" onclick="switchTab(this, 'code')">💻 代码</div>
+        <div class="output-tab" onclick="switchTab(this, 'test')">🧪 测试报告</div>
+        <div class="output-tab" onclick="switchTab(this, 'log')">📜 执行日志</div>
+      </div>
+      <div class="output-content" id="outputContent">
+        <!-- PRD 内容 -->
+        <div id="tab-prd" class="fade-in">
+          <div class="section-title">产品需求文档（PRD）</div>
+          <p style="margin-bottom:16px">
+            <span class="tag tag-blue">需求分析 Agent</span>
+            <span class="tag tag-green">DeepSeek V4 Pro</span>
+            <span class="tag tag-purple">耗时 12s</span>
+          </p>
+          
+          <h3 style="margin:16px 0 8px; font-size:14px;">1. 项目概述</h3>
+          <p>构建一个面向中小型企业的电商后台管理系统，支持商品管理、订单管理、用户管理、数据统计等核心功能。</p>
+          
+          <h3 style="margin:16px 0 8px; font-size:14px;">2. 核心功能模块</h3>
+          <ul style="padding-left:20px; line-height:2;">
+            <li><strong>商品管理</strong>：商品 CRUD、分类管理、库存管理、图片上传</li>
+            <li><strong>订单管理</strong>：订单列表、状态流转、退款处理、物流跟踪</li>
+            <li><strong>用户管理</strong>：用户列表、角色权限、登录日志</li>
+            <li><strong>数据统计</strong>：销售报表、用户增长、商品排行</li>
+          </ul>
+
+          <h3 style="margin:16px 0 8px; font-size:14px;">3. 非功能需求</h3>
+          <ul style="padding-left:20px; line-height:2;">
+            <li>响应时间：API 接口 &lt; 200ms（P95）</li>
+            <li>并发能力：支持 100 并发用户</li>
+            <li>数据安全：JWT 认证 + RBAC 权限控制</li>
+            <li>部署方式：Docker 容器化部署</li>
+          </ul>
+
+          <h3 style="margin:16px 0 8px; font-size:14px;">4. 技术约束</h3>
+          <p>前端使用 Vue 3 + Element Plus，后端使用 FastAPI + MySQL，数据库 ORM 使用 SQLAlchemy。</p>
+        </div>
+
+        <div id="tab-tech" style="display:none">
+          <div class="section-title">技术架构方案</div>
+          <p style="margin-bottom:16px">
+            <span class="tag tag-blue">架构设计 Agent</span>
+            <span class="tag tag-green">DeepSeek V4 Pro</span>
+          </p>
+          <pre>技术栈选型：
+┌─────────────────────────────────────┐
+│  Frontend: Vue3 + TypeScript + Pinia │
+│  UI: Element Plus + ECharts          │
+│  Build: Vite                         │
+├─────────────────────────────────────┤
+│  Backend: FastAPI + SQLAlchemy       │
+│  Auth: JWT + RBAC                    │
+│  Cache: Redis                        │
+├─────────────────────────────────────┤
+│  Database: MySQL 8.0                 │
+│  Storage: MinIO (文件/图片)          │
+├─────────────────────────────────────┤
+│  Deploy: Docker Compose              │
+│  Reverse Proxy: Nginx                │
+└─────────────────────────────────────┘</pre>
+        </div>
+
+        <div id="tab-code" style="display:none">
+          <div class="section-title">后端代码 <span class="tag tag-blue">生成中...</span></div>
+          <pre id="codeOutput"><span style="color:var(--text-dim)">// 后端开发 Agent 正在生成代码...</span>
+<span style="color:var(--text-dim)">// 已生成文件：</span>
+<span style="color:var(--green)">✓</span> src/main.py
+<span style="color:var(--green)">✓</span> src/models/user.py
+<span style="color:var(--green)">✓</span> src/models/product.py
+<span style="color:var(--green)">✓</span> src/models/order.py
+<span style="color:var(--accent)">⟳</span> src/api/routes.py <span style="color:var(--text-dim)">（生成中）</span></pre>
+        </div>
+
+        <div id="tab-test" style="display:none">
+          <div class="section-title">测试报告</div>
+          <p style="color:var(--text-dim)">等待测试 Agent 执行...</p>
+        </div>
+
+        <div id="tab-log" style="display:none">
+          <div class="section-title">执行日志</div>
+          <pre style="font-size:12px; line-height:1.8;">
+<span style="color:var(--green)">[14:23:01]</span> 🚀 项目创建：电商平台后台管理系统
+<span style="color:var(--green)">[14:23:01]</span> 📋 需求分析 Agent 开始执行
+<span style="color:var(--green)">[14:23:06]</span> 📋 查询用户意图，识别到 4 个功能模块
+<span style="color:var(--green)">[14:23:13]</span> ✅ PRD 文档生成完成
+<span style="color:var(--green)">[14:23:13]</span> 🏗 架构设计 Agent 开始执行
+<span style="color:var(--green)">[14:23:18]</span> 🏗 技术栈选型：FastAPI + Vue3 + MySQL
+<span style="color:var(--green)">[14:23:31]</span> ✅ 技术方案生成完成
+<span style="color:var(--green)">[14:23:31]</span> 💻 后端开发 Agent 开始执行
+<span style="color:var(--green)">[14:23:31]</span> 🎨 前端开发 Agent 开始执行（并行）
+<span style="color:var(--accent)">[14:23:45]</span> 🎨 前端代码生成完成（14 个组件）
+<span style="color:var(--accent)">[14:23:53]</span> 💻 正在生成 API 路由代码...
+          </pre>
+        </div>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="input-box" id="inputBox" placeholder="输入你的项目需求，比如：做一个在线教育平台，支持课程管理、视频播放、学生管理..." rows="2" onkeydown="handleKey(event)"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="send()">发送</button>
+        </div>
+        <div class="input-hint">Enter 发送 · Shift+Enter 换行 · 支持自然语言描述</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tab 切换
+function switchTab(el, tabName) {
+  document.querySelectorAll('.output-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.output-content > div').forEach(d => d.style.display = 'none');
+  document.getElementById('tab-' + tabName).style.display = 'block';
+  document.getElementById('tab-' + tabName).classList.add('fade-in');
+}
+
+// 流水线面板切换
+function togglePipeline() {
+  const panel = document.getElementById('pipelinePanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+// 发送消息
+function send() {
+  const input = document.getElementById('inputBox');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  // 这里将来接 WebSocket 发送到后端
+  alert('已发送需求：' + text + '\n\n（后续接入 WebSocket 连接后端 Agent）');
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+}
+
+function newProject() {
+  document.getElementById('inputBox').focus();
+}
+
+function selectProject(idx) {
+  document.querySelectorAll('.project-item').forEach((p, i) => {
+    p.classList.toggle('active', i === idx);
+  });
+}
+
+function downloadProject() {
+  alert('下载项目产物（ZIP 包）\n\n后续接入后端 /api/v1/projects/{id}/download 接口');
+}
+
+// 主题切换
+function toggleTheme() {
+  const html = document.documentElement;
+  const btn = document.getElementById('themeBtn');
+  if (html.getAttribute('data-theme') === 'light') {
+    html.removeAttribute('data-theme');
+    btn.textContent = '🌙 暗色';
+    localStorage.setItem('theme', 'dark');
+  } else {
+    html.setAttribute('data-theme', 'light');
+    btn.textContent = '☀️ 亮色';
+    localStorage.setItem('theme', 'light');
+  }
+}
+// 读取保存的主题
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.getElementById('themeBtn').textContent = '☀️ 亮色';
+  }
+})();
+
+// 模拟后端 Agent 进度
+let dots = 0;
+setInterval(() => {
+  const el = document.getElementById('backendTime');
+  if (el) {
+    dots = (dots + 1) % 4;
+    el.textContent = '执行中' + '.'.repeat(dots) + ' ' + (25 + Math.floor(Math.random()*3)) + 's';
+  }
+}, 1000);
+</script>
+</body>
+</html>
