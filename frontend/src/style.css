@@ -1,0 +1,69 @@
+/* 暗色主题（默认） */
+:root {
+  --bg: #0B1121;
+  --bg-card: #151D30;
+  --bg-input: #1E293B;
+  --border: #293548;
+  --text: #E2E8F0;
+  --text-dim: #94A3B8;
+  --accent: #38BDF8;
+  --accent-dim: #0C4A6E;
+  --green: #4ADE80;
+  --yellow: #FACC15;
+  --red: #F87171;
+  --purple: #A78BFA;
+}
+
+/* 亮色主题 */
+.light {
+  --bg: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-input: #F1F5F9;
+  --border: #E2E8F0;
+  --text: #1E293B;
+  --text-dim: #64748B;
+  --accent: #0284C7;
+  --accent-dim: #E0F2FE;
+  --green: #16A34A;
+  --yellow: #CA8A04;
+  --red: #DC2626;
+  --purple: #7C3AED;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+/* n-card 在暗色下背景适配 */
+.n-card {
+  background-color: var(--bg-card) !important;
+}
