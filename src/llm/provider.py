@@ -27,13 +27,21 @@ class LLMProvider:
     """统一的 LLM 调用接口"""
 
     MODEL_MAP = {
-        "requirement": "deepseek:deepseek-v4-pro",  # 需求分析多用 DeepSeek
-        "architect": "deepseek:deepseek-v4-pro",  # 技术推理要求高
-        "backend": "deepseek:deepseek-v4-pro",  # 代码质量要求最高
-        "frontend": "minimax:MiniMax-M2.7",  # 分担 DeepSeek 压力
-        "tester": "minimax:MiniMax-M2.7",  # 测试用例生成
+        # 原有 Agent（向后兼容）
+        "requirement": "deepseek:deepseek-v4-pro",
+        "architect": "deepseek:deepseek-v4-pro",
+        "backend": "deepseek:deepseek-v4-pro",
+        "frontend": "minimax:MiniMax-M2.7",
+        "tester": "minimax:MiniMax-M2.7",
         "deployer": "minimax:MiniMax-M2.7",
         "documenter": "minimax:MiniMax-M2.7",
+        # 营销内容 Agent（新增）
+        "celve": "deepseek:deepseek-v4-pro",        # 策略分析：需要强推理
+        "gongzhonghao": "deepseek:deepseek-v4-pro", # 深度长文：需要强推理
+        "zhihu": "deepseek:deepseek-v4-pro",        # 专业知识：需要强推理
+        "xiaohongshu": "minimax:MiniMax-M2.7",      # 种草笔记：不需要强推理，省钱
+        "shenjiao": "minimax:MiniMax-M2.7",         # 审校检查：不需要强推理
+        "export": "minimax:MiniMax-M2.7",           # 导出：轻量
     }
 
     def __init__(self):

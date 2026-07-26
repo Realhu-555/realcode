@@ -27,37 +27,52 @@ onMounted(async () => {
 })
 
 function getContent(channel: string): string | null {
-  const status = projectStore.status
-  if (!status?.contents) return null
-  return status.contents[channel]?.full_content ?? null
+  return projectStore.status?.contents?.[channel]?.full_content ?? null
 }
 
 function getReviewReport(): string | null {
   return projectStore.status?.review_report?.full_content ?? null
 }
+
+const stageTag = computed(() => {
+  const map: Record<string, { cls: string; text: string }> = {
+    generating: { cls: "tag-warning", text: "生成中" },
+    done: { cls: "tag-success", text: "已完成" },
+    review: { cls: "tag-warning", text: "审校中" },
+  }
+  return map[projectStore.stage] ?? { cls: "tag-accent", text: "等待中" }
+})
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-8">
-    <div class="max-w-4xl mx-auto space-y-6">
-      <!-- 顶栏 -->
-      <div class="flex items-center justify-between">
+  <div class="h-full overflow-y-auto">
+    <div class="max-w-3xl mx-auto px-8 py-10 space-y-6">
+      <!-- 页头 -->
+      <div class="flex items-center justify-between animate-enter">
         <div>
-          <h2 class="text-xl font-bold">内容预览</h2>
-          <p class="text-sm text-dim mt-1">三篇内容并行生成中 | 审校完成后可导出</p>
+          <h2 class="heading-display text-2xl">内容预览</h2>
+          <p class="text-sm text-dim mt-1">三篇内容并行生成 · 审校完成后可导出</p>
         </div>
-        <n-tag v-if="projectStore.stage === 'generating'" type="warning" size="small">生成中</n-tag>
-        <n-tag v-else-if="projectStore.stage === 'done'" type="success" size="small">已完成</n-tag>
-        <n-tag v-else type="default" size="small">等待中</n-tag>
+        <span :class="stageTag.cls">{{ stageTag.text }}</span>
       </div>
 
       <!-- 进度 -->
       <ProgressTimeline />
 
       <!-- 内容Tab -->
-      <n-tabs v-model:value="activeTab" type="line" animated>
-        <n-tab-pane v-for="ch in channels" :key="ch.key" :name="ch.key" :tab="`${ch.icon} ${ch.label}`">
-          <div class="pt-4">
+      <n-tabs
+        v-model:value="activeTab"
+        type="line"
+        animated
+        class="animate-enter stagger-2"
+      >
+        <n-tab-pane
+          v-for="ch in channels"
+          :key="ch.key"
+          :name="ch.key"
+          :tab="`${ch.icon} ${ch.label}`"
+        >
+          <div class="pt-5">
             <ReviewReport
               v-if="ch.key === 'review'"
               :report="getReviewReport()"

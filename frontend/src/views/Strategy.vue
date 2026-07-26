@@ -25,10 +25,6 @@ async function handleConfirm() {
   router.push(`/preview/${projectId}`)
 }
 
-function handleModify() {
-  modifying.value = true
-}
-
 async function submitModify() {
   if (!feedbackText.value.trim()) return
   await projectStore.confirm(feedbackText.value)
@@ -38,15 +34,15 @@ async function submitModify() {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-8">
-    <div class="max-w-3xl mx-auto space-y-6">
-      <!-- 顶栏 -->
-      <div class="flex items-center justify-between">
+  <div class="h-full overflow-y-auto">
+    <div class="max-w-2xl mx-auto px-8 py-10 space-y-6">
+      <!-- 页头 -->
+      <div class="flex items-center justify-between animate-enter">
         <div>
-          <h2 class="text-xl font-bold">策略确认</h2>
+          <h2 class="heading-display text-2xl">策略确认</h2>
           <p class="text-sm text-dim mt-1">确认内容策略后再开始生成</p>
         </div>
-        <n-tag type="info" size="small">策略阶段</n-tag>
+        <span class="tag-accent">策略阶段</span>
       </div>
 
       <!-- 策略卡片 -->
@@ -54,12 +50,15 @@ async function submitModify() {
         :strategy="projectStore.status?.strategy?.full_content ?? ''"
         :loading="projectStore.loading"
         @confirm="handleConfirm"
-        @modify="handleModify"
+        @modify="modifying = true"
       />
 
-      <!-- 修改反馈区域 -->
-      <div v-if="modifying" class="card space-y-3">
-        <h3 class="text-sm font-semibold">策略修改意见</h3>
+      <!-- 修改反馈 -->
+      <div v-if="modifying" class="card animate-enter space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="accent-line" />
+          <h3 class="heading-section">策略修改意见</h3>
+        </div>
         <n-input
           v-model:value="feedbackText"
           type="textarea"
@@ -67,14 +66,14 @@ async function submitModify() {
           placeholder="描述您希望的策略调整方向，例如：更强调安全卖点、目标用户增加中小企业..."
         />
         <div class="flex gap-3">
-          <n-button type="primary" @click="submitModify" :disabled="!feedbackText.trim()">
+          <button class="btn-primary text-sm" :disabled="!feedbackText.trim()" @click="submitModify">
             提交修改
-          </n-button>
-          <n-button @click="modifying = false">取消</n-button>
+          </button>
+          <button class="btn-ghost text-sm" @click="modifying = false">取消</button>
         </div>
       </div>
 
-      <!-- 进度预览 -->
+      <!-- 进度 -->
       <ProgressTimeline />
     </div>
   </div>

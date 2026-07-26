@@ -5,42 +5,58 @@ defineProps<{
 }>()
 
 defineEmits<{
-  confirm: [feedback?: string]
-  modify: [feedback: string]
+  confirm: []
+  modify: []
 }>()
 </script>
 
 <template>
-  <div class="card">
-    <h3 class="section-title">📋 内容策略</h3>
+  <div class="card animate-enter">
+    <!-- 标题行 -->
+    <div class="flex items-center gap-3 mb-5">
+      <div class="accent-line" />
+      <h3 class="heading-section">内容策略</h3>
+    </div>
 
+    <!-- 策略内容 -->
     <n-spin :show="loading">
-      <div v-if="strategy" class="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap">
+      <div v-if="strategy" class="prose-content text-sm max-h-[500px] overflow-y-auto">
         {{ strategy }}
       </div>
-      <div v-else class="text-dim text-center py-12">
-        策略生成中...
+      <div v-else class="flex flex-col items-center justify-center py-14 text-dim gap-3">
+        <div class="text-3xl opacity-50 animate-pulse">🧠</div>
+        <p class="text-sm">策略分析中...</p>
       </div>
     </n-spin>
 
     <n-divider />
 
+    <!-- 操作按钮 -->
     <div class="flex gap-3">
-      <n-button type="primary" @click="$emit('confirm')" :disabled="!strategy || loading">
-        ✅ 确认策略，开始生成内容
-      </n-button>
-      <n-popover trigger="click" placement="bottom-start" :width="400">
+      <button
+        class="btn-primary flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+        :disabled="!strategy || loading"
+        @click="$emit('confirm')"
+      >
+        <span>✓</span>
+        <span>确认策略，开始生成</span>
+      </button>
+      <n-popover trigger="click" placement="bottom-start" :width="380">
         <template #trigger>
-          <n-button secondary :disabled="!strategy || loading">
-            📝 我要修改
-          </n-button>
+          <button
+            class="btn-ghost flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            :disabled="!strategy || loading"
+          >
+            <span>✎</span>
+            <span>我要修改</span>
+          </button>
         </template>
-        <div class="p-2">
-          <p class="text-sm text-dim mb-2">请描述您希望如何调整策略：</p>
-          <n-input type="textarea" :rows="3" placeholder="例如：希望更强调安全性卖点..." />
-          <n-button type="primary" size="small" class="mt-2 w-full">
+        <div class="p-3">
+          <p class="text-sm font-medium mb-3">希望如何调整策略？</p>
+          <n-input type="textarea" :rows="3" placeholder="例如：更强调安全卖点、目标用户增加中小企业..." />
+          <button class="btn-primary w-full mt-3 text-sm">
             提交修改意见
-          </n-button>
+          </button>
         </div>
       </n-popover>
     </div>
