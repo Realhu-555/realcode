@@ -45,6 +45,9 @@ class PromptContext:
     brand_tone: str = ""                   # 专业 / 轻松 / 极客
     competitors: list[str] = field(default_factory=list)
 
+    # === 图片输入（MiMo V2.5 视觉理解结果）===
+    image_descriptions: str = ""           # 上传图片的文字描述
+
     # === 上游产出 ===
     strategy: str | None = None            # 策略 Agent 的输出（渠道 Agent 用）
 
@@ -75,6 +78,7 @@ class PromptContext:
             "strategy": self.strategy or "",
             "other_channels": self.other_channel_contents or {},
             "preferences": self.user_preferences,
+            "images": self.image_descriptions,
             "current_date": self.current_date,
         }
 

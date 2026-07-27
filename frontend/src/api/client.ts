@@ -15,6 +15,7 @@ export interface CreateProjectPayload {
   brand_tone?: string
   competitors?: string[]
   user_idea?: string
+  image_urls?: string[]   // base64 编码的图片（data:image/...;base64,...）
 }
 
 export interface ProjectStatus {

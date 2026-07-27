@@ -3,12 +3,14 @@ import { ref } from "vue"
 import { useRouter } from "vue-router"
 import { useProjectStore } from "../stores/project"
 import { useWsStore } from "../stores/ws"
+import { useImageUpload } from "../composables/useImageUpload"
 import GuidedForm from "../components/GuidedForm.vue"
 import FreeInput from "../components/FreeInput.vue"
 
 const router = useRouter()
 const projectStore = useProjectStore()
 const wsStore = useWsStore()
+const { images, uploading, error: imgError, addImages, removeImage, clear: clearImages } = useImageUpload(5)
 
 const mode = ref<"guided" | "free">("guided")
 const submitting = ref(false)
@@ -18,7 +20,11 @@ wsStore.connect()
 async function handleFormSubmit(payload: any) {
   submitting.value = true
   try {
-    const result = await projectStore.submit({ mode: "form", ...payload })
+    const result = await projectStore.submit({
+      mode: "form",
+      ...payload,
+      image_urls: images.value.length > 0 ? [...images.value] : undefined,
+    })
     router.push(`/strategy/${result.project_id}`)
   } finally {
     submitting.value = false
@@ -28,10 +34,23 @@ async function handleFormSubmit(payload: any) {
 async function handleFreeSubmit(idea: string) {
   submitting.value = true
   try {
-    const result = await projectStore.submit({ mode: "free", user_idea: idea })
+    const result = await projectStore.submit({
+      mode: "free",
+      user_idea: idea,
+      image_urls: images.value.length > 0 ? [...images.value] : undefined,
+    })
     router.push(`/strategy/${result.project_id}`)
   } finally {
     submitting.value = false
+  }
+}
+
+// 文件拖拽/选择
+function onFileInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files?.length) {
+    addImages(input.files)
+    input.value = "" // 允许重复选同一文件
   }
 }
 </script>
@@ -68,8 +87,61 @@ async function handleFreeSubmit(idea: string) {
     <!-- 内容区 -->
     <div class="flex-1 overflow-hidden">
       <n-spin :show="submitting" size="large">
-        <GuidedForm v-if="mode === 'guided'" @submit="handleFormSubmit" />
-        <FreeInput v-else @submit="handleFreeSubmit" />
+        <div class="h-full flex flex-col">
+          <div class="flex-1 overflow-hidden">
+            <GuidedForm v-if="mode === 'guided'" @submit="handleFormSubmit" />
+            <FreeInput v-else @submit="handleFreeSubmit" />
+          </div>
+
+          <!-- 图片上传区（两种模式共用） -->
+          <div class="shrink-0 border-t border-[var(--border)] bg-[var(--bg-card)]/50">
+            <div class="max-w-2xl mx-auto px-8 py-3">
+              <div class="flex items-center gap-4">
+                <!-- 上传按钮 -->
+                <label class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-dim border border-dashed border-[var(--border)] cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors">
+                  <span>🖼</span>
+                  <span>{{ uploading ? '处理中…' : '添加图片' }}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    class="hidden"
+                    @change="onFileInput"
+                    :disabled="uploading"
+                  />
+                </label>
+
+                <!-- 缩略图预览 -->
+                <div class="flex items-center gap-2 flex-1 overflow-x-auto">
+                  <div
+                    v-for="(url, i) in images"
+                    :key="i"
+                    class="relative group shrink-0"
+                  >
+                    <img
+                      :src="url"
+                      class="w-10 h-10 rounded object-cover border border-[var(--border)]"
+                    />
+                    <button
+                      class="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-[var(--bg-card)] border border-[var(--border)] text-[10px] text-muted opacity-0 group-hover:opacity-100 hover:text-[var(--danger)] transition-all cursor-pointer"
+                      @click="removeImage(i)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 提示 -->
+                <span v-if="images.length === 0" class="text-xs text-muted shrink-0">
+                  支持上传产品截图、海报等
+                </span>
+
+                <!-- 错误 -->
+                <span v-if="imgError" class="text-xs text-[var(--danger)] shrink-0">{{ imgError }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </n-spin>
     </div>
   </div>

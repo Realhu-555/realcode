@@ -23,6 +23,12 @@
 - 竞品：{% for c in product.competitors %}{{ c }}{% if not loop.last %}、{% endif %}{% endfor %}
 {% endif %}
 
+{% if images %}
+## 用户上传的图片分析
+以下是视觉模型对用户上传图片的描述，请结合图片信息制定策略：
+{{ images }}
+{% endif %}
+
 {% if tools %}
 ## 可用工具
 {{ tools }}

@@ -1,21 +1,22 @@
-"""Web 服务 — FastAPI + WebSocket 实时推送"""
+"""素宣 Suxuan — 营销内容多 Agent 平台 Web 服务"""
 
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from src.agents.architect import ArchitectAgent
-from src.agents.backend import BackendAgent
-from src.agents.deployer import DeployerAgent
-from src.agents.frontend import FrontendAgent
-from src.agents.requirement import RequirementAgent
-from src.agents.tester import TesterAgent
-from src.orchestrator.state import ProjectState, Stage
+from src.agents.celve import CelveAgent
+from src.agents.gongzhonghao import GongzhonghaoAgent
+from src.agents.zhihu import ZhihuAgent
+from src.agents.xiaohongshu import XiaohongshuAgent
+from src.agents.shenjiao import ShenjiaoAgent
+from src.agents.export import ExportAgent
+from src.orchestrator.state import ContentProjectState, ContentStage
 
-app = FastAPI(title="AI Dev Platform")
+app = FastAPI(title="素宣 Suxuan")
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
@@ -25,243 +26,228 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 @app.get("/")
 async def index():
     html_path = static_dir / "index.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return {"service": "素宣 Suxuan", "version": "0.1.0"}
 
 
-@app.get("/download/{filename}")
-async def download_file(filename: str):
-    file_path = static_dir / "downloads" / filename
-    if not file_path.exists():
-        return HTMLResponse("文件不存在或已被清理", status_code=404)
-    return FileResponse(file_path, filename=filename, media_type="application/zip")
+# ════════════════════════════════════════════════════════
+# Agent 初始化
+# ════════════════════════════════════════════════════════
 
-
-# ─── WebSocket 管理 ──────────────────────────────────────
-
-
-class ConnectionManager:
-    def __init__(self):
-        self.active: dict[str, WebSocket] = {}
-
-    async def connect(self, ws: WebSocket) -> str:
-        await ws.accept()
-        client_id = uuid.uuid4().hex
-        self.active[client_id] = ws
-        return client_id
-
-    def disconnect(self, client_id: str):
-        self.active.pop(client_id, None)
-
-    async def send(self, client_id: str, data: dict):
-        ws = self.active.get(client_id)
-        if ws:
-            await ws.send_json(data)
-
-
-manager = ConnectionManager()
-
-# 持久化流水线状态，支持中断后恢复
-_pipelines: dict[str, dict] = {}
-
-# ─── Agent 初始化 ──────────────────────────────────────
+_content_pipelines: dict[str, dict] = {}
 
 
 def _build_agents():
     return {
-        "requirement": RequirementAgent(),
-        "architect": ArchitectAgent(),
-        "backend": BackendAgent(),
-        "frontend": FrontendAgent(),
-        "tester": TesterAgent(),
-        "deployer": DeployerAgent(),
+        "celve": CelveAgent(),
+        "gongzhonghao": GongzhonghaoAgent(),
+        "zhihu": ZhihuAgent(),
+        "xiaohongshu": XiaohongshuAgent(),
+        "shenjiao": ShenjiaoAgent(),
+        "export": ExportAgent(),
     }
 
 
-# ─── 进度映射 ──────────────────────────────────────────
-
-STAGE_LABELS = {
-    "requirement": "需求分析中…",
-    "architecture": "架构设计中…",
-    "backend": "正在生成后端代码…",
-    "frontend": "正在生成前端代码…",
-    "testing": "测试验证中…",
-    "deployment": "打包中…",
-    "done": "完成！",
-}
-
-STAGE_ORDER = ["requirement", "architecture", "backend", "frontend", "testing", "deployment"]
+# ════════════════════════════════════════════════════════
+# API 路由
+# ════════════════════════════════════════════════════════
 
 
-# ─── WebSocket 端点 ────────────────────────────────────
+class CreateContentProjectRequest(BaseModel):
+    mode: str = "form"
+    product_name: str | None = None
+    product_description: str | None = None
+    target_users: str | None = None
+    key_selling_points: list[str] | None = None
+    brand_tone: str | None = None
+    competitors: list[str] | None = None
+    user_idea: str | None = None
+    image_urls: list[str] | None = None
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    client_id = await manager.connect(ws)
+class ConfirmStrategyRequest(BaseModel):
+    confirmed: bool = True
+    feedback: str | None = None
+
+
+@app.post("/api/v1/content-projects")
+async def create_content_project(req: CreateContentProjectRequest):
+    """创建营销内容项目，启动策略 Agent"""
+    project_id = uuid.uuid4().hex[:12]
+    agents = _build_agents()
+
+    state: ContentProjectState = {
+        "input_mode": req.mode,
+        "product_name": req.product_name or "",
+        "product_description": req.product_description or "",
+        "target_users": req.target_users or "",
+        "key_selling_points": req.key_selling_points or [],
+        "brand_tone": req.brand_tone or "专业",
+        "competitors": req.competitors or [],
+        "user_idea": req.user_idea or "",
+        "image_urls": req.image_urls or [],
+        "strategy": None,
+        "gzh_content": None,
+        "zhihu_content": None,
+        "xhs_content": None,
+        "review_report": None,
+        "current_stage": ContentStage.STRATEGY,
+        "error_message": None,
+        "ask_user": None,
+        "messages": [],
+        "brand_profile_id": None,
+    }
 
     try:
-        while True:
-            data = await ws.receive_json()
-            action = data.get("action")
+        state = agents["celve"].run(state)
+    except Exception as e:
+        return {"project_id": project_id, "stage": "error", "error": str(e)}
 
-            if action == "build":
-                user_idea = data.get("idea", "")
-                await run_pipeline(client_id, user_idea)
-
-            elif action == "answer":
-                answer_text = data.get("answer", "")
-                await resume_pipeline(client_id, answer_text)
-
-    except WebSocketDisconnect:
-        manager.disconnect(client_id)
-        _pipelines.pop(client_id, None)
+    _content_pipelines[project_id] = {"state": state, "agents": agents}
+    return _content_state_response(project_id, state)
 
 
-async def run_pipeline(client_id: str, user_idea: str):
-    """启动/重新开始流水线"""
-    agents = _build_agents()
+@app.get("/api/v1/content-projects/{project_id}")
+async def get_content_project(project_id: str):
+    """查询项目状态和所有产出"""
+    saved = _content_pipelines.get(project_id)
+    if not saved:
+        return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
+    return _content_state_response(project_id, saved["state"])
 
-    state: ProjectState = {
-        "user_idea": user_idea,
-        "prd": None,
-        "tech_plan": None,
-        "frontend_code": None,
-        "backend_code": None,
-        "test_report": None,
-        "zip_path": None,
-        "current_stage": Stage.REQUIREMENT,
-        "error_message": None,
-        "messages": [],
-        "ask_user": None,
+
+@app.post("/api/v1/content-projects/{project_id}/confirm-strategy")
+async def confirm_content_strategy(project_id: str, req: ConfirmStrategyRequest):
+    """确认策略，继续到内容生成阶段"""
+    saved = _content_pipelines.get(project_id)
+    if not saved:
+        return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
+
+    state = saved["state"]
+    agents = saved["agents"]
+
+    if req.feedback:
+        state["messages"] = state.get("messages", []) + [
+            {"from": "user", "to": "celve", "type": "answer", "content": req.feedback}
+        ]
+        state["ask_user"] = None
+        state = agents["celve"].run(state)
+        if state.get("ask_user"):
+            _content_pipelines[project_id] = {"state": state, "agents": agents}
+            return _content_state_response(project_id, state)
+
+    # 三路并行生成
+    state["current_stage"] = ContentStage.GENERATING
+    state = agents["gongzhonghao"].run(state)
+    state = agents["zhihu"].run(state)
+    state = agents["xiaohongshu"].run(state)
+
+    # 审校 → 完成
+    state["current_stage"] = ContentStage.REVIEW
+    state = agents["shenjiao"].run(state)
+    state["current_stage"] = ContentStage.DONE
+
+    _content_pipelines[project_id] = {"state": state, "agents": agents}
+    return _content_state_response(project_id, state)
+
+
+@app.get("/api/v1/content-projects/{project_id}/content/{channel}")
+async def get_channel_content(project_id: str, channel: str):
+    """获取指定渠道内容"""
+    saved = _content_pipelines.get(project_id)
+    if not saved:
+        return {"project_id": project_id, "error": "项目不存在"}
+
+    channel_keys = {
+        "gongzhonghao": "gzh_content",
+        "zhihu": "zhihu_content",
+        "xiaohongshu": "xhs_content",
+    }
+    key = channel_keys.get(channel)
+    if not key:
+        return {"project_id": project_id, "error": f"无效渠道: {channel}"}
+
+    return {
+        "project_id": project_id,
+        "channel": channel,
+        "full_content": saved["state"].get(key),
     }
 
-    await _execute_stages(client_id, agents, state, stage_index=0)
 
-
-async def resume_pipeline(client_id: str, answer_text: str):
-    """用户回答追问后恢复流水线"""
-    saved = _pipelines.get(client_id)
+@app.get("/api/v1/content-projects/{project_id}/review")
+async def get_review_report(project_id: str):
+    """获取审校报告"""
+    saved = _content_pipelines.get(project_id)
     if not saved:
-        await manager.send(
-            client_id, {"type": "error", "message": "没有正在进行的构建任务，请重新开始。"}
-        )
-        return
+        return {"project_id": project_id, "error": "项目不存在"}
+    return {
+        "project_id": project_id,
+        "full_content": saved["state"].get("review_report"),
+    }
 
-    agents = _build_agents()
+
+@app.get("/api/v1/content-projects/{project_id}/export")
+async def export_content(project_id: str):
+    """导出所有内容为 Markdown"""
+    saved = _content_pipelines.get(project_id)
+    if not saved:
+        return {"project_id": project_id, "error": "项目不存在"}
+
     state = saved["state"]
-    next_index = saved["next_index"]
+    agents = saved["agents"]
+    state = agents["export"].run(state)
 
-    # 注入用户答案
-    state["messages"] = state.get("messages", []) + [
-        {
-            "from": "user",
-            "to": "requirement",
-            "type": "answer",
-            "content": answer_text,
-        }
-    ]
-    state["ask_user"] = None
+    export_text = ""
+    for msg in state.get("messages", []):
+        if msg.get("from") == "export" and msg.get("type") == "output":
+            export_text = msg["content"]
+            break
 
-    await _execute_stages(client_id, agents, state, stage_index=next_index)
-
-
-async def _execute_stages(
-    client_id: str,
-    agents: dict,
-    state: ProjectState,
-    stage_index: int,
-):
-    """从指定阶段开始执行流水线，每阶段检查是否需要追问"""
-    stage_specs = [
-        ("requirement", ["requirement"]),
-        ("architecture", ["architect"]),
-        ("backend", ["backend"]),
-        ("frontend", ["frontend"]),
-        ("testing", ["tester"]),
-        ("deployment", ["deployer"]),
-    ]
-
-    for i in range(stage_index, len(stage_specs)):
-        stage_name, agent_names = stage_specs[i]
-
-        await manager.send(
-            client_id,
-            {
-                "type": "progress",
-                "stage": stage_name,
-                "label": STAGE_LABELS.get(stage_name, stage_name),
-            },
-        )
-
-        for name in agent_names:
-            try:
-                agent = agents[name]
-                state = agent.run(state)
-            except Exception as e:
-                await manager.send(
-                    client_id, {"type": "error", "message": f"{name} 执行失败: {str(e)}"}
-                )
-                _pipelines.pop(client_id, None)
-                return
-
-        # 每阶段执行后检查是否有追问
-        if state.get("ask_user"):
-            _pipelines[client_id] = {
-                "state": state,
-                "next_index": i,  # 从当前阶段重试
-            }
-            await manager.send(
-                client_id,
-                {
-                    "type": "clarify",
-                    "question": state["ask_user"],
-                    "state": _serialize_state(state, stage_name),
-                },
-            )
-            return
-
-        # 推送本阶段产出
-        await manager.send(
-            client_id,
-            {
-                "type": "update",
-                "stage": stage_name,
-                "state": _serialize_state(state, stage_name),
-            },
-        )
-
-    # 全部完成
-    _pipelines.pop(client_id, None)
-    await manager.send(
-        client_id,
-        {
-            "type": "done",
-            "state": _serialize_state(state, "done"),
-        },
-    )
+    return {
+        "project_id": project_id,
+        "format": "markdown",
+        "content": export_text,
+    }
 
 
-def _serialize_state(state: ProjectState, stage: str) -> dict:
-    """提取当前阶段可展示的内容"""
-    result: dict[str, str | int] = {"stage": stage}
-    if state.get("ask_user"):
-        result["ask_user"] = str(state["ask_user"])
-    if state.get("prd"):
-        result["prd"] = str(state["prd"])[:2000]
-    if state.get("tech_plan"):
-        result["tech_plan"] = str(state["tech_plan"])[:2000]
-    if state.get("backend_code"):
-        result["backend_code"] = str(state["backend_code"])[:2000]
-    if state.get("frontend_code"):
-        result["frontend_code"] = str(state["frontend_code"])[:2000]
-    if state.get("test_report"):
-        result["test_report"] = str(state["test_report"])[:1000]
-    if state.get("zip_path"):
-        result["zip_path"] = str(state["zip_path"])
-    return result
+# ════════════════════════════════════════════════════════
+# 工具函数
+# ════════════════════════════════════════════════════════
 
 
-# ─── 启动入口 ──────────────────────────────────────────
+def _content_state_response(project_id: str, state: ContentProjectState) -> dict:
+    stage = state.get("current_stage", ContentStage.STRATEGY)
+
+    strategy = None
+    if state.get("strategy"):
+        strategy = {"full_content": state["strategy"]}
+
+    contents: dict[str, dict | None] = {
+        "gongzhonghao": {"full_content": state["gzh_content"]} if state.get("gzh_content") else None,
+        "zhihu": {"full_content": state["zhihu_content"]} if state.get("zhihu_content") else None,
+        "xiaohongshu": {"full_content": state["xhs_content"]} if state.get("xhs_content") else None,
+    }
+
+    review_report = None
+    if state.get("review_report"):
+        review_report = {"full_content": state["review_report"]}
+
+    return {
+        "project_id": project_id,
+        "stage": stage.value if hasattr(stage, "value") else str(stage),
+        "ask_user": state.get("ask_user"),
+        "strategy": strategy,
+        "contents": contents,
+        "review_report": review_report,
+        "created_at": "",
+        "updated_at": "",
+    }
+
+
+# ════════════════════════════════════════════════════════
+# 启动入口
+# ════════════════════════════════════════════════════════
 
 
 def start():
