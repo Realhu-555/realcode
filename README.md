@@ -2,167 +2,139 @@
 
 > *一张白宣铺开，AI 蘸墨，写出千万种可能。*
 
-基于 LangGraph 的营销内容自动化生成平台。用户输入产品信息，系统通过 **6 个协作 AI Agent** 自动完成**策略分析 → 三渠道并行生成（公众号/知乎/小红书）→ 审校**全流程。
+基于 LangGraph 的营销内容自动化生成平台。用户输入产品信息，系统通过 **6 个协作 AI Agent** 自动完成 **策略分析 → 三渠道并行生成（公众号/知乎/小红书）→ 审校 → 导出**全流程。
 
 ## 核心流程
 
 ```
-用户输入产品信息（引导表单 / 自由文本）
+用户输入（表单/自由文本 + 可选图片）
     ↓
-┌─────────────┐
-│   策略 Agent  │ ← 分析产品 → 输出内容策略 → 用户确认
-│  (DeepSeek)  │
-└──────┬──────┘
+┌──────────────────────┐
+│   策略 Agent           │ ← 分析产品 + 图片 → 输出策略 → 用户确认
+│   (DeepSeek V4)        │    信息不足时主动追问
+└──────┬───────────────┘
        ↓
 ┌───┴───┬───────┬──────────┐
-│  公众号  │  知乎   │  小红书    │ ← 三路并行生成
-│ Agent   │ Agent  │  Agent    │   公众号→DeepSeek
-│ 深度长文  │ 专业回答 │ 种草笔记   │   知乎→DeepSeek
-└───┬───┴───┬───┴────┬─────┘   小红书→MiniMax
+│  公众号  │  知乎   │  小红书    │ ← 三路并行生成（全 DeepSeek V4）
+│  深度长文  │ 专业回答 │ 种草笔记   │
+│ 1500-3000 │1000-2000│ 500-1000  │
+└───┬───┴───┬───┴────┬─────┘
     ↓       ↓        ↓
 ┌─────────────────────────┐
-│      审校 Agent          │ ← 五项检查（调性/卖点/用户/事实/渠道）
-│      (MiniMax)           │
+│      审校 Agent          │ ← 五项检查清单（调性/卖点/用户/事实/渠道适配）
+│      (DeepSeek V4)       │    输出整体评级 + 逐项改进建议
 └───────────┬─────────────┘
             ↓
 ┌─────────────────────────┐
-│      导出                │ ← 复制到剪贴板 / 下载 Markdown
+│      导出                │ ← Markdown 一键导出 / 复制
 └─────────────────────────┘
 ```
 
 ## 技术栈
 
-| 组件 | 技术 | 说明 |
-|------|------|------|
-| 编排框架 | **LangGraph** | StateGraph 驱动的 Agent 编排，支持条件分支 + 并行执行 |
-| LLM | DeepSeek V4 + MiniMax 2.7 | **多模型智能路由**：深度内容→DeepSeek，轻松内容→MiniMax |
-| 子系统 | 工具系统 / Prompt 系统 / 记忆系统 | 执行/描述分离 + Jinja2 模板化 + SQLite 品牌档案 |
-| 后端 | Python 3.12+、FastAPI、WebSocket | 异步 API + 实时进度推送 |
-| 前端 | Vue 3 + TypeScript + Naive UI + UnoCSS | 暗/亮双主题 SPA |
-| 记忆 | SQLite | 品牌档案持久化 + 项目历史 |
-| 部署 | Docker | 容器化部署 |
+| 组件 | 技术 |
+|------|------|
+| 编排框架 | **LangGraph** — StateGraph 驱动，条件分支 + 并行 fan-out |
+| LLM | **DeepSeek V4** — 全部 Agent 统一模型 |
+| 视觉理解 | **MiMo V2.5**（小米）— 图片→文字描述，注入策略分析 |
+| 工具系统 | execution/description 分离 + 单例注册表 + Builder 模式 |
+| Prompt 系统 | **Jinja2 模板化** — 模板文件独立于代码，改 prompt 不碰源码 |
+| 后端 | Python 3.12+ / FastAPI / WebSocket |
+| 前端 | Vue 3 + TypeScript + Naive UI + UnoCSS |
+| 记忆 | SQLite — 品牌档案 + 项目历史 |
 
-## 架构设计亮点
+## 架构亮点
 
-### 1. 工具系统 — 执行/描述分离
+### 1. 工具系统
 
-```python
-# Tool 协议：给 AI 看的描述和执行逻辑完全分离
-ToolDescription(name, description, parameters)  # 注入 system prompt
-Tool.execute(ctx, **kwargs)                     # 实际逻辑
+Tool 协议把 **给 AI 看的描述** 和 **实际执行逻辑** 完全分离，Agent 只能看到它有权限使用的工具。
 
-# 单例注册表 + Builder 模式
-tool_registry.register(WebSearchTool()).register(ContentSaveTool())
+### 2. Prompt 系统
 
-# 按 Agent 权限过滤：Agent 看不到它无权使用的工具
-tool_registry.build_descriptions(["content_save"])  # 策略 Agent 看不到这个
-```
+三阶段分离：`PromptContext`（纯数据组装）→ `TemplateRenderer`（Jinja2 渲染）→ `Agent.run()`（注入 LLM）。模板文件是 `.md` 明文，运营也能调。
 
-### 2. Prompt 系统 — 三阶段分离
+### 3. 多模态视觉
 
-```
-PromptContext（纯数据）  →  TemplateRenderer（Jinja2 渲染）  →  Agent.run()（注入 LLM）
-产品信息 + 策略 + 工具描述 + 品牌偏好   模板文件独立于代码        最终 system prompt
-```
+用户上传产品截图 → MiMo V2.5 图片理解 → 文字描述注入策略分析。视觉模型和推理模型各司其职，不给纯文本模型塞图片。
 
-模板文件独立于 Python 代码，改 prompt 不需要改源码。
+### 4. 多 Agent 编排
 
-### 3. 多 Agent 编排 — LangGraph 状态图
-
-四个判断标准全部满足，是真正的多 Agent 场景：
-- ✅ **不同的 System Prompt**：公众号深度长文 / 知乎专业知识 / 小红书轻松种草
-- ✅ **不同的工具集**：策略 Agent 有 web_search，审校 Agent 有 content_read
-- ✅ **并行执行**：三渠道同时生成，总耗时 = max(三路) 而非 sum
-- ✅ **不同的模型**：DeepSeek（深度内容）vs MiniMax（轻松内容 + 审校）
-
-### 4. 记忆系统 — 品牌档案
-
-用户第一次推广"A 产品"填完整表单。第二次推广"B 产品"时，系统自动检索已有品牌档案，预填调性和偏好。越用越省事。
+四项条件全部满足，是真正的多 Agent 场景：
+- ✅ 不同 System Prompt：公众号深度长文 / 知乎专业知识 / 小红书轻松种草
+- ✅ 不同工具集：策略 Agent 有 web_search，渠道 Agent 有 content_save，审校 Agent 有 content_read
+- ✅ 并行执行：三渠道同时生成，总耗时 = max(三路)
+- ✅ 不同模型需求：可灵活切换（当前全部 DeepSeek V4）
 
 ## 项目结构
 
 ```
 ai-dev-platform/
-├── frontend/                # Vue 3 前端（SPA）
+├── frontend/                 # Vue 3 前端
 │   └── src/
-│       ├── views/           # 3 个页面：创建/策略确认/内容预览
-│       ├── components/      # 8 个组件：表单/策略卡/内容面板/进度时间线...
-│       ├── stores/          # Pinia 状态管理
-│       ├── composables/     # 可组合函数（useTheme/useExport/useAgentProgress）
-│       └── api/             # Axios 客户端 + API 类型定义
+│       ├── views/            # 3 个页面：创建/策略确认/内容预览
+│       ├── components/       # 8 个组件
+│       ├── stores/           # Pinia 状态管理
+│       ├── composables/      # 可组合函数（useTheme/useExport/useImageUpload...）
+│       └── api/              # Axios 客户端
 ├── src/
-│   ├── agents/              # Agent 层（6 个 Agent）
-│   │   └── base.py          # Agent 基类（支持工具调用 + PromptContext）
-│   ├── tools/               # 工具系统
-│   │   ├── protocol.py      # Tool/Description/Context/Result 协议
-│   │   ├── registry.py      # 单例注册表（Builder 模式）
-│   │   └── implementations/ # web_search / content_io
-│   ├── prompt/              # Prompt 系统
-│   │   ├── context.py       # PromptContext 多源数据组装
-│   │   ├── renderer.py      # Jinja2 模板渲染器
-│   │   └── templates/       # 5 个 Agent 模板（.md 文件）
-│   ├── orchestrator/        # 编排层
-│   │   ├── graph.py         # LangGraph 状态图
-│   │   ├── state.py         # ContentProjectState 共享状态
-│   │   └── long_term_memory.py  # 长期记忆（SQLite）
-│   ├── llm/                 # LLM 调用层
-│   │   ├── provider.py      # 统一 LLM Provider（多模型路由）
-│   │   └── prompts/         # 历史 Prompt（逐步迁移到 src/prompt/）
-│   ├── sandbox/             # 代码执行沙箱
-│   ├── web/                 # FastAPI Web 服务
-│   └── utils/               # 配置、日志、健康检查
-├── tests/                   # 测试代码
-├── docs/                    # 设计文档
+│   ├── agents/               # 6 个业务 Agent
+│   │   ├── celve.py          #   策略分析（ASK_USER 追问）
+│   │   ├── gongzhonghao.py   #   公众号长文
+│   │   ├── zhihu.py          #   知乎回答
+│   │   ├── xiaohongshu.py    #   小红书笔记
+│   │   ├── shenjiao.py       #   审校报告
+│   │   └── export.py         #   Markdown 导出
+│   ├── tools/                # 工具系统
+│   │   ├── protocol.py       #   Tool/Description/Context/Result 协议
+│   │   ├── registry.py       #   单例注册表
+│   │   └── implementations/  #   web_search / content_io
+│   ├── prompt/               # Prompt 系统
+│   │   ├── context.py        #   PromptContext 多源数据组装
+│   │   ├── renderer.py       #   Jinja2 模板渲染器
+│   │   └── templates/        #   5 个 Agent 模板（.md）
+│   ├── vision/               # 多模态视觉理解（MiMo V2.5）
+│   ├── orchestrator/         # 编排层
+│   │   ├── graph.py          #   LangGraph 状态图
+│   │   ├── state.py          #   ContentProjectState
+│   │   └── long_term_memory.py # 长期记忆（SQLite）
+│   ├── llm/provider.py       # 统一 LLM Provider
+│   ├── web/server.py         # FastAPI Web 服务
+│   └── utils/                # 配置/日志/健康检查
+├── tests/
+├── docs/
 │   └── 营销内容多Agent平台-系统设计.md
-└── .env                     # API Key（不入 git）
+└── .env                      # API Key（不入 git）
 ```
 
 ## 快速开始
 
 ```bash
-# 克隆项目
 git clone https://github.com/Realhu-555/realcode.git
 cd ai-dev-platform
 
-# --- 后端 ---
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# 后端
 pip install -e ".[dev]"
-
-# 配置 API Key
-cp .env.example .env
-# 编辑 .env 填入 DeepSeek 和 MiniMax API Key
-
-# 启动后端
+echo "DEEPSEEK_API_KEY=sk-..." >> .env    # 必须
+echo "MIMO_API_KEY=sk-..." >> .env        # 可选（图片理解）
 python -m uvicorn src.web.server:app --host 0.0.0.0 --port 8080 --reload
 
-# --- 前端 ---
-cd frontend
-npm install
-npm run dev
-# 访问 http://localhost:5173
+# 前端
+cd frontend && npm install && npm run dev
+# → http://localhost:5173
 ```
+
+> **没有 API Key？** 前端内置 mock 数据，打开 http://localhost:5173 填表单提交即可看到完整效果。
 
 ## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/content-projects` | 创建营销内容项目（表单/自由模式） |
+| POST | `/api/v1/content-projects` | 创建项目（表单/自由模式 + 可选图片） |
 | GET | `/api/v1/content-projects/{id}` | 查询项目状态和所有产出 |
 | POST | `/api/v1/content-projects/{id}/confirm-strategy` | 确认/修改策略 |
-| GET | `/api/v1/content-projects/{id}/content/{channel}` | 获取指定渠道内容 |
+| GET | `/api/v1/content-projects/{id}/content/{channel}` | 获取渠道内容 |
 | GET | `/api/v1/content-projects/{id}/review` | 获取审校报告 |
-| GET | `/api/v1/content-projects/{id}/export` | 导出全部内容（Markdown） |
-| POST | `/api/v1/brand-profiles` | 保存品牌档案 |
-| GET | `/api/v1/brand-profiles` | 查询已有品牌档案 |
-| WS | `/ws` | WebSocket 实时推送 Agent 执行进度 |
-
-## 实施进度
-
-- [x] Phase 1：子系统层 — 工具系统 + Prompt 系统 + 记忆系统 + Agent 基类改造
-- [ ] Phase 2：Agent 实现 — 6 个 Agent（策略/公众号/知乎/小红书/审校/导出）
-- [ ] Phase 3：编排 + API — LangGraph 集成 + FastAPI 路由 + WebSocket 进度推送
-- [x] Phase 4：前端 — Vue 3 SPA 完整可用（创建/策略确认/内容预览）
+| GET | `/api/v1/content-projects/{id}/export` | 导出 Markdown |
 
 ## License
 
