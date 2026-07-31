@@ -19,9 +19,9 @@ def test_all_content_agents_have_deepseek_model():
         assert "deepseek" in model, f"{agent_type}: {model}"
 
 
-def test_vision_model():
-    """视觉模型配置"""
-    assert LLMProvider.MODEL_MAP["vision"] == "mimo:mimo-v2.5"
+def test_vision_moved_to_vision_module():
+    """视觉模型已移至 src.vision，provider 只做文本 LLM"""
+    assert "vision" not in LLMProvider.MODEL_MAP  # 视觉功能在 vision/__init__.py
 
 
 def test_chat_returns_string():
@@ -97,19 +97,9 @@ def test_strip_thinking_blocks():
     assert _strip_thinking("") == ""
 
 
-def test_mimo_client_lazy_loading():
-    """MiMo 客户端懒加载"""
-    from src.llm.provider import LLMProvider
-
-    p = LLMProvider()
-    assert p._mimo_client is None
-    # 不实际调用以避免网络请求
-
-
-def test_chat_multimodal_signature():
-    """多模态方法签名"""
-    from src.llm.provider import LLMProvider
-
-    p = LLMProvider()
-    assert callable(p.chat_multimodal)
-    # text_prompt + image_data_urls -> str
+def test_vision_module_imports():
+    """视觉模块独立存在"""
+    from src.vision import describe_images
+    import asyncio
+    assert callable(describe_images)
+    # describe_images(image_data_urls, product_name) -> str

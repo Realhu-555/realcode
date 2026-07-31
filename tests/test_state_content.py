@@ -145,15 +145,15 @@ class TestLLMProviderModelMap:
             assert model is not None, f"缺少 {name} 模型映射"
             assert "deepseek" in model, f"{name} 应该用 DeepSeek，实际: {model}"
 
-    def test_vision_model_exists(self):
+    def test_vision_module_standalone(self):
+        """视觉模块独立 — describe_images 可用"""
+        from src.vision import describe_images
+        import asyncio
+        assert callable(describe_images)
+
+    def test_llm_provider_text_only(self):
+        """LLMProvider 只做文本"""
         from src.llm.provider import LLMProvider
-
-        assert "vision" in LLMProvider.MODEL_MAP
-        assert "mimo" in LLMProvider.MODEL_MAP["vision"]
-
-    def test_chat_multimodal_signature(self):
-        from src.llm.provider import LLMProvider
-
         llm = LLMProvider()
-        assert callable(llm.chat_multimodal)
-        assert hasattr(llm, "mimo_client")
+        assert callable(llm.chat)
+        assert "vision" not in LLMProvider.MODEL_MAP
