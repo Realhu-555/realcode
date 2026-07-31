@@ -1,0 +1,25 @@
+{
+  "mode": "live",
+  "timestamp": "20260731_120311",
+  "total_elapsed": 439.4,
+  "results": [
+    {
+      "scenario": "眠眠 — 睡眠管理 App",
+      "mode": "form",
+      "elapsed": 265.8,
+      "gzh_len": 3979,
+      "zhihu_len": 2681,
+      "xhs_len": 990,
+      "review_len": 3193
+    },
+    {
+      "scenario": "爪爪到家 — 宠物上门护理",
+      "mode": "form",
+      "elapsed": 173.6,
+      "gzh_len": 3268,
+      "zhihu_len": 2887,
+      "xhs_len": 835,
+      "review_len": 2388
+    }
+  ]
+}

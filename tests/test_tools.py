@@ -175,7 +175,7 @@ class TestToolRegistry:
 
 class TestWebSearchTool:
     @pytest.mark.asyncio
-    async def test_execute_returns_simulated(self):
+    async def test_execute_returns_results(self):
         from src.tools.implementations.web_search import WebSearchTool
 
         tool = WebSearchTool()
@@ -183,8 +183,8 @@ class TestWebSearchTool:
         result = await tool.execute(ctx, query="测试关键词")
 
         assert result.success is True
-        assert result.data["source"] == "simulated"
-        assert result.data["results"] == []
+        assert "results" in result.data
+        assert result.data["query"] == "测试关键词"
         assert result.system_reminder is not None
 
 

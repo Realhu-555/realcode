@@ -1,0 +1,25 @@
+{
+  "mode": "live",
+  "timestamp": "20260731_122605",
+  "total_elapsed": 499.5,
+  "results": [
+    {
+      "scenario": "DevGate API 网关",
+      "mode": "form",
+      "elapsed": 265.1,
+      "gzh_len": 3726,
+      "zhihu_len": 3472,
+      "xhs_len": 846,
+      "review_len": 4748
+    },
+    {
+      "scenario": "DevGate API 网关",
+      "mode": "free",
+      "elapsed": 234.4,
+      "gzh_len": 3487,
+      "zhihu_len": 2532,
+      "xhs_len": 1026,
+      "review_len": 3284
+    }
+  ]
+}

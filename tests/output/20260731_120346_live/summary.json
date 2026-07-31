@@ -1,0 +1,25 @@
+{
+  "mode": "live",
+  "timestamp": "20260731_120346",
+  "total_elapsed": 424.0,
+  "results": [
+    {
+      "scenario": "蜂巢 NAS — 家用智能存储",
+      "mode": "form",
+      "elapsed": 202.8,
+      "gzh_len": 3082,
+      "zhihu_len": 3094,
+      "xhs_len": 1292,
+      "review_len": 2140
+    },
+    {
+      "scenario": "BoardX — 在线协作白板",
+      "mode": "form",
+      "elapsed": 221.2,
+      "gzh_len": 3323,
+      "zhihu_len": 3076,
+      "xhs_len": 1316,
+      "review_len": 3239
+    }
+  ]
+}

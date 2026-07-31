@@ -1,0 +1,118 @@
+{
+  "project_id": "test-05-form",
+  "total_elapsed": 183.5,
+  "pipeline": [
+    {
+      "stage": "strategy",
+      "status": "done",
+      "elapsed": 57.2,
+      "input_summary": {
+        "product_name": "码趣 CodeFun",
+        "product_description": "面向 7-14 岁儿童的在线编程学习平台，通过游戏化关卡和 AI 助教引导孩子学习 Python",
+        "brand_tone": "轻松",
+        "strategy": null,
+        "gzh_content": null,
+        "zhihu_content": null,
+        "xhs_content": null,
+        "review_report": null
+      },
+      "output_summary": {
+        "product_name": "码趣 CodeFun",
+        "product_description": "面向 7-14 岁儿童的在线编程学习平台，通过游戏化关卡和 AI 助教引导孩子学习 Python",
+        "brand_tone": "轻松",
+        "strategy": {
+          "len": 2672,
+          "preview": "基于搜索到的 2026 年少儿编程市场进入“深度洗牌期”、家长决策趋于理性、且 AI 辅助教学成为主流的背景，以下是为 **码趣 CodeFun** 定制的 2026 年下半年内容营销策略。\n\n当前市"
+        },
+        "gzh_content": null,
+        "zhihu_content": null,
+        "xhs_content": null,
+        "review_report": null
+      },
+      "error": null,
+      "tool_calls": [
+        {
+          "tool": "web_search",
+          "params": {
+            "query": "2026 儿童编程 在线学习 市场趋势 家长 需求",
+            "max_results": 5
+          },
+          "result": {
+            "query": "2026 儿童编程 在线学习 市场趋势 家长 需求",
+            "results": [
+              {
+                "title": "2034年儿童在线编程市场份额、增长、趋势和机遇及增长因素",
+                "url": "https://www.theinsightpartners.com/zh-CN/reports/online-coding-for-kids-market",
+                "content": "下载免费样本   Buy Now\n\nThe Insight Partners - Logo \n\n报告日期: Apr 2026   |   报告代码: TIPRE00017930  Email:  sales@theinsightpartners.com\n\n下载免费样本   Buy Now\n\n家 报告存储 科技、媒体和电信 儿童在线编码市场)\n\n 描述\n 目录\n 常见问题\n 研究方法\n\n  \n\n全球儿童在线编程市场规模预计将从2025年的57.6亿美元增长到2034年的270.2亿美元。预计该市场在2026-2034年预测期内将以18.73%的复合年增长率增长。 [...] +1-646-491-9876   +44-20-8125-4005\n\n# 2034年儿童在线编程市场规模、份额及需求\n\n历史数据 : 2021-2024  |  基准年 : 2025  |  预测期 : 2026-2034\n\n儿童在线编程市场规模及预测（2021-2034 年）、全球及区域份额、趋势和增长机会分析报告涵盖范围：按语言类型（Java 和 JavaScript、SQL、HTML、Python、CSS、R"
+              },
+              {
+                "title": "关于在线少儿编程的需求分析",
+                "url": "https://www.woshipm.com/pmd/3337723.html",
+                "content": "经济趋势：少儿适龄人口的增长，新生代的父母人群的增长，家长的文化水平层次也在在逐渐增高，对STEAM教育的认知也会加深，随之投入力度也会加大。取3-18岁人口为2.4亿人，且客单价为10000元/年进行敏感性分析，当渗透率达到2.0%、3.0%和5.0%时，市场规模分别可达480亿元、720亿元和1200亿元。\n\n社会趋势：国内少儿编程的渗透率仅为1.5%左右，少儿编程仍处于初期阶段。在工业4.0的到来，智能化的发展背景下，少儿编程作为科创教育的典范，逐步变为新时代的发展趋势。《青少年编程能力等级》标准的发布意味这权威标准正在逐渐形成，少儿编程并不是单纯传授给孩子某一局限性技能，而是一种未来在智能时代可以长期受益的本领。\n\n技术趋势：由scratch引进到二次开发，到以编程猫自主研发的kitten等图形编程语言/工具的问世，可见在未来图形化编程工具技术会越来越成熟，本土化越来越出色，图形到代码的衔接断层会越来越弱化，让青少儿在入门到进阶都能良好的衔接。工业4.0、5G+AI+VR/AR的技术逐步成熟也会让少儿编程教育在未来拥有更丰富的教育体系与呈现方式。\n\n## 四、用户需求分析 [."
+              },
+              {
+                "title": "2026年少儿编程市场主流专业服务商，模式、成本与出口路径深度拆解_腾讯新闻",
+                "url": "https://view.inews.qq.com/a/20260709A02XRU00",
+                "content": "核心模式：强调“赛学合一”，课程体系大量融入机器人搭建与编程控制场景，适合动手能力强、偏好项目制学习的学生。\n\n　　适配场景：对VEX、WRC（世界机器人大赛）等机器人竞赛有明确参赛需求的家庭。\n\n4.3 魔扣少儿编程\n\n　　背景与定位：发源于天津地区的区域性强势品牌，据天津市消费者协会2025年调研数据，其在当地K12阶段编程市场渗透率排名靠前。\n\n　　核心模式：注重线下面授与线上辅导的结合，主打“小班分层教学”，在华北地区公立校课后服务中具有一定覆盖率。\n\n　　适配场景：小学高年级至初中阶段，寻求扎实的代码逻辑训练与本地化竞赛服务的学员。\n\n4.4 趣编程\n\n　　背景与定位：以互联网产品思维切入市场的线上服务商，据易观分析《2026中国在线素质教育用户行为洞察》报告，其App端月活用户数在同类竞品中排名前六。\n\n　　核心模式：主打AI辅助教学与游戏化闯关设计，课程单价相对较低，适合作为启蒙阶段的补充工具。\n\n　　适配场景：预算有限、处于启蒙观望期，或需要利用碎片化时间进行编程思维锻炼的低龄学生。\n\n4.5 逻得岛 [...] 核心模式：借助成熟的K12学科运营经验，提供“编程+数学"
+              },
+              {
+                "title": "2026 少儿编程机构大揭秘：选课避坑与品牌全知道 - 最新活动 - 中国教育网-中国教育网是一家综合教育信息网 chinaedunet.com",
+                "url": "https://www.chinaedunet.com/html/zxhd/10202606171279.html",
+                "content": "- 推荐理由：项目实战驱动，作品导向性强，适合喜欢动手创造、在项目中掌握技能的孩子。 本文来自www.chinaedunet.com\n\nwww.chinaedunet.com\n\n行业观察与趋势解读 2026 年，少儿编程行业步入“深度洗牌期”，家长决策从“盲目跟风”转向“精准匹配”。清华大学教授李星强调，基础教育要打好做人基础，包括逻辑思维、计算能力及人际交往与协作能力。优质机构不仅要有完善课程体系、稳定全职师资，还需有可验证竞赛出口与透明教学服务。\n\n内容来自www.chinaedunet.com\n\n中国教育网\n\n给家长的实用建议 ：\n\nwww.chinaedunet.com\n\nwww.chinaedunet.com网络，www.chinaedunet.com\n\n明确目标：兴趣启蒙选项目式、游戏化平台；竞赛升学选有 NOI 金牌教练的信奥机构。 www.chinaedunet.com\n\n本文来自www.chinaedunet.com\n\n试听验证：观察孩子课后是否主动复述逻辑、老师是否引导追问。 内容来自www.chinaedunet.com [...] “孩子学编程半年，连简单游戏都"
+              },
+              {
+                "title": "2024少儿编程行业洞察分析报告：赛道企业顶峰相见",
+                "url": "https://m.thepaper.cn/newsDetail_forward_26846424",
+                "content": "目前少儿编程相关资源主要集中在一二线城市，在三四线及以下城市市场认知度与接受度并不高。相信伴随区域经济的宏观调控，教育资源的均衡将得到进一步改善，市场对少儿编程等素质类教育的需求会逐步提高。并且，随着线上平台出现更多创新课程形式，预计将有更多少儿编程课程进入低线城市发展。\n\n此外，B端/G端市场需求同样不容小觑，广大公立校和其他企业机构尚有编程服务场景。具体到少儿编程机构自身，近几年各家均发力进行模式优化和探索，由单一向协同，由粗放向精细发展。宏观来看，从单纯教培向教培+工具+平台的“生态圈”发展或成为未来趋势。\n\n4.4 参培需求将有效得到释放，少儿编程参培地位逐渐提高\n\n随着科技发展的推动和社会对STEM教育需求的增长，少儿编程课程中所涉及的各类基于探索、合作、挑战、竞争等不同形式的实操互动环节，将会受到越来越多家长认可和青睐，少儿编程的学习地位有望进一步提高。 [...] 家长更注重孩子的课程练习和学习成果，孩子的实践动手和思考解决问题的的外化呈现形式是家长选择少儿编程的重要考量环节，因此以在线为主的互动课程教学备受家长青睐，软件硬件的操作实践和赛事考核给与了家长正向的反馈。\n\n"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "stage": "gongzhonghao",
+      "status": "done",
+      "elapsed": 63.7,
+      "input_summary": null,
+      "output_summary": {
+        "len": 3291
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "zhihu",
+      "status": "done",
+      "elapsed": 59.0,
+      "input_summary": null,
+      "output_summary": {
+        "len": 3365
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "xiaohongshu",
+      "status": "done",
+      "elapsed": 21.7,
+      "input_summary": null,
+      "output_summary": {
+        "len": 1067
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "shenjiao",
+      "status": "done",
+      "elapsed": 62.7,
+      "input_summary": null,
+      "output_summary": {
+        "len": 4339
+      },
+      "error": null,
+      "tool_calls": []
+    }
+  ]
+}

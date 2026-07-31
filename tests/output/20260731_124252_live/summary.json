@@ -1,0 +1,16 @@
+{
+  "mode": "live",
+  "timestamp": "20260731_124252",
+  "total_elapsed": 183.5,
+  "results": [
+    {
+      "scenario": "码趣 — 少儿编程平台",
+      "mode": "form",
+      "elapsed": 183.5,
+      "gzh_len": 3291,
+      "zhihu_len": 3365,
+      "xhs_len": 1067,
+      "review_len": 4339
+    }
+  ]
+}

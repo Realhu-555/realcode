@@ -1,0 +1,25 @@
+{
+  "mode": "live",
+  "timestamp": "20260731_120325",
+  "total_elapsed": 423.0,
+  "results": [
+    {
+      "scenario": "账策 — 财税自动化",
+      "mode": "form",
+      "elapsed": 180.3,
+      "gzh_len": 3045,
+      "zhihu_len": 2347,
+      "xhs_len": 876,
+      "review_len": 1696
+    },
+    {
+      "scenario": "汇桥 — 跨境支付平台",
+      "mode": "form",
+      "elapsed": 242.7,
+      "gzh_len": 3341,
+      "zhihu_len": 2547,
+      "xhs_len": 1456,
+      "review_len": 3444
+    }
+  ]
+}
