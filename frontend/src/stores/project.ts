@@ -1,11 +1,12 @@
 import { defineStore } from "pinia"
 import { ref, computed } from "vue"
-import { createProject, getProjectStatus, confirmStrategy, type CreateProjectPayload, type ProjectStatus } from "../api/client"
+import { createProject, getProjectStatus, confirmStrategy, listProjects, type CreateProjectPayload, type ProjectStatus, type ProjectListItem } from "../api/client"
 import { MOCK_STATUS_STRATEGY, MOCK_STATUS_PREVIEW } from "./mock"
 
 export const useProjectStore = defineStore("project", () => {
   const currentProjectId = ref<string | null>(null)
   const status = ref<ProjectStatus | null>(null)
+  const projectList = ref<ProjectListItem[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -61,11 +62,20 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
+  async function loadProjects() {
+    try {
+      const result = await listProjects()
+      projectList.value = result.projects || []
+    } catch {
+      // 后端不可用时忽略
+    }
+  }
+
   function reset() {
     currentProjectId.value = null
     status.value = null
     error.value = null
   }
 
-  return { currentProjectId, status, loading, error, stage, submit, refresh, confirm, reset }
+  return { currentProjectId, status, projectList, loading, error, stage, submit, refresh, confirm, reset, loadProjects }
 })

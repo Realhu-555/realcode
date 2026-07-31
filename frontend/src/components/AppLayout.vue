@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, onMounted, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useProjectStore } from "../stores/project"
 import { useTheme } from "../composables/useTheme"
@@ -8,6 +8,11 @@ const route = useRoute()
 const router = useRouter()
 const isDark = useTheme()
 const projectStore = useProjectStore()
+
+onMounted(() => projectStore.loadProjects())
+watch(() => projectStore.currentProjectId, () => {
+  if (projectStore.currentProjectId) projectStore.loadProjects()
+})
 
 // ---- 路由感知 ----
 const currentPage = computed(() => {
@@ -114,8 +119,43 @@ const activeProjectNav = computed(() => {
         </router-link>
       </nav>
 
-      <!-- 弹性空白 -->
-      <div class="flex-1" />
+      <!-- 项目列表 -->
+      <div class="flex-1 overflow-y-auto px-3 mt-3">
+        <p class="px-3 py-2 text-11px text-muted font-medium uppercase tracking-widest">
+          最近项目
+        </p>
+        <div v-if="projectStore.projectList.length > 0" class="space-y-0.5">
+          <router-link
+            v-for="proj in projectStore.projectList"
+            :key="proj.project_id"
+            :to="proj.stage === 'done' || proj.stage === 'generating' || proj.stage === 'review'
+              ? `/preview/${proj.project_id}`
+              : `/strategy/${proj.project_id}`"
+            class="no-underline block"
+          >
+            <div class="px-3 py-2 rounded-lg text-sm transition-colors hover:bg-[var(--bg-hover)] cursor-pointer">
+              <div class="truncate text-[var(--text)] text-13px">
+                {{ proj.strategy?.full_content?.split('\n')[0]?.replace(/^#+\s*/, '')?.slice(0, 30) || proj.project_id?.slice(0, 8) || '--' }}
+              </div>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span
+                  class="w-1.5 h-1.5 rounded-full shrink-0"
+                  :class="{
+                    'bg-[var(--accent)]': proj.stage === 'strategy' || proj.stage === 'confirming',
+                    'bg-[var(--warning)]': proj.stage === 'generating' || proj.stage === 'review',
+                    'bg-[var(--success)]': proj.stage === 'done'
+                  }"
+                />
+                <span class="text-11px text-muted">{{ proj.stage }}</span>
+              </div>
+            </div>
+          </router-link>
+        </div>
+        <div v-else class="px-3 py-4 text-13px text-muted text-center">
+          <div class="text-3xl mb-3 opacity-40">☕</div>
+          暂无项目
+        </div>
+      </div>
 
       <!-- 空状态灵感区 -->
       <div v-if="!projectStore.currentProjectId" class="px-3 pb-3">

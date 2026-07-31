@@ -1,9 +1,24 @@
 import axios from "axios"
 
+function getApiKey(): string {
+  let key = localStorage.getItem("suxuan-api-key") || ""
+  if (!key) {
+    key = "demo-" + Math.random().toString(36).slice(2, 10)
+    localStorage.setItem("suxuan-api-key", key)
+  }
+  return key
+}
+
 const client = axios.create({
   baseURL: "/api/v1",
   timeout: 120_000,
   headers: { "Content-Type": "application/json" },
+})
+
+// 自动注入 X-API-Key
+client.interceptors.request.use((config) => {
+  config.headers["X-API-Key"] = getApiKey()
+  return config
 })
 
 export interface CreateProjectPayload {
@@ -15,7 +30,7 @@ export interface CreateProjectPayload {
   brand_tone?: string
   competitors?: string[]
   user_idea?: string
-  image_urls?: string[]   // base64 编码的图片（data:image/...;base64,...）
+  image_urls?: string[]
 }
 
 export interface ProjectStatus {
@@ -26,6 +41,19 @@ export interface ProjectStatus {
   review_report: any | null
   created_at: string
   updated_at: string
+}
+
+export interface ProjectListItem {
+  project_id: string
+  stage: string
+  strategy: any | null
+  created_at: string
+  updated_at: string
+}
+
+export async function listProjects(): Promise<{ total: number; projects: ProjectListItem[] }> {
+  const { data } = await client.get("/content-projects")
+  return data
 }
 
 export async function createProject(payload: CreateProjectPayload) {

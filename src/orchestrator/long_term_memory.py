@@ -236,6 +236,7 @@ class LongTermMemory:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS content_projects (
                 id TEXT PRIMARY KEY,
+                created_by TEXT NOT NULL DEFAULT '',
                 product_name TEXT NOT NULL,
                 product_description TEXT,
                 target_users TEXT,
