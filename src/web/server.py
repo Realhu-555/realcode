@@ -14,6 +14,8 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+_thread_pool = ThreadPoolExecutor(max_workers=4)
 from pydantic import BaseModel
 
 from src.agents.celve import CelveAgent
@@ -32,19 +34,13 @@ app = FastAPI(title="素宣 Suxuan", version="1.0.0")
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")))
-app.mount("/static", StaticFiles(directory=str(static_dir)))
-
-_thread_pool = ThreadPoolExecutor(max_workers=4)
 
 
 @app.get("/")
 async def index():
-    frontend_index = Path(__file__).parent.parent.parent / "frontend" / "dist" / "index.html"
-    if frontend_index.exists():
-        return HTMLResponse(frontend_index.read_text(encoding="utf-8"))
-    html_path = static_dir / "index.html"
-    if html_path.exists():
-        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    index_path = static_dir / "index.html"
+    if index_path.exists():
+        return HTMLResponse(index_path.read_text(encoding="utf-8"))
     return {"service": "素宣 Suxuan", "version": "1.0.0"}
 
 
