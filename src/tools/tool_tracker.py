@@ -102,5 +102,14 @@ async def call_tool(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
 
 
 def call_tool_sync(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
-    """同步版——用于不需要 async 的 Agent（export 等）"""
-    return asyncio.run(call_tool(tool_id, agent, state, **kwargs))
+    """同步/异步通用——自动检测事件循环状态"""
+    try:
+        loop = asyncio.get_running_loop()
+        # 已在事件循环中 → 不能 asyncio.run()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(lambda: asyncio.run(call_tool(tool_id, agent, state, **kwargs)))
+            return future.result(timeout=30)
+    except RuntimeError:
+        # 无运行中的事件循环 → 安全使用 asyncio.run()
+        return asyncio.run(call_tool(tool_id, agent, state, **kwargs))
