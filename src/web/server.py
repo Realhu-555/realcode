@@ -272,11 +272,18 @@ async def create_content_project(req: CreateContentProjectRequest):
         stage.end_ts = time.time()
         stage.status = "done"
         stage.output_summary = _state_summary(state)
-        # 提取 celve 的工具调用轨迹
-        stage.tool_calls = [
-            {"tool": s.tool_id, "params": s.tool_params, "result": s.tool_result}
-            for s in celve_trace.steps if s.step_type == "tool_call"
-        ]
+        # 提取 celve 的工具调用轨迹（新格式: tool_results）
+        stage.tool_calls = []
+        for s in celve_trace.steps:
+            if s.step_type == "tool_results" and s.tool_results:
+                for tr in s.tool_results:
+                    stage.tool_calls.append({
+                        "id": tr.get("id"),
+                        "name": tr.get("name"),
+                        "arguments": tr.get("arguments"),
+                        "result": str(tr.get("result", ""))[:200] if tr.get("result") else None,
+                        "error": tr.get("error"),
+                    })
     except Exception as e:
         stage.end_ts = time.time()
         stage.status = "error"

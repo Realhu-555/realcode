@@ -347,8 +347,10 @@ def _run_one_scenario(scenario: dict, mode: str, agents: dict) -> dict:
     st.status = "done"
     st.output_summary = _state_summary(state)
     st.tool_calls = [
-        {"tool": s.tool_id, "params": s.tool_params, "result": s.tool_result}
-        for s in agents["celve"].trace.steps if s.step_type == "tool_call"
+        {"name": tr["name"], "arguments": tr["arguments"],
+         "result": str(tr.get("result", ""))[:200] if tr.get("result") else None}
+        for s in agents["celve"].trace.steps if s.step_type == "tool_results"
+        for tr in (s.tool_results or [])
     ]
 
     if state.get("ask_user"):

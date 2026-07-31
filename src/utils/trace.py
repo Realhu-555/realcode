@@ -22,49 +22,55 @@ from typing import Any
 @dataclass
 class TraceStep:
     step_index: int
-    step_type: str        # "llm_call" | "tool_call" | "final"
+    step_type: str        # "llm_call" | "tool_results" | "final"
     timestamp: float = field(default_factory=time.time)
 
-    # LLM call
+    # LLM call — 原生 function calling 格式
     messages: list[dict] | None = None       # 发给 LLM 的消息
-    response: str | None = None              # LLM 返回的文本
+    tools: list[dict] | None = None          # 可用的 tools schema
+    content: str | None = None               # LLM 返回的文本内容
+    tool_calls: list[dict] | None = None     # LLM 决定调用的工具
     model: str | None = None
 
-    # Tool call
-    tool_id: str | None = None
-    tool_params: dict[str, Any] | None = None
-    tool_result: Any | None = None
-    tool_error: str | None = None
+    # Tool results（本轮所有工具执行结果）
+    tool_results: list[dict] | None = None   # [{"id":..., "name":..., "result":..., "error":...}]
 
     # Final output
     final_output: str | None = None
 
 
 class TraceTracker:
-    """轻量轨迹录制器"""
+    """轨迹录制器 — DeepSeek 原生 function calling 格式"""
 
     def __init__(self):
         self.steps: list[TraceStep] = []
         self._step_index = 0
 
-    def llm_call(self, messages: list[dict], response: str, model: str = ""):
+    def llm_call(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        content: str = "",
+        tool_calls: list[dict] | None = None,
+        model: str = "",
+    ):
         self.steps.append(TraceStep(
             step_index=self._step_index,
             step_type="llm_call",
             messages=messages,
-            response=response,
+            tools=tools,
+            content=content,
+            tool_calls=tool_calls,
             model=model,
         ))
         self._step_index += 1
 
-    def tool_call(self, tool_id: str, params: dict[str, Any], result: Any = None, error: str = None):
+    def tool_results(self, results: list[dict]):
+        """记录一批工具的执行结果"""
         self.steps.append(TraceStep(
             step_index=self._step_index,
-            step_type="tool_call",
-            tool_id=tool_id,
-            tool_params=params,
-            tool_result=result,
-            tool_error=error,
+            step_type="tool_results",
+            tool_results=results,
         ))
         self._step_index += 1
 
@@ -85,9 +91,13 @@ class TraceTracker:
     def save(self, filepath: str | Path):
         path = Path(filepath)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(self.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def summary(self) -> str:
         llm_count = sum(1 for s in self.steps if s.step_type == "llm_call")
-        tool_count = sum(1 for s in self.steps if s.step_type == "tool_call")
-        return f"{len(self.steps)} steps ({llm_count} LLM calls, {tool_count} tool calls)"
+        tool_count = sum(1 for s in self.steps if s.step_type == "tool_results")
+        return f"{len(self.steps)} steps ({llm_count} LLM calls, {tool_count} tool results)"
+

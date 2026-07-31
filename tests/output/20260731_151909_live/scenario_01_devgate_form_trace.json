@@ -1,0 +1,754 @@
+{
+  "total_steps": 6,
+  "steps": [
+    {
+      "step_index": 0,
+      "step_type": "llm_call",
+      "timestamp": 1785482356.0802207,
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是营销策略专家，擅长分析产品定位和内容策略。\n\n## 你的任务\n\n根据用户提供的产品信息，制定一份内容营销策略，包括：\n1. 目标用户画像（他们是谁、关心什么、在哪获取信息）\n2. 核心信息提炼（一句话核心信息 + 3-5 个关键卖点）\n3. 各渠道内容策略：\n   - 微信公众号：深度长文，侧重行业洞察和产品价值\n   - 知乎：专业知识回答，侧重技术原理和实践案例\n   - 小红书：轻松种草笔记，侧重使用场景和效果展示\n4. 关键词和标签建议\n\n## 产品信息\n\n- 产品名称：DevGate API 网关\n- 产品描述：面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控\n- 目标用户：后端开发工程师、架构师、DevOps 团队\n- 核心卖点：  - 零停机热更新路由规则  - 内置 JWT/OAuth2.0 鉴权  - 10万QPS 单节点吞吐  - Prometheus + Grafana 开箱监控- 品牌调性：极客\n- 竞品：Kong、APISIX、Tyk\n\n## 可用工具\n- **web_search**: 搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。\n  - `query`: 搜索查询关键词（必填）\n  - `max_results`: 最大返回结果数（默认 5）\n- **brand_lookup**: 根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略\n  - `product_name`: 产品名称，用于模糊匹配已有品牌档案（必填）\n\n\n## 规范\n- 如果用户提供的信息不足以制定策略，需要在回答中明确指出缺少什么信息\n- 策略要具体可执行，不要空泛的\"做好内容\"\n- 考虑当前日期 2026-07-31 的市场环境\n- 输出格式用 Markdown，使用 ## 标题组织层次"
+        },
+        {
+          "role": "user",
+          "content": "请为以下产品制定营销内容策略：DevGate API 网关"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_om4PJGwPg4122VncOgJg0445",
+              "type": "function",
+              "function": {
+                "name": "brand_lookup",
+                "arguments": "{\"product_name\": \"DevGate API 网关\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_om4PJGwPg4122VncOgJg0445",
+          "content": "{\"profiles\": [], \"count\": 0}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+          "content": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"results\": [{\"title\": \"Apache APISIX vs Kong: API Gateways Compared (2026)\", \"url\": \"https://api7.ai/apisix-vs-kong\", \"content\": \"APISIX leads on open-source scope (everything in the core), a database-free etcd architecture, and millisecond dynamic config; Kong leads on ecosystem size and a managed Konnect platform. [...] Because both gateways run on NGINX/OpenResty, raw proxying is comparable. InAPI7's published APISIX 3.0 vs Kong 3.0 benchmark, Apache APISIX reached roughly 140% of Kong's throughput without plugins and about 200% with plugins enabled, and APISIX's own documentation reports a single-core throughput of abo\"}, {\"title\": \"Apache APISIX vs Kong 深度对比(2026):API 网关怎么选 | 支流科技\", \"url\": \"https://www.apiseven.com/apisix-vs-kong\", \"content\": \"# Apache APISIX vs Kong:API 网关深度对比(2026)\\n\\n作者：API7 技术团队\\n\\n最后更新：2026 年 7 月\\n\\nApache APISIX 和 Kong 都是基于 NGINX/OpenResty 的开源 API 网关，但在配置存储、开源范围、配置生效方式和治理模式上有本质差异。本文逐项对比架构、性能、插件、协议、安全与许可，帮你选出适合自己团队的网关。\\n\\n一句话结论\\n\\n两者共享 NGINX/OpenResty 内核。Apache APISIX 基于 etcd（无数据库），配置毫秒级生效，路由、插件、Dashboard 和 AI 全部在 Apache-2.0 开源核心中，由厂商中立的 Apache 软件基金会治理、拥有 600+ 贡献者社区。Kong 依赖 PostgreSQL（或 DB-less），生态成熟并有托管 Konnect 平台，但由单一公司治理，且多项高级能力在商业版 Kong Enterprise 中。 [...] 一句话总结： 如果你想要全部能力都在开源核心、无数据库架构、毫秒级动态配置， 以及厂商中立的基金会治理，Apache APIS\"}, {\"title\": \"API 管理市场最新规模报告 2026\", \"url\": \"https://www.globalgrowthinsights.com/zh/market-reports/api-management-market-100886\", \"content\": \"## 主要发现\\n\\n 市场规模- 2025年价值4132.49M，预计到2035年将达到20518.9M，复合年增长率为17.38%。\\n 增长动力- 68% 的数字化采用率； 52% 混合 API 使用； 34%的监管合规需求； 63% 通过网关架构进行集成。\\n 趋势- 59% API 优先的方法； 48% 第三方使用； 32% 在分析中使用人工智能； 41% 部署开发者门户进行入职培训。\\n 关键人物- 亚马逊网络服务、Mulesoft、微软、红帽、SAP\\n 区域洞察- 在云采用、API 安全和平台集成的推动下，北美以 38% 的市场份额领先，其次是欧洲（29%）、亚太地区（25%）以及中东和非洲（8%）。\\n 挑战- 31% 开发商短缺； 36% 遗留集成障碍；由于内部技能差距，推出延迟了 24%。\\n 行业影响- 41% 转向低代码平台； 29% 的资金用于人工智能增强的 API； 18% 的使用量来自电信和 5G 准备情况。\\n 最新动态- 27% 平台统一；可观测性提升 24%； 19% GraphQL 采用率；欧洲区域扩张 31%。 [...] ## 新产品开发\\n\\nAPI管理市场的新\"}, {\"title\": \"API 管理市场规模、趋势 |全球报告 [2034]\", \"url\": \"https://www.fortunebusinessinsights.com/zh/api-management-market-108490\", \"content\": \"### 按应用分析\\n\\n数字数据威胁数量的增加推动安全应用中的产品使用\\n\\n根据应用程序，市场分为安全、性能分析、治理、网关等。\\n\\n预计安全领域将在预测期内占据主导地位。预计到 2026 年，安全领域将以 29.13% 的份额占据市场主导地位。针对数字数据的安全威胁和攻击的数量正在显着增加。为了提供无风险的数据并消除漏洞，API 安全性的采用正在不断增长。这一因素正在推动该细分市场的增长。\\n\\n随着整个企业应用程序编程接口实施数量的增加，预计治理部门在预测期内将出现显着增长。该产品帮助决策者消除矛盾的行为，并帮助企业遵守法规和合规性。\\n\\n各种数字平台和应用程序之间平滑过渡的能力，以增加网关需求。\\n\\n### 按最终用户分析\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\nIT和电信行业快速数字化推动细分市场扩张\\n\\n按最终用户划分，市场分为 IT 和电信、政府、零售、医疗保健、BFSI、运输和物流等。 [...] ### 亚太地区\\n\\n2025 年，亚太地区市场规模为 16.1 亿美元，占全球市场的 23.40%，预计到 2026 \"}, {\"title\": \"Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks | Apache APISIX\", \"url\": \"https://apisix.apache.org/zh/learning-center/apisix-vs-kong\", \"content\": \"标签\\n\\n# Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks\\n\\n2026年4月14日 · 约 8 分钟\\n\\nApache APISIX and Kong are the two most widely adopted open-source API gateways, both built on NGINX and Lua. APISIX differentiates itself with a fully dynamic architecture powered by etcd, higher single-core throughput, and a broader protocol support matrix, while Kong offers a mature enterprise ecosystem with extensive third-party integrations and a large plugin marketplace.\\n\\n## Overview [...] 2026年6\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_02_WbgYaprCcA8xienmob3A1115",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_02_WbgYaprCcA8xienmob3A1115",
+          "content": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"results\": [{\"title\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路-腾讯云开发者社区-腾讯云\", \"url\": \"https://cloud.tencent.com/developer/article/2563361\", \"content\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路\\n  + 一、网关选型前必须明确的 3 个核心问题：避免 “盲目选型”\\n    - 1. 你的系统技术栈是什么？\\n    - 2. 你的业务对性能的要求是什么？\\n    - 3. 你需要哪些核心功能？\\n  + 二、主流网关产品深度对比：5 个维度锁定最优解\\n    - 1. 核心维度对比表（2025 年最新版）\\n    - 2. 关键结论：不同需求下的优先级排序\\n  + 三、网关选型决策流程：4 步落地法\\n    - 1. 第一步：梳理需求清单（量化 + 优先级）\\n    - 2. 第二步：根据核心需求筛选候选产品\\n    - 3. 第三步：技术验证（POC）：避免 “纸上谈兵”\\n    - 4. 第四步：评估长期成本（开发 + 运维 + 升级）\\n  + 四、网关选型避坑指南：5 个常见误区与解决方案\\n    - 1. 误区 1：“性能越高越好，盲目选择 APISIX/Kong”\\n    - 2. 误区 2：“功能越多越好，过度依赖插件”\\n    - 3. 误区 3：“忽视动态路由，选择需重启的网关” [...] 基于上述需求维\"}, {\"title\": \"最全API网关选型总结\", \"url\": \"https://www.longshidata.com/blog/c/c2022090502.html\", \"content\": \"2. 服务注册\\n\\n为了能够代理后面的服务，并把请求路由到正确的位置上，网关应该有服务注册功能，也就是后端的服务实例可以把其提供服务的地址注册、取消注册。一般来说，注册也就是注册一些 API 接口。比如，HTTP 的 Restful 请求，可以注册相应 API 的 URI、方法、HTTP 头。这样，Gateway 就可以根据接收到的请求中的信息来决定路由到哪一个后端的服务上。\\n\\n3. 负载均衡\\n\\n因为一个网关可以接收多个服务实例，所以网关还需要在各个对等的服务实例上做负载均衡策略。简单点就是直接 Round-Robin 轮询，复杂点的可以设置上权重进行分发，再复杂一点还可以做到 session 粘连。\\n\\n4. 弹力设计\\n\\n网关还可以把弹力设计中的那些异步、重试、幂等、流控、熔断、监视等都可以实现进去。这样，同样可以像 Service Mesh 那样，让应用服务只关心自己的业务逻辑（或是说数据面上的事）而不是控制逻辑（控制面）。\\n\\n5. 安全方面\\n\\nAPI 聚合\\n\\nAPI 编排 [...] 网关应该靠近后端服务，并和后端服务使用同一个内网，这样可以保证网关和后端服务调用的低延迟，并可以减少\"}, {\"title\": \"企业如何选择最合适的 API 网关？ | 支流科技\", \"url\": \"https://www.apiseven.com/blog/how-to-choose-right-api-gateway\", \"content\": \"1. 性能：关注网关的处理速度和吞吐量，以提升系统性能。\\n2. 安全性：评估支持的安全协议和策略，如 OAuth、JWT、API 密钥等，保护系统免受安全威胁。\\n3. 可扩展性：确保能轻松添加更多服务或节点，适应系统增长和变化。\\n4. 易用性：希望快速配置和管理，降低操作复杂性，提高团队效率。\\n5. 监控和日志：需提供监控工具和日志记录功能，便于问题发现和解决。\\n6. 成本：综合考虑初始部署和长期维护成本，选择经济可行的解决方案。\\n\\n总体而言，技术团队在选择 API 网关时，更侧重于实现方案和架构视角的选择。他们关注性能、安全性、可扩展性、易用性、监控和日志功能以及成本等因素，以确保所选的 API 网关能够满足业务需求，并为整个系统的稳定性和可持续发展做出重要贡献。\\n\\n## 选择新的 API 网关，企业用户关心什么？ [...] 1. 稳定性：在不同的网络和服务负载条件下，能够可靠地处理请求和响应，保持服务的连续性和一致性。\\n2. 可用性：API 网关作为企业应用的核心，必须具备高可用性。\\n3. 安全性：包括身份验证、监控、IP 黑白名单控制、防重放、防攻击等安全措施。\\n4. 高效：较\"}, {\"title\": \"Higress.AI\", \"url\": \"https://ziyou.framer.website/blog/api-gateway-vs-api-management\", \"content\": \"| 维度 | API 网关（API Gateway） | API 管理（API Management） |\\n --- \\n| 核心关注点 | 流量层治理：请求转发、安全控制、协议转换、流控等 | 接口全生命周期治理：从设计、文档、测试到发布、运营、商业化 |\\n| 关注对象 | 运行时流量：处理“谁来访问谁”的请求调度 | 接口资源本身：定义、版本、权限、资产、消费方式 |\\n| 典型角色 | 运维、平台架构师、SRE、安全工程师 | 产品经理、API 设计者、开发者关系（DevRel）、运营人员 |\\n| 典型能力 | - 路由转发 - 协议转换 - 认证鉴权 - 限流熔断 - 流量灰度 - 安全防护 | - API 规范设计 - 文档生成与同步 - 测试用例管理 - Mock 服务 - 权限与协作 - 开发者门户与计费 |\\n| 生命周期阶段 | 更偏向运行时（runtime）：请求进入网关即被处理 | 更覆盖全生命周期：设计、测试、部署、发布、监控 |\\n| 边界控制粒度 | 粒度粗：以路由、路径、主机为主，管理“访问通道” | 粒度细：可到接口级别、字段级别的管理与变更控制 | [...]\"}, {\"title\": \"10Wqps 超高并发 API网关 架构演进之路 - 技术自由圈 - 博客园\", \"url\": \"https://www.cnblogs.com/crazymakercircle/p/17215491.html\", \"content\": \"#### 安全方面\\n\\nSSL 加密及证书管理、Session 验证、授权、数据校验，以及对请求源进行恶意攻击的防范。错误处理越靠前的位置就是越好，所以，网关可以做到一个全站的接入组件来对后端的服务进行保护。当然，网关还可以做更多更有趣的事情，比如：灰度发布、API聚合、API编排。\\n\\n灰度发布\\n\\n网关完全可以做到对相同服务不同版本的实例进行导流，还可以收集相关的数据。这样对于软件质量的提升，甚至产品试错都有非常积极的意义。\\n\\nAPI 聚合\\n\\n使用网关可以将多个单独请求聚合成一个请求。在微服务体系的架构中，因为服务变小了，所以一个明显的问题是，客户端可能需要多次请求才能得到所有的数据。这样一来，客户端与后端之间的频繁通信会对应用程序的性能和规模产生非常不利的影响。于是，我们可以让网关来帮客户端请求多个后端的服务（有些场景下完全可以并发请求），然后把后端服务的响应结果拼装起来，回传给客户端（当然，这个过程也可以做成异步的，但这需要客户端的配合）。\\n\\nAPI 编排 [...] Zuul：目前正在应用中，Zuul 处理请求的方式是针对每个请求都启用一个线程来处理。通常情况下，为了提高性能，所有\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+          "content": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"results\": [{\"title\": \"Api Management Market 2026: Expert-Crafted Insights You Can Trust\", \"url\": \"https://www.strategicmarketresearch.com/market-report/api-management-market\", \"content\": \"scalable, and policy-compliant API gateways. Key macro forces shaping the market include:  Digital Transformation : Enterprises in finance, healthcare, retail, and telecom are deploying APIs to integrate legacy systems with cloud-native applications.  Regulatory Landscape : Data privacy laws and open banking mandates necessitate robust governance and monitoring features.  Cybersecurity Concerns : As APIs become high-value attack surfaces, the emphasis on secure API lifecycles has intensified. [.\"}, {\"title\": \"Integration trends 2026: API, Microservices & EDA\", \"url\": \"https://novasarc.com/blog/integration-trends-2026-api-microservices-eda\", \"content\": \"Market Insight: The global microservices architecture market was valued at USD 6.27 billion in 2024 and is projected to grow from USD 7.45 billion in 2025 to USD 15.97 billion by 2029, exhibiting a CAGR of 21.0% during the forecast period.\\n\\nMicroservices enhance flexibility but introduce challenges in managing complex systems and maintaining data consistency. Container orchestration tools and appropriate design patterns can help overcome these hurdles.\\n\\n### Microservices challenges [...] ## The \"}, {\"title\": \"API Management Market Size, Share & Trends Report 2026-2031\", \"url\": \"https://www.mordorintelligence.com/industry-reports/api-management-market\", \"content\": \"Cloud deployments held 79.55% of the API management market share in 2025 on the back of hyperscaler platforms that bundle gateways as managed services. Hybrid models, however, are advancing at a 21.10% CAGR and are expected to shift the API management market size materially by 2031. The rise stems from privacy regulations that require sensitive data to remain on-premises while still benefiting from elastic public cloud capacity. Microsoft’s Arc-enabled API Management allows containerised [...] M\"}, {\"title\": \"Cloud API Market Size, Trends & Leading Players, 2033\", \"url\": \"https://www.persistencemarketresearch.com/market-research/cloud-api-market.asp\", \"content\": \"Leading Service Model: SaaS APIs dominate with over 41% share in 2026, driven by rising demand for plug-and-play integrations, low-code development, and AI-enabled SaaS solutions supporting automation and cross-platform data exchange. PaaS APIs grow rapidly at 25.1% CAGR, supported by microservices, DevOps, and cloud-native app development. [...] SaaS cloud APIs are expected to account for more than 41% share in 2026, driven by their ability to accelerate software development and power digital s\"}, {\"title\": \"Best API Management Reviews 2026 | Gartner Peer Insights\", \"url\": \"https://www.gartner.com/reviews/market/api-management\", \"content\": \"API Gateway assists enterprises in integrating legacy and modern applications, ensuring visibility and compliance for API traffic across distributed architectures. [...] ## Top Trending Products\\n\\nAmazon API GatewayAmplify PlatformMuleSoft Anypoint PlatformKong KonnectKong GatewayTraefik Hub\\n\\n## Popular Product Comparisons\\n\\nIBM API Connect vs Microsoft Azure API ManagementAmazon API Gateway vs MuleSoft Anypoint PlatformMicrosoft Azure API Management vs MuleSoft Anypoint Platform [...] Amazon API \"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+          "content": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"results\": [{\"title\": \"2025年独立开发者该使用什么解决方案做开发？前端和后端？ - 知乎\", \"url\": \"https://www.zhihu.com/question/1913280070027581192\", \"content\": \"API Gateway 把静态资源指向 S3\\n\\nAPI Gateway 把后端请求指向 Lambda。\\n\\n其中 Lambda 如果用的不是nodejs，比如 bun 可以自己编译一个自定义 Layer；如果是 golang、rust 可以直接用空 linux。记得选 arm 架构，比 amd 性价比高。给大家一个基本的概念，如果是空接口，每个请求 nodejs 大概在2-10ms，内存消耗大概在60-90 mb。如果是 go 大概在2ms，内存消耗在25mb。增加一次 db 调用大概增加10-50ms。lambda 每个接口的耗时都有很好的统计，优化后请求开销，既可以提高用户体验，又可以极大的降低成本。\\n\\n这几层访问量不高时基本都是免费的。大家可以这么估算，动态接口 100w 次请求免费，超过了每 100w 次请求大概 0.5-2 美金（看你有没有用 api gateway 和 WAF） [...] 另外 cloudflare 和 vercel 对 next.js 的支持比较好，特别是 vercel，next.js 就是它们家的框架，所以很多人选择用 next.js。next.js 是\"}, {\"title\": \"2025年国内外API 数据安全网关产品推荐\", \"url\": \"https://zhuanlan.zhihu.com/p/1931736514582278901\", \"content\": \"API 网关作为微服务架构和数据开放的核心组件，其选择对于企业的技术架构、运维效率和安全防护至关重要。以下是国内外市场上一些主流且值得推荐的API\"}, {\"title\": \"2025年API集成选型指南，技术文档如何助力企业高效对接？ | 帆软数字化转型知识库\", \"url\": \"https://www.fanruan.com/blog/article/1793298\", \"content\": \"2025年，云原生、微服务、低代码平台已成为主流。企业的IT架构越来越复杂，业务系统数量激增。传统点对点的接口集成方式，已无法满足快速变化的业务需求。API网关、服务编排、统一认证、API管理平台成为选型新标配。\\n\\n企业除了关注API的“可用性”，更关心API的“可扩展性”“可观测性”和“安全性”。选型时，还要考虑与主流API管理平台（如Kong、Apigee、阿里云API网关）的兼容性，确保未来业务扩展不被技术“卡脖子”。\\n\\n### 1.3 企业API集成选型的核心关注点\\n\\n总结来看，2025年API集成选型，企业最关注：\\n\\n这些维度，不仅影响开发团队的对接效率，更直接关系到IT项目的成败。下文我们将详细分析，技术文档如何在API集成中发挥关键作用。\\n\\n## 📚二、技术文档在API集成中的核心价值\\n\\n很多企业在API集成时，最怕的不是“技术难度”，而是“文档不清”。一份好的技术文档，能让开发者看懂接口、快速对接、少踩坑；而一份糟糕的文档，会让项目周期翻倍、沟通成本激增。那技术文档到底在API集成中扮演了什么角色？\\n\\n### 2.1 技术文档是API集成的“导航仪” [...] ## \"}, {\"title\": \"从保证业务不中断，看网关的“前世今生”\", \"url\": \"https://zhuanlan.zhihu.com/p/406006556\", \"content\": \"API网关作为现代分布式、微服务、云原生系统中的一个重要组成部分，也作为一项重要的讨论主题，咱也聊聊负载均衡及API Gateway的现状。 现在大家在谈“分布\"}, {\"title\": \"在设计和开发企业级API 时，有哪些最佳实践可以避免踩坑？\", \"url\": \"https://www.zhihu.com/question/1962840387694593699/answer/1963183790613586537\", \"content\": \"我最近接手了一个新的后端项目，需要从零开始设计一套对外开放的API 接口。之前团队的API 常常因为版本迭代混乱、文档缺失、安全性考虑不足而饱受诟病\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "description": "搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "搜索查询关键词"
+                },
+                "max_results": {
+                  "type": "integer",
+                  "description": "最大返回结果数（默认 5）",
+                  "default": 5
+                }
+              },
+              "required": [
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "brand_lookup",
+            "description": "根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "product_name": {
+                  "type": "string",
+                  "description": "产品名称，用于模糊匹配已有品牌档案"
+                }
+              },
+              "required": [
+                "product_name"
+              ]
+            }
+          }
+        }
+      ],
+      "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+      "tool_calls": [
+        {
+          "id": "call_00_om4PJGwPg4122VncOgJg0445",
+          "type": "function",
+          "function": {
+            "name": "brand_lookup",
+            "arguments": "{\"product_name\": \"DevGate API 网关\"}"
+          }
+        },
+        {
+          "id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"max_results\": 5}"
+          }
+        },
+        {
+          "id": "call_02_WbgYaprCcA8xienmob3A1115",
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"max_results\": 5}"
+          }
+        },
+        {
+          "id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"max_results\": 5}"
+          }
+        }
+      ],
+      "model": "deepseek-v4-pro",
+      "tool_results": null,
+      "final_output": null
+    },
+    {
+      "step_index": 1,
+      "step_type": "tool_results",
+      "timestamp": 1785482361.8213317,
+      "messages": null,
+      "tools": null,
+      "content": null,
+      "tool_calls": null,
+      "model": null,
+      "tool_results": [
+        {
+          "id": "call_00_om4PJGwPg4122VncOgJg0445",
+          "name": "brand_lookup",
+          "arguments": {
+            "product_name": "DevGate API 网关"
+          },
+          "result": {
+            "profiles": [],
+            "count": 0
+          },
+          "error": null
+        },
+        {
+          "id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+          "name": "web_search",
+          "arguments": {
+            "query": "API网关市场趋势 2025 2026 Kong APISIX 竞品分析",
+            "max_results": 5
+          },
+          "result": {
+            "query": "API网关市场趋势 2025 2026 Kong APISIX 竞品分析",
+            "results": [
+              {
+                "title": "Apache APISIX vs Kong: API Gateways Compared (2026)",
+                "url": "https://api7.ai/apisix-vs-kong",
+                "content": "APISIX leads on open-source scope (everything in the core), a database-free etcd architecture, and millisecond dynamic config; Kong leads on ecosystem size and a managed Konnect platform. [...] Because both gateways run on NGINX/OpenResty, raw proxying is comparable. InAPI7's published APISIX 3.0 vs Kong 3.0 benchmark, Apache APISIX reached roughly 140% of Kong's throughput without plugins and about 200% with plugins enabled, and APISIX's own documentation reports a single-core throughput of abo"
+              },
+              {
+                "title": "Apache APISIX vs Kong 深度对比(2026):API 网关怎么选 | 支流科技",
+                "url": "https://www.apiseven.com/apisix-vs-kong",
+                "content": "# Apache APISIX vs Kong:API 网关深度对比(2026)\n\n作者：API7 技术团队\n\n最后更新：2026 年 7 月\n\nApache APISIX 和 Kong 都是基于 NGINX/OpenResty 的开源 API 网关，但在配置存储、开源范围、配置生效方式和治理模式上有本质差异。本文逐项对比架构、性能、插件、协议、安全与许可，帮你选出适合自己团队的网关。\n\n一句话结论\n\n两者共享 NGINX/OpenResty 内核。Apache APISIX 基于 etcd（无数据库），配置毫秒级生效，路由、插件、Dashboard 和 AI 全部在 Apache-2.0 开源核心中，由厂商中立的 Apache 软件基金会治理、拥有 600+ 贡献者社区。Kong 依赖 PostgreSQL（或 DB-less），生态成熟并有托管 Konnect 平台，但由单一公司治理，且多项高级能力在商业版 Kong Enterprise 中。 [...] 一句话总结： 如果你想要全部能力都在开源核心、无数据库架构、毫秒级动态配置， 以及厂商中立的基金会治理，Apache APIS"
+              },
+              {
+                "title": "API 管理市场最新规模报告 2026",
+                "url": "https://www.globalgrowthinsights.com/zh/market-reports/api-management-market-100886",
+                "content": "## 主要发现\n\n 市场规模- 2025年价值4132.49M，预计到2035年将达到20518.9M，复合年增长率为17.38%。\n 增长动力- 68% 的数字化采用率； 52% 混合 API 使用； 34%的监管合规需求； 63% 通过网关架构进行集成。\n 趋势- 59% API 优先的方法； 48% 第三方使用； 32% 在分析中使用人工智能； 41% 部署开发者门户进行入职培训。\n 关键人物- 亚马逊网络服务、Mulesoft、微软、红帽、SAP\n 区域洞察- 在云采用、API 安全和平台集成的推动下，北美以 38% 的市场份额领先，其次是欧洲（29%）、亚太地区（25%）以及中东和非洲（8%）。\n 挑战- 31% 开发商短缺； 36% 遗留集成障碍；由于内部技能差距，推出延迟了 24%。\n 行业影响- 41% 转向低代码平台； 29% 的资金用于人工智能增强的 API； 18% 的使用量来自电信和 5G 准备情况。\n 最新动态- 27% 平台统一；可观测性提升 24%； 19% GraphQL 采用率；欧洲区域扩张 31%。 [...] ## 新产品开发\n\nAPI管理市场的新"
+              },
+              {
+                "title": "API 管理市场规模、趋势 |全球报告 [2034]",
+                "url": "https://www.fortunebusinessinsights.com/zh/api-management-market-108490",
+                "content": "### 按应用分析\n\n数字数据威胁数量的增加推动安全应用中的产品使用\n\n根据应用程序，市场分为安全、性能分析、治理、网关等。\n\n预计安全领域将在预测期内占据主导地位。预计到 2026 年，安全领域将以 29.13% 的份额占据市场主导地位。针对数字数据的安全威胁和攻击的数量正在显着增加。为了提供无风险的数据并消除漏洞，API 安全性的采用正在不断增长。这一因素正在推动该细分市场的增长。\n\n随着整个企业应用程序编程接口实施数量的增加，预计治理部门在预测期内将出现显着增长。该产品帮助决策者消除矛盾的行为，并帮助企业遵守法规和合规性。\n\n各种数字平台和应用程序之间平滑过渡的能力，以增加网关需求。\n\n### 按最终用户分析\n\n了解我们的报告如何帮助优化您的业务，  与分析师交流\n\n了解我们的报告如何帮助优化您的业务，  与分析师交流\n\nIT和电信行业快速数字化推动细分市场扩张\n\n按最终用户划分，市场分为 IT 和电信、政府、零售、医疗保健、BFSI、运输和物流等。 [...] ### 亚太地区\n\n2025 年，亚太地区市场规模为 16.1 亿美元，占全球市场的 23.40%，预计到 2026 "
+              },
+              {
+                "title": "Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks | Apache APISIX",
+                "url": "https://apisix.apache.org/zh/learning-center/apisix-vs-kong",
+                "content": "标签\n\n# Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks\n\n2026年4月14日 · 约 8 分钟\n\nApache APISIX and Kong are the two most widely adopted open-source API gateways, both built on NGINX and Lua. APISIX differentiates itself with a fully dynamic architecture powered by etcd, higher single-core throughput, and a broader protocol support matrix, while Kong offers a mature enterprise ecosystem with extensive third-party integrations and a large plugin marketplace.\n\n## Overview [...] 2026年6"
+              }
+            ]
+          },
+          "error": null
+        },
+        {
+          "id": "call_02_WbgYaprCcA8xienmob3A1115",
+          "name": "web_search",
+          "arguments": {
+            "query": "后端工程师 API网关 选型 关注点 2025",
+            "max_results": 5
+          },
+          "result": {
+            "query": "后端工程师 API网关 选型 关注点 2025",
+            "results": [
+              {
+                "title": "微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路-腾讯云开发者社区-腾讯云",
+                "url": "https://cloud.tencent.com/developer/article/2563361",
+                "content": "微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路\n  + 一、网关选型前必须明确的 3 个核心问题：避免 “盲目选型”\n    - 1. 你的系统技术栈是什么？\n    - 2. 你的业务对性能的要求是什么？\n    - 3. 你需要哪些核心功能？\n  + 二、主流网关产品深度对比：5 个维度锁定最优解\n    - 1. 核心维度对比表（2025 年最新版）\n    - 2. 关键结论：不同需求下的优先级排序\n  + 三、网关选型决策流程：4 步落地法\n    - 1. 第一步：梳理需求清单（量化 + 优先级）\n    - 2. 第二步：根据核心需求筛选候选产品\n    - 3. 第三步：技术验证（POC）：避免 “纸上谈兵”\n    - 4. 第四步：评估长期成本（开发 + 运维 + 升级）\n  + 四、网关选型避坑指南：5 个常见误区与解决方案\n    - 1. 误区 1：“性能越高越好，盲目选择 APISIX/Kong”\n    - 2. 误区 2：“功能越多越好，过度依赖插件”\n    - 3. 误区 3：“忽视动态路由，选择需重启的网关” [...] 基于上述需求维"
+              },
+              {
+                "title": "最全API网关选型总结",
+                "url": "https://www.longshidata.com/blog/c/c2022090502.html",
+                "content": "2. 服务注册\n\n为了能够代理后面的服务，并把请求路由到正确的位置上，网关应该有服务注册功能，也就是后端的服务实例可以把其提供服务的地址注册、取消注册。一般来说，注册也就是注册一些 API 接口。比如，HTTP 的 Restful 请求，可以注册相应 API 的 URI、方法、HTTP 头。这样，Gateway 就可以根据接收到的请求中的信息来决定路由到哪一个后端的服务上。\n\n3. 负载均衡\n\n因为一个网关可以接收多个服务实例，所以网关还需要在各个对等的服务实例上做负载均衡策略。简单点就是直接 Round-Robin 轮询，复杂点的可以设置上权重进行分发，再复杂一点还可以做到 session 粘连。\n\n4. 弹力设计\n\n网关还可以把弹力设计中的那些异步、重试、幂等、流控、熔断、监视等都可以实现进去。这样，同样可以像 Service Mesh 那样，让应用服务只关心自己的业务逻辑（或是说数据面上的事）而不是控制逻辑（控制面）。\n\n5. 安全方面\n\nAPI 聚合\n\nAPI 编排 [...] 网关应该靠近后端服务，并和后端服务使用同一个内网，这样可以保证网关和后端服务调用的低延迟，并可以减少"
+              },
+              {
+                "title": "企业如何选择最合适的 API 网关？ | 支流科技",
+                "url": "https://www.apiseven.com/blog/how-to-choose-right-api-gateway",
+                "content": "1. 性能：关注网关的处理速度和吞吐量，以提升系统性能。\n2. 安全性：评估支持的安全协议和策略，如 OAuth、JWT、API 密钥等，保护系统免受安全威胁。\n3. 可扩展性：确保能轻松添加更多服务或节点，适应系统增长和变化。\n4. 易用性：希望快速配置和管理，降低操作复杂性，提高团队效率。\n5. 监控和日志：需提供监控工具和日志记录功能，便于问题发现和解决。\n6. 成本：综合考虑初始部署和长期维护成本，选择经济可行的解决方案。\n\n总体而言，技术团队在选择 API 网关时，更侧重于实现方案和架构视角的选择。他们关注性能、安全性、可扩展性、易用性、监控和日志功能以及成本等因素，以确保所选的 API 网关能够满足业务需求，并为整个系统的稳定性和可持续发展做出重要贡献。\n\n## 选择新的 API 网关，企业用户关心什么？ [...] 1. 稳定性：在不同的网络和服务负载条件下，能够可靠地处理请求和响应，保持服务的连续性和一致性。\n2. 可用性：API 网关作为企业应用的核心，必须具备高可用性。\n3. 安全性：包括身份验证、监控、IP 黑白名单控制、防重放、防攻击等安全措施。\n4. 高效：较"
+              },
+              {
+                "title": "Higress.AI",
+                "url": "https://ziyou.framer.website/blog/api-gateway-vs-api-management",
+                "content": "| 维度 | API 网关（API Gateway） | API 管理（API Management） |\n --- \n| 核心关注点 | 流量层治理：请求转发、安全控制、协议转换、流控等 | 接口全生命周期治理：从设计、文档、测试到发布、运营、商业化 |\n| 关注对象 | 运行时流量：处理“谁来访问谁”的请求调度 | 接口资源本身：定义、版本、权限、资产、消费方式 |\n| 典型角色 | 运维、平台架构师、SRE、安全工程师 | 产品经理、API 设计者、开发者关系（DevRel）、运营人员 |\n| 典型能力 | - 路由转发 - 协议转换 - 认证鉴权 - 限流熔断 - 流量灰度 - 安全防护 | - API 规范设计 - 文档生成与同步 - 测试用例管理 - Mock 服务 - 权限与协作 - 开发者门户与计费 |\n| 生命周期阶段 | 更偏向运行时（runtime）：请求进入网关即被处理 | 更覆盖全生命周期：设计、测试、部署、发布、监控 |\n| 边界控制粒度 | 粒度粗：以路由、路径、主机为主，管理“访问通道” | 粒度细：可到接口级别、字段级别的管理与变更控制 | [...]"
+              },
+              {
+                "title": "10Wqps 超高并发 API网关 架构演进之路 - 技术自由圈 - 博客园",
+                "url": "https://www.cnblogs.com/crazymakercircle/p/17215491.html",
+                "content": "#### 安全方面\n\nSSL 加密及证书管理、Session 验证、授权、数据校验，以及对请求源进行恶意攻击的防范。错误处理越靠前的位置就是越好，所以，网关可以做到一个全站的接入组件来对后端的服务进行保护。当然，网关还可以做更多更有趣的事情，比如：灰度发布、API聚合、API编排。\n\n灰度发布\n\n网关完全可以做到对相同服务不同版本的实例进行导流，还可以收集相关的数据。这样对于软件质量的提升，甚至产品试错都有非常积极的意义。\n\nAPI 聚合\n\n使用网关可以将多个单独请求聚合成一个请求。在微服务体系的架构中，因为服务变小了，所以一个明显的问题是，客户端可能需要多次请求才能得到所有的数据。这样一来，客户端与后端之间的频繁通信会对应用程序的性能和规模产生非常不利的影响。于是，我们可以让网关来帮客户端请求多个后端的服务（有些场景下完全可以并发请求），然后把后端服务的响应结果拼装起来，回传给客户端（当然，这个过程也可以做成异步的，但这需要客户端的配合）。\n\nAPI 编排 [...] Zuul：目前正在应用中，Zuul 处理请求的方式是针对每个请求都启用一个线程来处理。通常情况下，为了提高性能，所有"
+              }
+            ]
+          },
+          "error": null
+        },
+        {
+          "id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+          "name": "web_search",
+          "arguments": {
+            "query": "API Gateway market trends 2025 2026 cloud native microservices",
+            "max_results": 5
+          },
+          "result": {
+            "query": "API Gateway market trends 2025 2026 cloud native microservices",
+            "results": [
+              {
+                "title": "Api Management Market 2026: Expert-Crafted Insights You Can Trust",
+                "url": "https://www.strategicmarketresearch.com/market-report/api-management-market",
+                "content": "scalable, and policy-compliant API gateways. Key macro forces shaping the market include:  Digital Transformation : Enterprises in finance, healthcare, retail, and telecom are deploying APIs to integrate legacy systems with cloud-native applications.  Regulatory Landscape : Data privacy laws and open banking mandates necessitate robust governance and monitoring features.  Cybersecurity Concerns : As APIs become high-value attack surfaces, the emphasis on secure API lifecycles has intensified. [."
+              },
+              {
+                "title": "Integration trends 2026: API, Microservices & EDA",
+                "url": "https://novasarc.com/blog/integration-trends-2026-api-microservices-eda",
+                "content": "Market Insight: The global microservices architecture market was valued at USD 6.27 billion in 2024 and is projected to grow from USD 7.45 billion in 2025 to USD 15.97 billion by 2029, exhibiting a CAGR of 21.0% during the forecast period.\n\nMicroservices enhance flexibility but introduce challenges in managing complex systems and maintaining data consistency. Container orchestration tools and appropriate design patterns can help overcome these hurdles.\n\n### Microservices challenges [...] ## The "
+              },
+              {
+                "title": "API Management Market Size, Share & Trends Report 2026-2031",
+                "url": "https://www.mordorintelligence.com/industry-reports/api-management-market",
+                "content": "Cloud deployments held 79.55% of the API management market share in 2025 on the back of hyperscaler platforms that bundle gateways as managed services. Hybrid models, however, are advancing at a 21.10% CAGR and are expected to shift the API management market size materially by 2031. The rise stems from privacy regulations that require sensitive data to remain on-premises while still benefiting from elastic public cloud capacity. Microsoft’s Arc-enabled API Management allows containerised [...] M"
+              },
+              {
+                "title": "Cloud API Market Size, Trends & Leading Players, 2033",
+                "url": "https://www.persistencemarketresearch.com/market-research/cloud-api-market.asp",
+                "content": "Leading Service Model: SaaS APIs dominate with over 41% share in 2026, driven by rising demand for plug-and-play integrations, low-code development, and AI-enabled SaaS solutions supporting automation and cross-platform data exchange. PaaS APIs grow rapidly at 25.1% CAGR, supported by microservices, DevOps, and cloud-native app development. [...] SaaS cloud APIs are expected to account for more than 41% share in 2026, driven by their ability to accelerate software development and power digital s"
+              },
+              {
+                "title": "Best API Management Reviews 2026 | Gartner Peer Insights",
+                "url": "https://www.gartner.com/reviews/market/api-management",
+                "content": "API Gateway assists enterprises in integrating legacy and modern applications, ensuring visibility and compliance for API traffic across distributed architectures. [...] ## Top Trending Products\n\nAmazon API GatewayAmplify PlatformMuleSoft Anypoint PlatformKong KonnectKong GatewayTraefik Hub\n\n## Popular Product Comparisons\n\nIBM API Connect vs Microsoft Azure API ManagementAmazon API Gateway vs MuleSoft Anypoint PlatformMicrosoft Azure API Management vs MuleSoft Anypoint Platform [...] Amazon API "
+              }
+            ]
+          },
+          "error": null
+        }
+      ],
+      "final_output": null
+    },
+    {
+      "step_index": 2,
+      "step_type": "llm_call",
+      "timestamp": 1785482364.3831754,
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是营销策略专家，擅长分析产品定位和内容策略。\n\n## 你的任务\n\n根据用户提供的产品信息，制定一份内容营销策略，包括：\n1. 目标用户画像（他们是谁、关心什么、在哪获取信息）\n2. 核心信息提炼（一句话核心信息 + 3-5 个关键卖点）\n3. 各渠道内容策略：\n   - 微信公众号：深度长文，侧重行业洞察和产品价值\n   - 知乎：专业知识回答，侧重技术原理和实践案例\n   - 小红书：轻松种草笔记，侧重使用场景和效果展示\n4. 关键词和标签建议\n\n## 产品信息\n\n- 产品名称：DevGate API 网关\n- 产品描述：面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控\n- 目标用户：后端开发工程师、架构师、DevOps 团队\n- 核心卖点：  - 零停机热更新路由规则  - 内置 JWT/OAuth2.0 鉴权  - 10万QPS 单节点吞吐  - Prometheus + Grafana 开箱监控- 品牌调性：极客\n- 竞品：Kong、APISIX、Tyk\n\n## 可用工具\n- **web_search**: 搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。\n  - `query`: 搜索查询关键词（必填）\n  - `max_results`: 最大返回结果数（默认 5）\n- **brand_lookup**: 根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略\n  - `product_name`: 产品名称，用于模糊匹配已有品牌档案（必填）\n\n\n## 规范\n- 如果用户提供的信息不足以制定策略，需要在回答中明确指出缺少什么信息\n- 策略要具体可执行，不要空泛的\"做好内容\"\n- 考虑当前日期 2026-07-31 的市场环境\n- 输出格式用 Markdown，使用 ## 标题组织层次"
+        },
+        {
+          "role": "user",
+          "content": "请为以下产品制定营销内容策略：DevGate API 网关"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_om4PJGwPg4122VncOgJg0445",
+              "type": "function",
+              "function": {
+                "name": "brand_lookup",
+                "arguments": "{\"product_name\": \"DevGate API 网关\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_om4PJGwPg4122VncOgJg0445",
+          "content": "{\"profiles\": [], \"count\": 0}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+          "content": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"results\": [{\"title\": \"Apache APISIX vs Kong: API Gateways Compared (2026)\", \"url\": \"https://api7.ai/apisix-vs-kong\", \"content\": \"APISIX leads on open-source scope (everything in the core), a database-free etcd architecture, and millisecond dynamic config; Kong leads on ecosystem size and a managed Konnect platform. [...] Because both gateways run on NGINX/OpenResty, raw proxying is comparable. InAPI7's published APISIX 3.0 vs Kong 3.0 benchmark, Apache APISIX reached roughly 140% of Kong's throughput without plugins and about 200% with plugins enabled, and APISIX's own documentation reports a single-core throughput of abo\"}, {\"title\": \"Apache APISIX vs Kong 深度对比(2026):API 网关怎么选 | 支流科技\", \"url\": \"https://www.apiseven.com/apisix-vs-kong\", \"content\": \"# Apache APISIX vs Kong:API 网关深度对比(2026)\\n\\n作者：API7 技术团队\\n\\n最后更新：2026 年 7 月\\n\\nApache APISIX 和 Kong 都是基于 NGINX/OpenResty 的开源 API 网关，但在配置存储、开源范围、配置生效方式和治理模式上有本质差异。本文逐项对比架构、性能、插件、协议、安全与许可，帮你选出适合自己团队的网关。\\n\\n一句话结论\\n\\n两者共享 NGINX/OpenResty 内核。Apache APISIX 基于 etcd（无数据库），配置毫秒级生效，路由、插件、Dashboard 和 AI 全部在 Apache-2.0 开源核心中，由厂商中立的 Apache 软件基金会治理、拥有 600+ 贡献者社区。Kong 依赖 PostgreSQL（或 DB-less），生态成熟并有托管 Konnect 平台，但由单一公司治理，且多项高级能力在商业版 Kong Enterprise 中。 [...] 一句话总结： 如果你想要全部能力都在开源核心、无数据库架构、毫秒级动态配置， 以及厂商中立的基金会治理，Apache APIS\"}, {\"title\": \"API 管理市场最新规模报告 2026\", \"url\": \"https://www.globalgrowthinsights.com/zh/market-reports/api-management-market-100886\", \"content\": \"## 主要发现\\n\\n 市场规模- 2025年价值4132.49M，预计到2035年将达到20518.9M，复合年增长率为17.38%。\\n 增长动力- 68% 的数字化采用率； 52% 混合 API 使用； 34%的监管合规需求； 63% 通过网关架构进行集成。\\n 趋势- 59% API 优先的方法； 48% 第三方使用； 32% 在分析中使用人工智能； 41% 部署开发者门户进行入职培训。\\n 关键人物- 亚马逊网络服务、Mulesoft、微软、红帽、SAP\\n 区域洞察- 在云采用、API 安全和平台集成的推动下，北美以 38% 的市场份额领先，其次是欧洲（29%）、亚太地区（25%）以及中东和非洲（8%）。\\n 挑战- 31% 开发商短缺； 36% 遗留集成障碍；由于内部技能差距，推出延迟了 24%。\\n 行业影响- 41% 转向低代码平台； 29% 的资金用于人工智能增强的 API； 18% 的使用量来自电信和 5G 准备情况。\\n 最新动态- 27% 平台统一；可观测性提升 24%； 19% GraphQL 采用率；欧洲区域扩张 31%。 [...] ## 新产品开发\\n\\nAPI管理市场的新\"}, {\"title\": \"API 管理市场规模、趋势 |全球报告 [2034]\", \"url\": \"https://www.fortunebusinessinsights.com/zh/api-management-market-108490\", \"content\": \"### 按应用分析\\n\\n数字数据威胁数量的增加推动安全应用中的产品使用\\n\\n根据应用程序，市场分为安全、性能分析、治理、网关等。\\n\\n预计安全领域将在预测期内占据主导地位。预计到 2026 年，安全领域将以 29.13% 的份额占据市场主导地位。针对数字数据的安全威胁和攻击的数量正在显着增加。为了提供无风险的数据并消除漏洞，API 安全性的采用正在不断增长。这一因素正在推动该细分市场的增长。\\n\\n随着整个企业应用程序编程接口实施数量的增加，预计治理部门在预测期内将出现显着增长。该产品帮助决策者消除矛盾的行为，并帮助企业遵守法规和合规性。\\n\\n各种数字平台和应用程序之间平滑过渡的能力，以增加网关需求。\\n\\n### 按最终用户分析\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\nIT和电信行业快速数字化推动细分市场扩张\\n\\n按最终用户划分，市场分为 IT 和电信、政府、零售、医疗保健、BFSI、运输和物流等。 [...] ### 亚太地区\\n\\n2025 年，亚太地区市场规模为 16.1 亿美元，占全球市场的 23.40%，预计到 2026 \"}, {\"title\": \"Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks | Apache APISIX\", \"url\": \"https://apisix.apache.org/zh/learning-center/apisix-vs-kong\", \"content\": \"标签\\n\\n# Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks\\n\\n2026年4月14日 · 约 8 分钟\\n\\nApache APISIX and Kong are the two most widely adopted open-source API gateways, both built on NGINX and Lua. APISIX differentiates itself with a fully dynamic architecture powered by etcd, higher single-core throughput, and a broader protocol support matrix, while Kong offers a mature enterprise ecosystem with extensive third-party integrations and a large plugin marketplace.\\n\\n## Overview [...] 2026年6\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_02_WbgYaprCcA8xienmob3A1115",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_02_WbgYaprCcA8xienmob3A1115",
+          "content": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"results\": [{\"title\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路-腾讯云开发者社区-腾讯云\", \"url\": \"https://cloud.tencent.com/developer/article/2563361\", \"content\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路\\n  + 一、网关选型前必须明确的 3 个核心问题：避免 “盲目选型”\\n    - 1. 你的系统技术栈是什么？\\n    - 2. 你的业务对性能的要求是什么？\\n    - 3. 你需要哪些核心功能？\\n  + 二、主流网关产品深度对比：5 个维度锁定最优解\\n    - 1. 核心维度对比表（2025 年最新版）\\n    - 2. 关键结论：不同需求下的优先级排序\\n  + 三、网关选型决策流程：4 步落地法\\n    - 1. 第一步：梳理需求清单（量化 + 优先级）\\n    - 2. 第二步：根据核心需求筛选候选产品\\n    - 3. 第三步：技术验证（POC）：避免 “纸上谈兵”\\n    - 4. 第四步：评估长期成本（开发 + 运维 + 升级）\\n  + 四、网关选型避坑指南：5 个常见误区与解决方案\\n    - 1. 误区 1：“性能越高越好，盲目选择 APISIX/Kong”\\n    - 2. 误区 2：“功能越多越好，过度依赖插件”\\n    - 3. 误区 3：“忽视动态路由，选择需重启的网关” [...] 基于上述需求维\"}, {\"title\": \"最全API网关选型总结\", \"url\": \"https://www.longshidata.com/blog/c/c2022090502.html\", \"content\": \"2. 服务注册\\n\\n为了能够代理后面的服务，并把请求路由到正确的位置上，网关应该有服务注册功能，也就是后端的服务实例可以把其提供服务的地址注册、取消注册。一般来说，注册也就是注册一些 API 接口。比如，HTTP 的 Restful 请求，可以注册相应 API 的 URI、方法、HTTP 头。这样，Gateway 就可以根据接收到的请求中的信息来决定路由到哪一个后端的服务上。\\n\\n3. 负载均衡\\n\\n因为一个网关可以接收多个服务实例，所以网关还需要在各个对等的服务实例上做负载均衡策略。简单点就是直接 Round-Robin 轮询，复杂点的可以设置上权重进行分发，再复杂一点还可以做到 session 粘连。\\n\\n4. 弹力设计\\n\\n网关还可以把弹力设计中的那些异步、重试、幂等、流控、熔断、监视等都可以实现进去。这样，同样可以像 Service Mesh 那样，让应用服务只关心自己的业务逻辑（或是说数据面上的事）而不是控制逻辑（控制面）。\\n\\n5. 安全方面\\n\\nAPI 聚合\\n\\nAPI 编排 [...] 网关应该靠近后端服务，并和后端服务使用同一个内网，这样可以保证网关和后端服务调用的低延迟，并可以减少\"}, {\"title\": \"企业如何选择最合适的 API 网关？ | 支流科技\", \"url\": \"https://www.apiseven.com/blog/how-to-choose-right-api-gateway\", \"content\": \"1. 性能：关注网关的处理速度和吞吐量，以提升系统性能。\\n2. 安全性：评估支持的安全协议和策略，如 OAuth、JWT、API 密钥等，保护系统免受安全威胁。\\n3. 可扩展性：确保能轻松添加更多服务或节点，适应系统增长和变化。\\n4. 易用性：希望快速配置和管理，降低操作复杂性，提高团队效率。\\n5. 监控和日志：需提供监控工具和日志记录功能，便于问题发现和解决。\\n6. 成本：综合考虑初始部署和长期维护成本，选择经济可行的解决方案。\\n\\n总体而言，技术团队在选择 API 网关时，更侧重于实现方案和架构视角的选择。他们关注性能、安全性、可扩展性、易用性、监控和日志功能以及成本等因素，以确保所选的 API 网关能够满足业务需求，并为整个系统的稳定性和可持续发展做出重要贡献。\\n\\n## 选择新的 API 网关，企业用户关心什么？ [...] 1. 稳定性：在不同的网络和服务负载条件下，能够可靠地处理请求和响应，保持服务的连续性和一致性。\\n2. 可用性：API 网关作为企业应用的核心，必须具备高可用性。\\n3. 安全性：包括身份验证、监控、IP 黑白名单控制、防重放、防攻击等安全措施。\\n4. 高效：较\"}, {\"title\": \"Higress.AI\", \"url\": \"https://ziyou.framer.website/blog/api-gateway-vs-api-management\", \"content\": \"| 维度 | API 网关（API Gateway） | API 管理（API Management） |\\n --- \\n| 核心关注点 | 流量层治理：请求转发、安全控制、协议转换、流控等 | 接口全生命周期治理：从设计、文档、测试到发布、运营、商业化 |\\n| 关注对象 | 运行时流量：处理“谁来访问谁”的请求调度 | 接口资源本身：定义、版本、权限、资产、消费方式 |\\n| 典型角色 | 运维、平台架构师、SRE、安全工程师 | 产品经理、API 设计者、开发者关系（DevRel）、运营人员 |\\n| 典型能力 | - 路由转发 - 协议转换 - 认证鉴权 - 限流熔断 - 流量灰度 - 安全防护 | - API 规范设计 - 文档生成与同步 - 测试用例管理 - Mock 服务 - 权限与协作 - 开发者门户与计费 |\\n| 生命周期阶段 | 更偏向运行时（runtime）：请求进入网关即被处理 | 更覆盖全生命周期：设计、测试、部署、发布、监控 |\\n| 边界控制粒度 | 粒度粗：以路由、路径、主机为主，管理“访问通道” | 粒度细：可到接口级别、字段级别的管理与变更控制 | [...]\"}, {\"title\": \"10Wqps 超高并发 API网关 架构演进之路 - 技术自由圈 - 博客园\", \"url\": \"https://www.cnblogs.com/crazymakercircle/p/17215491.html\", \"content\": \"#### 安全方面\\n\\nSSL 加密及证书管理、Session 验证、授权、数据校验，以及对请求源进行恶意攻击的防范。错误处理越靠前的位置就是越好，所以，网关可以做到一个全站的接入组件来对后端的服务进行保护。当然，网关还可以做更多更有趣的事情，比如：灰度发布、API聚合、API编排。\\n\\n灰度发布\\n\\n网关完全可以做到对相同服务不同版本的实例进行导流，还可以收集相关的数据。这样对于软件质量的提升，甚至产品试错都有非常积极的意义。\\n\\nAPI 聚合\\n\\n使用网关可以将多个单独请求聚合成一个请求。在微服务体系的架构中，因为服务变小了，所以一个明显的问题是，客户端可能需要多次请求才能得到所有的数据。这样一来，客户端与后端之间的频繁通信会对应用程序的性能和规模产生非常不利的影响。于是，我们可以让网关来帮客户端请求多个后端的服务（有些场景下完全可以并发请求），然后把后端服务的响应结果拼装起来，回传给客户端（当然，这个过程也可以做成异步的，但这需要客户端的配合）。\\n\\nAPI 编排 [...] Zuul：目前正在应用中，Zuul 处理请求的方式是针对每个请求都启用一个线程来处理。通常情况下，为了提高性能，所有\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+          "content": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"results\": [{\"title\": \"Api Management Market 2026: Expert-Crafted Insights You Can Trust\", \"url\": \"https://www.strategicmarketresearch.com/market-report/api-management-market\", \"content\": \"scalable, and policy-compliant API gateways. Key macro forces shaping the market include:  Digital Transformation : Enterprises in finance, healthcare, retail, and telecom are deploying APIs to integrate legacy systems with cloud-native applications.  Regulatory Landscape : Data privacy laws and open banking mandates necessitate robust governance and monitoring features.  Cybersecurity Concerns : As APIs become high-value attack surfaces, the emphasis on secure API lifecycles has intensified. [.\"}, {\"title\": \"Integration trends 2026: API, Microservices & EDA\", \"url\": \"https://novasarc.com/blog/integration-trends-2026-api-microservices-eda\", \"content\": \"Market Insight: The global microservices architecture market was valued at USD 6.27 billion in 2024 and is projected to grow from USD 7.45 billion in 2025 to USD 15.97 billion by 2029, exhibiting a CAGR of 21.0% during the forecast period.\\n\\nMicroservices enhance flexibility but introduce challenges in managing complex systems and maintaining data consistency. Container orchestration tools and appropriate design patterns can help overcome these hurdles.\\n\\n### Microservices challenges [...] ## The \"}, {\"title\": \"API Management Market Size, Share & Trends Report 2026-2031\", \"url\": \"https://www.mordorintelligence.com/industry-reports/api-management-market\", \"content\": \"Cloud deployments held 79.55% of the API management market share in 2025 on the back of hyperscaler platforms that bundle gateways as managed services. Hybrid models, however, are advancing at a 21.10% CAGR and are expected to shift the API management market size materially by 2031. The rise stems from privacy regulations that require sensitive data to remain on-premises while still benefiting from elastic public cloud capacity. Microsoft’s Arc-enabled API Management allows containerised [...] M\"}, {\"title\": \"Cloud API Market Size, Trends & Leading Players, 2033\", \"url\": \"https://www.persistencemarketresearch.com/market-research/cloud-api-market.asp\", \"content\": \"Leading Service Model: SaaS APIs dominate with over 41% share in 2026, driven by rising demand for plug-and-play integrations, low-code development, and AI-enabled SaaS solutions supporting automation and cross-platform data exchange. PaaS APIs grow rapidly at 25.1% CAGR, supported by microservices, DevOps, and cloud-native app development. [...] SaaS cloud APIs are expected to account for more than 41% share in 2026, driven by their ability to accelerate software development and power digital s\"}, {\"title\": \"Best API Management Reviews 2026 | Gartner Peer Insights\", \"url\": \"https://www.gartner.com/reviews/market/api-management\", \"content\": \"API Gateway assists enterprises in integrating legacy and modern applications, ensuring visibility and compliance for API traffic across distributed architectures. [...] ## Top Trending Products\\n\\nAmazon API GatewayAmplify PlatformMuleSoft Anypoint PlatformKong KonnectKong GatewayTraefik Hub\\n\\n## Popular Product Comparisons\\n\\nIBM API Connect vs Microsoft Azure API ManagementAmazon API Gateway vs MuleSoft Anypoint PlatformMicrosoft Azure API Management vs MuleSoft Anypoint Platform [...] Amazon API \"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+          "content": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"results\": [{\"title\": \"2025年独立开发者该使用什么解决方案做开发？前端和后端？ - 知乎\", \"url\": \"https://www.zhihu.com/question/1913280070027581192\", \"content\": \"API Gateway 把静态资源指向 S3\\n\\nAPI Gateway 把后端请求指向 Lambda。\\n\\n其中 Lambda 如果用的不是nodejs，比如 bun 可以自己编译一个自定义 Layer；如果是 golang、rust 可以直接用空 linux。记得选 arm 架构，比 amd 性价比高。给大家一个基本的概念，如果是空接口，每个请求 nodejs 大概在2-10ms，内存消耗大概在60-90 mb。如果是 go 大概在2ms，内存消耗在25mb。增加一次 db 调用大概增加10-50ms。lambda 每个接口的耗时都有很好的统计，优化后请求开销，既可以提高用户体验，又可以极大的降低成本。\\n\\n这几层访问量不高时基本都是免费的。大家可以这么估算，动态接口 100w 次请求免费，超过了每 100w 次请求大概 0.5-2 美金（看你有没有用 api gateway 和 WAF） [...] 另外 cloudflare 和 vercel 对 next.js 的支持比较好，特别是 vercel，next.js 就是它们家的框架，所以很多人选择用 next.js。next.js 是\"}, {\"title\": \"2025年国内外API 数据安全网关产品推荐\", \"url\": \"https://zhuanlan.zhihu.com/p/1931736514582278901\", \"content\": \"API 网关作为微服务架构和数据开放的核心组件，其选择对于企业的技术架构、运维效率和安全防护至关重要。以下是国内外市场上一些主流且值得推荐的API\"}, {\"title\": \"2025年API集成选型指南，技术文档如何助力企业高效对接？ | 帆软数字化转型知识库\", \"url\": \"https://www.fanruan.com/blog/article/1793298\", \"content\": \"2025年，云原生、微服务、低代码平台已成为主流。企业的IT架构越来越复杂，业务系统数量激增。传统点对点的接口集成方式，已无法满足快速变化的业务需求。API网关、服务编排、统一认证、API管理平台成为选型新标配。\\n\\n企业除了关注API的“可用性”，更关心API的“可扩展性”“可观测性”和“安全性”。选型时，还要考虑与主流API管理平台（如Kong、Apigee、阿里云API网关）的兼容性，确保未来业务扩展不被技术“卡脖子”。\\n\\n### 1.3 企业API集成选型的核心关注点\\n\\n总结来看，2025年API集成选型，企业最关注：\\n\\n这些维度，不仅影响开发团队的对接效率，更直接关系到IT项目的成败。下文我们将详细分析，技术文档如何在API集成中发挥关键作用。\\n\\n## 📚二、技术文档在API集成中的核心价值\\n\\n很多企业在API集成时，最怕的不是“技术难度”，而是“文档不清”。一份好的技术文档，能让开发者看懂接口、快速对接、少踩坑；而一份糟糕的文档，会让项目周期翻倍、沟通成本激增。那技术文档到底在API集成中扮演了什么角色？\\n\\n### 2.1 技术文档是API集成的“导航仪” [...] ## \"}, {\"title\": \"从保证业务不中断，看网关的“前世今生”\", \"url\": \"https://zhuanlan.zhihu.com/p/406006556\", \"content\": \"API网关作为现代分布式、微服务、云原生系统中的一个重要组成部分，也作为一项重要的讨论主题，咱也聊聊负载均衡及API Gateway的现状。 现在大家在谈“分布\"}, {\"title\": \"在设计和开发企业级API 时，有哪些最佳实践可以避免踩坑？\", \"url\": \"https://www.zhihu.com/question/1962840387694593699/answer/1963183790613586537\", \"content\": \"我最近接手了一个新的后端项目，需要从零开始设计一套对外开放的API 接口。之前团队的API 常常因为版本迭代混乱、文档缺失、安全性考虑不足而饱受诟病\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "description": "搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "搜索查询关键词"
+                },
+                "max_results": {
+                  "type": "integer",
+                  "description": "最大返回结果数（默认 5）",
+                  "default": 5
+                }
+              },
+              "required": [
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "brand_lookup",
+            "description": "根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "product_name": {
+                  "type": "string",
+                  "description": "产品名称，用于模糊匹配已有品牌档案"
+                }
+              },
+              "required": [
+                "product_name"
+              ]
+            }
+          }
+        }
+      ],
+      "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+      "tool_calls": [
+        {
+          "id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"max_results\": 5}"
+          }
+        }
+      ],
+      "model": "deepseek-v4-pro",
+      "tool_results": null,
+      "final_output": null
+    },
+    {
+      "step_index": 3,
+      "step_type": "tool_results",
+      "timestamp": 1785482365.647402,
+      "messages": null,
+      "tools": null,
+      "content": null,
+      "tool_calls": null,
+      "model": null,
+      "tool_results": [
+        {
+          "id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+          "name": "web_search",
+          "arguments": {
+            "query": "API网关 知乎 热门话题 技术社区 开发者关注 2025",
+            "max_results": 5
+          },
+          "result": {
+            "query": "API网关 知乎 热门话题 技术社区 开发者关注 2025",
+            "results": [
+              {
+                "title": "2025年独立开发者该使用什么解决方案做开发？前端和后端？ - 知乎",
+                "url": "https://www.zhihu.com/question/1913280070027581192",
+                "content": "API Gateway 把静态资源指向 S3\n\nAPI Gateway 把后端请求指向 Lambda。\n\n其中 Lambda 如果用的不是nodejs，比如 bun 可以自己编译一个自定义 Layer；如果是 golang、rust 可以直接用空 linux。记得选 arm 架构，比 amd 性价比高。给大家一个基本的概念，如果是空接口，每个请求 nodejs 大概在2-10ms，内存消耗大概在60-90 mb。如果是 go 大概在2ms，内存消耗在25mb。增加一次 db 调用大概增加10-50ms。lambda 每个接口的耗时都有很好的统计，优化后请求开销，既可以提高用户体验，又可以极大的降低成本。\n\n这几层访问量不高时基本都是免费的。大家可以这么估算，动态接口 100w 次请求免费，超过了每 100w 次请求大概 0.5-2 美金（看你有没有用 api gateway 和 WAF） [...] 另外 cloudflare 和 vercel 对 next.js 的支持比较好，特别是 vercel，next.js 就是它们家的框架，所以很多人选择用 next.js。next.js 是"
+              },
+              {
+                "title": "2025年国内外API 数据安全网关产品推荐",
+                "url": "https://zhuanlan.zhihu.com/p/1931736514582278901",
+                "content": "API 网关作为微服务架构和数据开放的核心组件，其选择对于企业的技术架构、运维效率和安全防护至关重要。以下是国内外市场上一些主流且值得推荐的API"
+              },
+              {
+                "title": "2025年API集成选型指南，技术文档如何助力企业高效对接？ | 帆软数字化转型知识库",
+                "url": "https://www.fanruan.com/blog/article/1793298",
+                "content": "2025年，云原生、微服务、低代码平台已成为主流。企业的IT架构越来越复杂，业务系统数量激增。传统点对点的接口集成方式，已无法满足快速变化的业务需求。API网关、服务编排、统一认证、API管理平台成为选型新标配。\n\n企业除了关注API的“可用性”，更关心API的“可扩展性”“可观测性”和“安全性”。选型时，还要考虑与主流API管理平台（如Kong、Apigee、阿里云API网关）的兼容性，确保未来业务扩展不被技术“卡脖子”。\n\n### 1.3 企业API集成选型的核心关注点\n\n总结来看，2025年API集成选型，企业最关注：\n\n这些维度，不仅影响开发团队的对接效率，更直接关系到IT项目的成败。下文我们将详细分析，技术文档如何在API集成中发挥关键作用。\n\n## 📚二、技术文档在API集成中的核心价值\n\n很多企业在API集成时，最怕的不是“技术难度”，而是“文档不清”。一份好的技术文档，能让开发者看懂接口、快速对接、少踩坑；而一份糟糕的文档，会让项目周期翻倍、沟通成本激增。那技术文档到底在API集成中扮演了什么角色？\n\n### 2.1 技术文档是API集成的“导航仪” [...] ## "
+              },
+              {
+                "title": "从保证业务不中断，看网关的“前世今生”",
+                "url": "https://zhuanlan.zhihu.com/p/406006556",
+                "content": "API网关作为现代分布式、微服务、云原生系统中的一个重要组成部分，也作为一项重要的讨论主题，咱也聊聊负载均衡及API Gateway的现状。 现在大家在谈“分布"
+              },
+              {
+                "title": "在设计和开发企业级API 时，有哪些最佳实践可以避免踩坑？",
+                "url": "https://www.zhihu.com/question/1962840387694593699/answer/1963183790613586537",
+                "content": "我最近接手了一个新的后端项目，需要从零开始设计一套对外开放的API 接口。之前团队的API 常常因为版本迭代混乱、文档缺失、安全性考虑不足而饱受诟病"
+              }
+            ]
+          },
+          "error": null
+        }
+      ],
+      "final_output": null
+    },
+    {
+      "step_index": 4,
+      "step_type": "llm_call",
+      "timestamp": 1785482367.650692,
+      "messages": [
+        {
+          "role": "system",
+          "content": "你是营销策略专家，擅长分析产品定位和内容策略。\n\n## 你的任务\n\n根据用户提供的产品信息，制定一份内容营销策略，包括：\n1. 目标用户画像（他们是谁、关心什么、在哪获取信息）\n2. 核心信息提炼（一句话核心信息 + 3-5 个关键卖点）\n3. 各渠道内容策略：\n   - 微信公众号：深度长文，侧重行业洞察和产品价值\n   - 知乎：专业知识回答，侧重技术原理和实践案例\n   - 小红书：轻松种草笔记，侧重使用场景和效果展示\n4. 关键词和标签建议\n\n## 产品信息\n\n- 产品名称：DevGate API 网关\n- 产品描述：面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控\n- 目标用户：后端开发工程师、架构师、DevOps 团队\n- 核心卖点：  - 零停机热更新路由规则  - 内置 JWT/OAuth2.0 鉴权  - 10万QPS 单节点吞吐  - Prometheus + Grafana 开箱监控- 品牌调性：极客\n- 竞品：Kong、APISIX、Tyk\n\n## 可用工具\n- **web_search**: 搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。\n  - `query`: 搜索查询关键词（必填）\n  - `max_results`: 最大返回结果数（默认 5）\n- **brand_lookup**: 根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略\n  - `product_name`: 产品名称，用于模糊匹配已有品牌档案（必填）\n\n\n## 规范\n- 如果用户提供的信息不足以制定策略，需要在回答中明确指出缺少什么信息\n- 策略要具体可执行，不要空泛的\"做好内容\"\n- 考虑当前日期 2026-07-31 的市场环境\n- 输出格式用 Markdown，使用 ## 标题组织层次"
+        },
+        {
+          "role": "user",
+          "content": "请为以下产品制定营销内容策略：DevGate API 网关"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_om4PJGwPg4122VncOgJg0445",
+              "type": "function",
+              "function": {
+                "name": "brand_lookup",
+                "arguments": "{\"product_name\": \"DevGate API 网关\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_om4PJGwPg4122VncOgJg0445",
+          "content": "{\"profiles\": [], \"count\": 0}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_01_93rrUb0EQtxcRbhcehKc7411",
+          "content": "{\"query\": \"API网关市场趋势 2025 2026 Kong APISIX 竞品分析\", \"results\": [{\"title\": \"Apache APISIX vs Kong: API Gateways Compared (2026)\", \"url\": \"https://api7.ai/apisix-vs-kong\", \"content\": \"APISIX leads on open-source scope (everything in the core), a database-free etcd architecture, and millisecond dynamic config; Kong leads on ecosystem size and a managed Konnect platform. [...] Because both gateways run on NGINX/OpenResty, raw proxying is comparable. InAPI7's published APISIX 3.0 vs Kong 3.0 benchmark, Apache APISIX reached roughly 140% of Kong's throughput without plugins and about 200% with plugins enabled, and APISIX's own documentation reports a single-core throughput of abo\"}, {\"title\": \"Apache APISIX vs Kong 深度对比(2026):API 网关怎么选 | 支流科技\", \"url\": \"https://www.apiseven.com/apisix-vs-kong\", \"content\": \"# Apache APISIX vs Kong:API 网关深度对比(2026)\\n\\n作者：API7 技术团队\\n\\n最后更新：2026 年 7 月\\n\\nApache APISIX 和 Kong 都是基于 NGINX/OpenResty 的开源 API 网关，但在配置存储、开源范围、配置生效方式和治理模式上有本质差异。本文逐项对比架构、性能、插件、协议、安全与许可，帮你选出适合自己团队的网关。\\n\\n一句话结论\\n\\n两者共享 NGINX/OpenResty 内核。Apache APISIX 基于 etcd（无数据库），配置毫秒级生效，路由、插件、Dashboard 和 AI 全部在 Apache-2.0 开源核心中，由厂商中立的 Apache 软件基金会治理、拥有 600+ 贡献者社区。Kong 依赖 PostgreSQL（或 DB-less），生态成熟并有托管 Konnect 平台，但由单一公司治理，且多项高级能力在商业版 Kong Enterprise 中。 [...] 一句话总结： 如果你想要全部能力都在开源核心、无数据库架构、毫秒级动态配置， 以及厂商中立的基金会治理，Apache APIS\"}, {\"title\": \"API 管理市场最新规模报告 2026\", \"url\": \"https://www.globalgrowthinsights.com/zh/market-reports/api-management-market-100886\", \"content\": \"## 主要发现\\n\\n 市场规模- 2025年价值4132.49M，预计到2035年将达到20518.9M，复合年增长率为17.38%。\\n 增长动力- 68% 的数字化采用率； 52% 混合 API 使用； 34%的监管合规需求； 63% 通过网关架构进行集成。\\n 趋势- 59% API 优先的方法； 48% 第三方使用； 32% 在分析中使用人工智能； 41% 部署开发者门户进行入职培训。\\n 关键人物- 亚马逊网络服务、Mulesoft、微软、红帽、SAP\\n 区域洞察- 在云采用、API 安全和平台集成的推动下，北美以 38% 的市场份额领先，其次是欧洲（29%）、亚太地区（25%）以及中东和非洲（8%）。\\n 挑战- 31% 开发商短缺； 36% 遗留集成障碍；由于内部技能差距，推出延迟了 24%。\\n 行业影响- 41% 转向低代码平台； 29% 的资金用于人工智能增强的 API； 18% 的使用量来自电信和 5G 准备情况。\\n 最新动态- 27% 平台统一；可观测性提升 24%； 19% GraphQL 采用率；欧洲区域扩张 31%。 [...] ## 新产品开发\\n\\nAPI管理市场的新\"}, {\"title\": \"API 管理市场规模、趋势 |全球报告 [2034]\", \"url\": \"https://www.fortunebusinessinsights.com/zh/api-management-market-108490\", \"content\": \"### 按应用分析\\n\\n数字数据威胁数量的增加推动安全应用中的产品使用\\n\\n根据应用程序，市场分为安全、性能分析、治理、网关等。\\n\\n预计安全领域将在预测期内占据主导地位。预计到 2026 年，安全领域将以 29.13% 的份额占据市场主导地位。针对数字数据的安全威胁和攻击的数量正在显着增加。为了提供无风险的数据并消除漏洞，API 安全性的采用正在不断增长。这一因素正在推动该细分市场的增长。\\n\\n随着整个企业应用程序编程接口实施数量的增加，预计治理部门在预测期内将出现显着增长。该产品帮助决策者消除矛盾的行为，并帮助企业遵守法规和合规性。\\n\\n各种数字平台和应用程序之间平滑过渡的能力，以增加网关需求。\\n\\n### 按最终用户分析\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\n了解我们的报告如何帮助优化您的业务，  与分析师交流\\n\\nIT和电信行业快速数字化推动细分市场扩张\\n\\n按最终用户划分，市场分为 IT 和电信、政府、零售、医疗保健、BFSI、运输和物流等。 [...] ### 亚太地区\\n\\n2025 年，亚太地区市场规模为 16.1 亿美元，占全球市场的 23.40%，预计到 2026 \"}, {\"title\": \"Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks | Apache APISIX\", \"url\": \"https://apisix.apache.org/zh/learning-center/apisix-vs-kong\", \"content\": \"标签\\n\\n# Apache APISIX vs Kong: Feature Comparison & Performance Benchmarks\\n\\n2026年4月14日 · 约 8 分钟\\n\\nApache APISIX and Kong are the two most widely adopted open-source API gateways, both built on NGINX and Lua. APISIX differentiates itself with a fully dynamic architecture powered by etcd, higher single-core throughput, and a broader protocol support matrix, while Kong offers a mature enterprise ecosystem with extensive third-party integrations and a large plugin marketplace.\\n\\n## Overview [...] 2026年6\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_02_WbgYaprCcA8xienmob3A1115",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_02_WbgYaprCcA8xienmob3A1115",
+          "content": "{\"query\": \"后端工程师 API网关 选型 关注点 2025\", \"results\": [{\"title\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路-腾讯云开发者社区-腾讯云\", \"url\": \"https://cloud.tencent.com/developer/article/2563361\", \"content\": \"微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路\\n  + 一、网关选型前必须明确的 3 个核心问题：避免 “盲目选型”\\n    - 1. 你的系统技术栈是什么？\\n    - 2. 你的业务对性能的要求是什么？\\n    - 3. 你需要哪些核心功能？\\n  + 二、主流网关产品深度对比：5 个维度锁定最优解\\n    - 1. 核心维度对比表（2025 年最新版）\\n    - 2. 关键结论：不同需求下的优先级排序\\n  + 三、网关选型决策流程：4 步落地法\\n    - 1. 第一步：梳理需求清单（量化 + 优先级）\\n    - 2. 第二步：根据核心需求筛选候选产品\\n    - 3. 第三步：技术验证（POC）：避免 “纸上谈兵”\\n    - 4. 第四步：评估长期成本（开发 + 运维 + 升级）\\n  + 四、网关选型避坑指南：5 个常见误区与解决方案\\n    - 1. 误区 1：“性能越高越好，盲目选择 APISIX/Kong”\\n    - 2. 误区 2：“功能越多越好，过度依赖插件”\\n    - 3. 误区 3：“忽视动态路由，选择需重启的网关” [...] 基于上述需求维\"}, {\"title\": \"最全API网关选型总结\", \"url\": \"https://www.longshidata.com/blog/c/c2022090502.html\", \"content\": \"2. 服务注册\\n\\n为了能够代理后面的服务，并把请求路由到正确的位置上，网关应该有服务注册功能，也就是后端的服务实例可以把其提供服务的地址注册、取消注册。一般来说，注册也就是注册一些 API 接口。比如，HTTP 的 Restful 请求，可以注册相应 API 的 URI、方法、HTTP 头。这样，Gateway 就可以根据接收到的请求中的信息来决定路由到哪一个后端的服务上。\\n\\n3. 负载均衡\\n\\n因为一个网关可以接收多个服务实例，所以网关还需要在各个对等的服务实例上做负载均衡策略。简单点就是直接 Round-Robin 轮询，复杂点的可以设置上权重进行分发，再复杂一点还可以做到 session 粘连。\\n\\n4. 弹力设计\\n\\n网关还可以把弹力设计中的那些异步、重试、幂等、流控、熔断、监视等都可以实现进去。这样，同样可以像 Service Mesh 那样，让应用服务只关心自己的业务逻辑（或是说数据面上的事）而不是控制逻辑（控制面）。\\n\\n5. 安全方面\\n\\nAPI 聚合\\n\\nAPI 编排 [...] 网关应该靠近后端服务，并和后端服务使用同一个内网，这样可以保证网关和后端服务调用的低延迟，并可以减少\"}, {\"title\": \"企业如何选择最合适的 API 网关？ | 支流科技\", \"url\": \"https://www.apiseven.com/blog/how-to-choose-right-api-gateway\", \"content\": \"1. 性能：关注网关的处理速度和吞吐量，以提升系统性能。\\n2. 安全性：评估支持的安全协议和策略，如 OAuth、JWT、API 密钥等，保护系统免受安全威胁。\\n3. 可扩展性：确保能轻松添加更多服务或节点，适应系统增长和变化。\\n4. 易用性：希望快速配置和管理，降低操作复杂性，提高团队效率。\\n5. 监控和日志：需提供监控工具和日志记录功能，便于问题发现和解决。\\n6. 成本：综合考虑初始部署和长期维护成本，选择经济可行的解决方案。\\n\\n总体而言，技术团队在选择 API 网关时，更侧重于实现方案和架构视角的选择。他们关注性能、安全性、可扩展性、易用性、监控和日志功能以及成本等因素，以确保所选的 API 网关能够满足业务需求，并为整个系统的稳定性和可持续发展做出重要贡献。\\n\\n## 选择新的 API 网关，企业用户关心什么？ [...] 1. 稳定性：在不同的网络和服务负载条件下，能够可靠地处理请求和响应，保持服务的连续性和一致性。\\n2. 可用性：API 网关作为企业应用的核心，必须具备高可用性。\\n3. 安全性：包括身份验证、监控、IP 黑白名单控制、防重放、防攻击等安全措施。\\n4. 高效：较\"}, {\"title\": \"Higress.AI\", \"url\": \"https://ziyou.framer.website/blog/api-gateway-vs-api-management\", \"content\": \"| 维度 | API 网关（API Gateway） | API 管理（API Management） |\\n --- \\n| 核心关注点 | 流量层治理：请求转发、安全控制、协议转换、流控等 | 接口全生命周期治理：从设计、文档、测试到发布、运营、商业化 |\\n| 关注对象 | 运行时流量：处理“谁来访问谁”的请求调度 | 接口资源本身：定义、版本、权限、资产、消费方式 |\\n| 典型角色 | 运维、平台架构师、SRE、安全工程师 | 产品经理、API 设计者、开发者关系（DevRel）、运营人员 |\\n| 典型能力 | - 路由转发 - 协议转换 - 认证鉴权 - 限流熔断 - 流量灰度 - 安全防护 | - API 规范设计 - 文档生成与同步 - 测试用例管理 - Mock 服务 - 权限与协作 - 开发者门户与计费 |\\n| 生命周期阶段 | 更偏向运行时（runtime）：请求进入网关即被处理 | 更覆盖全生命周期：设计、测试、部署、发布、监控 |\\n| 边界控制粒度 | 粒度粗：以路由、路径、主机为主，管理“访问通道” | 粒度细：可到接口级别、字段级别的管理与变更控制 | [...]\"}, {\"title\": \"10Wqps 超高并发 API网关 架构演进之路 - 技术自由圈 - 博客园\", \"url\": \"https://www.cnblogs.com/crazymakercircle/p/17215491.html\", \"content\": \"#### 安全方面\\n\\nSSL 加密及证书管理、Session 验证、授权、数据校验，以及对请求源进行恶意攻击的防范。错误处理越靠前的位置就是越好，所以，网关可以做到一个全站的接入组件来对后端的服务进行保护。当然，网关还可以做更多更有趣的事情，比如：灰度发布、API聚合、API编排。\\n\\n灰度发布\\n\\n网关完全可以做到对相同服务不同版本的实例进行导流，还可以收集相关的数据。这样对于软件质量的提升，甚至产品试错都有非常积极的意义。\\n\\nAPI 聚合\\n\\n使用网关可以将多个单独请求聚合成一个请求。在微服务体系的架构中，因为服务变小了，所以一个明显的问题是，客户端可能需要多次请求才能得到所有的数据。这样一来，客户端与后端之间的频繁通信会对应用程序的性能和规模产生非常不利的影响。于是，我们可以让网关来帮客户端请求多个后端的服务（有些场景下完全可以并发请求），然后把后端服务的响应结果拼装起来，回传给客户端（当然，这个过程也可以做成异步的，但这需要客户端的配合）。\\n\\nAPI 编排 [...] Zuul：目前正在应用中，Zuul 处理请求的方式是针对每个请求都启用一个线程来处理。通常情况下，为了提高性能，所有\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_03_KAQaLmbgFAf1m3mvrCYv0663",
+          "content": "{\"query\": \"API Gateway market trends 2025 2026 cloud native microservices\", \"results\": [{\"title\": \"Api Management Market 2026: Expert-Crafted Insights You Can Trust\", \"url\": \"https://www.strategicmarketresearch.com/market-report/api-management-market\", \"content\": \"scalable, and policy-compliant API gateways. Key macro forces shaping the market include:  Digital Transformation : Enterprises in finance, healthcare, retail, and telecom are deploying APIs to integrate legacy systems with cloud-native applications.  Regulatory Landscape : Data privacy laws and open banking mandates necessitate robust governance and monitoring features.  Cybersecurity Concerns : As APIs become high-value attack surfaces, the emphasis on secure API lifecycles has intensified. [.\"}, {\"title\": \"Integration trends 2026: API, Microservices & EDA\", \"url\": \"https://novasarc.com/blog/integration-trends-2026-api-microservices-eda\", \"content\": \"Market Insight: The global microservices architecture market was valued at USD 6.27 billion in 2024 and is projected to grow from USD 7.45 billion in 2025 to USD 15.97 billion by 2029, exhibiting a CAGR of 21.0% during the forecast period.\\n\\nMicroservices enhance flexibility but introduce challenges in managing complex systems and maintaining data consistency. Container orchestration tools and appropriate design patterns can help overcome these hurdles.\\n\\n### Microservices challenges [...] ## The \"}, {\"title\": \"API Management Market Size, Share & Trends Report 2026-2031\", \"url\": \"https://www.mordorintelligence.com/industry-reports/api-management-market\", \"content\": \"Cloud deployments held 79.55% of the API management market share in 2025 on the back of hyperscaler platforms that bundle gateways as managed services. Hybrid models, however, are advancing at a 21.10% CAGR and are expected to shift the API management market size materially by 2031. The rise stems from privacy regulations that require sensitive data to remain on-premises while still benefiting from elastic public cloud capacity. Microsoft’s Arc-enabled API Management allows containerised [...] M\"}, {\"title\": \"Cloud API Market Size, Trends & Leading Players, 2033\", \"url\": \"https://www.persistencemarketresearch.com/market-research/cloud-api-market.asp\", \"content\": \"Leading Service Model: SaaS APIs dominate with over 41% share in 2026, driven by rising demand for plug-and-play integrations, low-code development, and AI-enabled SaaS solutions supporting automation and cross-platform data exchange. PaaS APIs grow rapidly at 25.1% CAGR, supported by microservices, DevOps, and cloud-native app development. [...] SaaS cloud APIs are expected to account for more than 41% share in 2026, driven by their ability to accelerate software development and power digital s\"}, {\"title\": \"Best API Management Reviews 2026 | Gartner Peer Insights\", \"url\": \"https://www.gartner.com/reviews/market/api-management\", \"content\": \"API Gateway assists enterprises in integrating legacy and modern applications, ensuring visibility and compliance for API traffic across distributed architectures. [...] ## Top Trending Products\\n\\nAmazon API GatewayAmplify PlatformMuleSoft Anypoint PlatformKong KonnectKong GatewayTraefik Hub\\n\\n## Popular Product Comparisons\\n\\nIBM API Connect vs Microsoft Azure API ManagementAmazon API Gateway vs MuleSoft Anypoint PlatformMicrosoft Azure API Management vs MuleSoft Anypoint Platform [...] Amazon API \"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "我来帮你制定 DevGate API 网关的内容营销策略。首先，让我同时进行品牌档案查找和竞品/行业调研。",
+          "tool_calls": [
+            {
+              "id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"max_results\": 5}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_00_LL6SVV70EjAfbKmVwzVF9487",
+          "content": "{\"query\": \"API网关 知乎 热门话题 技术社区 开发者关注 2025\", \"results\": [{\"title\": \"2025年独立开发者该使用什么解决方案做开发？前端和后端？ - 知乎\", \"url\": \"https://www.zhihu.com/question/1913280070027581192\", \"content\": \"API Gateway 把静态资源指向 S3\\n\\nAPI Gateway 把后端请求指向 Lambda。\\n\\n其中 Lambda 如果用的不是nodejs，比如 bun 可以自己编译一个自定义 Layer；如果是 golang、rust 可以直接用空 linux。记得选 arm 架构，比 amd 性价比高。给大家一个基本的概念，如果是空接口，每个请求 nodejs 大概在2-10ms，内存消耗大概在60-90 mb。如果是 go 大概在2ms，内存消耗在25mb。增加一次 db 调用大概增加10-50ms。lambda 每个接口的耗时都有很好的统计，优化后请求开销，既可以提高用户体验，又可以极大的降低成本。\\n\\n这几层访问量不高时基本都是免费的。大家可以这么估算，动态接口 100w 次请求免费，超过了每 100w 次请求大概 0.5-2 美金（看你有没有用 api gateway 和 WAF） [...] 另外 cloudflare 和 vercel 对 next.js 的支持比较好，特别是 vercel，next.js 就是它们家的框架，所以很多人选择用 next.js。next.js 是\"}, {\"title\": \"2025年国内外API 数据安全网关产品推荐\", \"url\": \"https://zhuanlan.zhihu.com/p/1931736514582278901\", \"content\": \"API 网关作为微服务架构和数据开放的核心组件，其选择对于企业的技术架构、运维效率和安全防护至关重要。以下是国内外市场上一些主流且值得推荐的API\"}, {\"title\": \"2025年API集成选型指南，技术文档如何助力企业高效对接？ | 帆软数字化转型知识库\", \"url\": \"https://www.fanruan.com/blog/article/1793298\", \"content\": \"2025年，云原生、微服务、低代码平台已成为主流。企业的IT架构越来越复杂，业务系统数量激增。传统点对点的接口集成方式，已无法满足快速变化的业务需求。API网关、服务编排、统一认证、API管理平台成为选型新标配。\\n\\n企业除了关注API的“可用性”，更关心API的“可扩展性”“可观测性”和“安全性”。选型时，还要考虑与主流API管理平台（如Kong、Apigee、阿里云API网关）的兼容性，确保未来业务扩展不被技术“卡脖子”。\\n\\n### 1.3 企业API集成选型的核心关注点\\n\\n总结来看，2025年API集成选型，企业最关注：\\n\\n这些维度，不仅影响开发团队的对接效率，更直接关系到IT项目的成败。下文我们将详细分析，技术文档如何在API集成中发挥关键作用。\\n\\n## 📚二、技术文档在API集成中的核心价值\\n\\n很多企业在API集成时，最怕的不是“技术难度”，而是“文档不清”。一份好的技术文档，能让开发者看懂接口、快速对接、少踩坑；而一份糟糕的文档，会让项目周期翻倍、沟通成本激增。那技术文档到底在API集成中扮演了什么角色？\\n\\n### 2.1 技术文档是API集成的“导航仪” [...] ## \"}, {\"title\": \"从保证业务不中断，看网关的“前世今生”\", \"url\": \"https://zhuanlan.zhihu.com/p/406006556\", \"content\": \"API网关作为现代分布式、微服务、云原生系统中的一个重要组成部分，也作为一项重要的讨论主题，咱也聊聊负载均衡及API Gateway的现状。 现在大家在谈“分布\"}, {\"title\": \"在设计和开发企业级API 时，有哪些最佳实践可以避免踩坑？\", \"url\": \"https://www.zhihu.com/question/1962840387694593699/answer/1963183790613586537\", \"content\": \"我最近接手了一个新的后端项目，需要从零开始设计一套对外开放的API 接口。之前团队的API 常常因为版本迭代混乱、文档缺失、安全性考虑不足而饱受诟病\"}]}"
+        },
+        {
+          "role": "assistant",
+          "content": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "description": "搜索互联网获取竞品信息、行业趋势和目标用户画像。返回结果的标题、URL 和摘要。",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "搜索查询关键词"
+                },
+                "max_results": {
+                  "type": "integer",
+                  "description": "最大返回结果数（默认 5）",
+                  "default": 5
+                }
+              },
+              "required": [
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "brand_lookup",
+            "description": "根据产品名称查找已有的品牌档案（调性、目标用户、卖点），用于复用历史策略",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "product_name": {
+                  "type": "string",
+                  "description": "产品名称，用于模糊匹配已有品牌档案"
+                }
+              },
+              "required": [
+                "product_name"
+              ]
+            }
+          }
+        }
+      ],
+      "content": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。",
+      "tool_calls": [
+        {
+          "id": "call_00_TwrSgTUoVcKnx5RewdRN7117",
+          "type": "function",
+          "function": {
+            "name": "web_search",
+            "arguments": "{\"query\": \"Kong APISIX Tyk API网关 优缺点 开发者评价 2025\", \"max_results\": 5}"
+          }
+        }
+      ],
+      "model": "deepseek-v4-pro",
+      "tool_results": null,
+      "final_output": null
+    },
+    {
+      "step_index": 5,
+      "step_type": "final",
+      "timestamp": 1785482367.6507196,
+      "messages": null,
+      "tools": null,
+      "content": null,
+      "tool_calls": null,
+      "model": null,
+      "tool_results": null,
+      "final_output": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。"
+    }
+  ]
+}

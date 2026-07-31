@@ -1,0 +1,129 @@
+{
+  "project_id": "test-01-form",
+  "total_elapsed": 132.6,
+  "pipeline": [
+    {
+      "stage": "strategy",
+      "status": "done",
+      "elapsed": 17.4,
+      "input_summary": {
+        "product_name": "DevGate API 网关",
+        "product_description": "面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控",
+        "brand_tone": "极客",
+        "strategy": null,
+        "gzh_content": null,
+        "zhihu_content": null,
+        "xhs_content": null,
+        "review_report": null
+      },
+      "output_summary": {
+        "product_name": "DevGate API 网关",
+        "product_description": "面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控",
+        "brand_tone": "极客",
+        "strategy": {
+          "len": 32,
+          "preview": "现在让我再搜索一些关于小红书技术内容策略和开发者社区运营的信息。"
+        },
+        "gzh_content": null,
+        "zhihu_content": null,
+        "xhs_content": null,
+        "review_report": null
+      },
+      "error": null,
+      "tool_calls": [
+        {
+          "name": "brand_lookup",
+          "arguments": {
+            "product_name": "DevGate API 网关"
+          },
+          "result": "{'profiles': [], 'count': 0}"
+        },
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "API网关市场趋势 2025 2026 Kong APISIX 竞品分析",
+            "max_results": 5
+          },
+          "result": "{'query': 'API网关市场趋势 2025 2026 Kong APISIX 竞品分析', 'results': [{'title': 'Apache APISIX vs Kong: API Gateways Compared (2026)', 'url': 'https://api7.ai/apisix-vs-kong', 'content': \"APISIX leads on open"
+        },
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "后端工程师 API网关 选型 关注点 2025",
+            "max_results": 5
+          },
+          "result": "{'query': '后端工程师 API网关 选型 关注点 2025', 'results': [{'title': '微服务网关选型指南：从需求匹配到落地决策，选对网关少走弯路-腾讯云开发者社区-腾讯云', 'url': 'https://cloud.tencent.com/developer/article/2563361', 'content': '微服务网关选型指南：从需求匹配到落地决策，"
+        },
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "API Gateway market trends 2025 2026 cloud native microservices",
+            "max_results": 5
+          },
+          "result": "{'query': 'API Gateway market trends 2025 2026 cloud native microservices', 'results': [{'title': 'Api Management Market 2026: Expert-Crafted Insights You Can Trust', 'url': 'https://www.strategicmark"
+        },
+        {
+          "name": "web_search",
+          "arguments": {
+            "query": "API网关 知乎 热门话题 技术社区 开发者关注 2025",
+            "max_results": 5
+          },
+          "result": "{'query': 'API网关 知乎 热门话题 技术社区 开发者关注 2025', 'results': [{'title': '2025年独立开发者该使用什么解决方案做开发？前端和后端？ - 知乎', 'url': 'https://www.zhihu.com/question/1913280070027581192', 'content': 'API Gateway 把静态资源指向 S3\\n"
+        }
+      ]
+    },
+    {
+      "stage": "gongzhonghao",
+      "status": "done",
+      "elapsed": 60.1,
+      "input_summary": null,
+      "output_summary": {
+        "len": 3627
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "zhihu",
+      "status": "done",
+      "elapsed": 63.1,
+      "input_summary": null,
+      "output_summary": {
+        "len": 3701
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "xiaohongshu",
+      "status": "done",
+      "elapsed": 21.6,
+      "input_summary": null,
+      "output_summary": {
+        "len": 1102
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "shenjiao",
+      "status": "done",
+      "elapsed": 52.0,
+      "input_summary": null,
+      "output_summary": {
+        "len": 1745
+      },
+      "error": null,
+      "tool_calls": []
+    },
+    {
+      "stage": "export",
+      "status": "done",
+      "elapsed": 0.0,
+      "input_summary": null,
+      "output_summary": null,
+      "error": null,
+      "tool_calls": []
+    }
+  ]
+}

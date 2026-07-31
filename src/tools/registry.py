@@ -16,34 +16,39 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> "ToolRegistry":
-        """注册一个工具，返回 self 支持链式调用"""
         self._tools[tool.tool_id] = tool
         return self
 
     def build_descriptions(self, agent_tool_ids: list[str]) -> list[ToolDescription]:
-        """为指定 Agent 生成工具描述列表
-
-        只返回该 Agent 有权限的工具描述 ——
-        Agent 看不到它无权使用的工具。
-
-        Args:
-            agent_tool_ids: 该 Agent 允许使用的工具 ID 列表
-
-        Returns:
-            工具描述列表（用于注入 system prompt）
-        """
+        """为指定 Agent 生成工具描述列表（注入 system prompt）"""
         return [
             self._tools[tid].description
             for tid in agent_tool_ids
             if tid in self._tools
         ]
 
+    def build_openai_tools(self, agent_tool_ids: list[str]) -> list[dict]:
+        """生成 OpenAI/DeepSeek 原生 function calling 格式的 tools 参数"""
+        result = []
+        for tid in agent_tool_ids:
+            tool = self._tools.get(tid)
+            if tool is None:
+                continue
+            desc = tool.description
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": desc.name,
+                    "description": desc.description,
+                    "parameters": desc.parameters,
+                },
+            })
+        return result
+
     def get(self, tool_id: str) -> Tool | None:
-        """获取工具实例"""
         return self._tools.get(tool_id)
 
     def list_all(self) -> list[str]:
-        """列出所有已注册的工具 ID"""
         return list(self._tools.keys())
 
 

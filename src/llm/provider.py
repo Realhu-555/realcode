@@ -55,6 +55,49 @@ class LLMProvider:
             content = self._call(messages, model, provider)
         return _strip_thinking(content)
 
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        agent_type: str = "celve",
+    ) -> dict:
+        """原生 function calling — 返回 DeepSeek 标准格式
+
+        Returns:
+            {"content": str | None, "tool_calls": [{"id":..., "function": {"name":..., "arguments":...}}]}
+        """
+        model_key = self.MODEL_MAP.get(agent_type, "deepseek:deepseek-v4-pro")
+        provider, model = model_key.split(":", 1)
+        client = self.deepseek_client if provider == "deepseek" else self.openai_client
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.7,
+            max_tokens=4096,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+
+        msg = response.choices[0].message
+        result = {"content": _strip_thinking(msg.content or "")}
+
+        if msg.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in msg.tool_calls
+            ]
+
+        return result
+
     def _call(self, messages, model, provider):
         client = self.deepseek_client if provider == "deepseek" else self.openai_client
         response = client.chat.completions.create(
