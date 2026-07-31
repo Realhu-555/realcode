@@ -7,9 +7,17 @@ from src.tools.implementations.content_io import (
     ContentReadTool,
     ContentListTool,
 )
+from src.tools.implementations.database import (
+    BrandLookupTool,
+    ProjectSaveTool,
+    ProjectLoadTool,
+)
 
 tool_registry \
     .register(WebSearchTool()) \
     .register(ContentSaveTool()) \
     .register(ContentReadTool()) \
-    .register(ContentListTool())
+    .register(ContentListTool()) \
+    .register(BrandLookupTool()) \
+    .register(ProjectSaveTool()) \
+    .register(ProjectLoadTool())

@@ -1,15 +1,29 @@
-"""内容读写工具 —— 渠道 Agent 和审校 Agent 共用
+"""内容读写工具
 
-- content_save: 渠道 Agent 保存草稿
-- content_read: 审校 Agent 读取指定渠道内容
-- content_list: 审校/导出 Agent 列出所有产出
+key 约定（与 ContentProjectState 一致）：
+  - gzh_content:   公众号
+  - zhihu_content: 知乎
+  - xhs_content:   小红书
+  - review_report: 审校报告
+
+channel 参数对应关系：
+  - "gongzhonghao" → gzh_content
+  - "zhihu"         → zhihu_content
+  - "xiaohongshu"   → xhs_content
 """
 
-from src.tools.protocol import Tool, ToolContext, ToolDescription, ToolKind, ToolResult
+from src.tools.protocol import ToolContext, ToolDescription, ToolKind, ToolResult
+
+# channel → state key 映射
+_CHANNEL_KEY = {
+    "gongzhonghao": "gzh_content",
+    "zhihu": "zhihu_content",
+    "xiaohongshu": "xhs_content",
+}
 
 
 class ContentSaveTool:
-    """保存渠道内容"""
+    """保存渠道内容 — 用于渠道 Agent 持久化产出"""
 
     tool_id = "content_save"
     kind = ToolKind.WRITE
@@ -34,16 +48,17 @@ class ContentSaveTool:
     )
 
     async def execute(self, ctx: ToolContext, channel: str, content: str) -> ToolResult:
-        """保存内容到项目状态"""
+        key = _CHANNEL_KEY[channel]
+        # 实际写入 project_state（由 orchestrator 管理生命周期）
+        ctx.project_state[key] = content
         return ToolResult(
             success=True,
-            data={"channel": channel, "content": content},
-            system_reminder=f"{channel} 内容已保存到草稿。",
+            data={"channel": channel, "saved_len": len(content)},
         )
 
 
 class ContentReadTool:
-    """读取指定渠道内容"""
+    """读取指定渠道内容 — 审校 Agent 用"""
 
     tool_id = "content_read"
     kind = ToolKind.READ
@@ -64,17 +79,20 @@ class ContentReadTool:
     )
 
     async def execute(self, ctx: ToolContext, channel: str) -> ToolResult:
-        """从项目状态中读取指定渠道内容"""
-        state = ctx.project_state
-        content = state.get(f"{channel}_content", "")
+        key = _CHANNEL_KEY[channel]
+        content = ctx.project_state.get(key, "")
         return ToolResult(
             success=True,
-            data={"channel": channel, "content": str(content)},
+            data={
+                "channel": channel,
+                "content": str(content),
+                "length": len(str(content)),
+            },
         )
 
 
 class ContentListTool:
-    """列出所有产出"""
+    """列出所有产出 — 导出 Agent 用"""
 
     tool_id = "content_list"
     kind = ToolKind.READ
@@ -89,14 +107,12 @@ class ContentListTool:
     )
 
     async def execute(self, ctx: ToolContext) -> ToolResult:
-        """列出项目所有产出"""
         state = ctx.project_state
-        channels = ["gongzhonghao", "zhihu", "xiaohongshu"]
         items = []
-        for ch in channels:
-            content = state.get(f"{ch}_content")
+        for channel, key in _CHANNEL_KEY.items():
+            content = state.get(key)
             items.append({
-                "channel": ch,
+                "channel": channel,
                 "has_content": bool(content),
                 "length": len(str(content)) if content else 0,
             })

@@ -198,12 +198,13 @@ class TestContentSaveTool:
         from src.tools.implementations.content_io import ContentSaveTool
 
         tool = ContentSaveTool()
-        ctx = ToolContext(session_id="s1", working_dir="/tmp")
+        ctx = ToolContext(session_id="s1", working_dir="/tmp", project_state={})
         result = await tool.execute(ctx, channel="gongzhonghao", content="测试长文")
 
         assert result.success is True
         assert result.data["channel"] == "gongzhonghao"
-        assert "公众号" in result.system_reminder or "gongzhonghao" in result.system_reminder
+        assert result.data["saved_len"] == 4
+        assert ctx.project_state["gzh_content"] == "测试长文"
 
 
 class TestContentReadTool:
@@ -215,12 +216,13 @@ class TestContentReadTool:
         ctx = ToolContext(
             session_id="s1",
             working_dir="/tmp",
-            project_state={"gongzhonghao_content": "公众号内容"},
+            project_state={"gzh_content": "公众号内容"},
         )
         result = await tool.execute(ctx, channel="gongzhonghao")
 
         assert result.success is True
         assert result.data["content"] == "公众号内容"
+        assert result.data["length"] == 5
 
     @pytest.mark.asyncio
     async def test_read_missing_returns_empty(self):
@@ -244,9 +246,9 @@ class TestContentListTool:
             session_id="s1",
             working_dir="/tmp",
             project_state={
-                "gongzhonghao_content": "long content",
+                "gzh_content": "long content",
                 "zhihu_content": "answer",
-                "xiaohongshu_content": "",
+                "xhs_content": "",
             },
         )
         result = await tool.execute(ctx)
