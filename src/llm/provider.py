@@ -40,9 +40,9 @@ class LLMProvider:
     }
 
     def __init__(self):
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY") or "none")
         self.deepseek_client = OpenAI(
-            api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+            api_key=os.getenv("DEEPSEEK_API_KEY") or "none",
             base_url="https://api.deepseek.com",
         )
 

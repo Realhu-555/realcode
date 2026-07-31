@@ -31,6 +31,7 @@ app = FastAPI(title="素宣 Suxuan", version="1.0.0")
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
+app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")))
 app.mount("/static", StaticFiles(directory=str(static_dir)))
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
