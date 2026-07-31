@@ -8,6 +8,7 @@ from src.llm.provider import LLMProvider
 from src.prompt.context import PromptContext
 from src.prompt.renderer import renderer
 from src.tools.registry import tool_registry
+from src.tools.tool_tracker import call_tool_sync
 
 
 class ZhihuAgent(BaseAgent):
@@ -34,13 +35,12 @@ class ZhihuAgent(BaseAgent):
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇知乎专业回答。",
-            },
+            {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇知乎专业回答。"},
         ]
 
         content = self.llm.chat(messages, agent_type="zhihu")
+
+        call_tool_sync("content_save", "zhihu", state, channel="zhihu", content=content)
 
         return {
             **state,

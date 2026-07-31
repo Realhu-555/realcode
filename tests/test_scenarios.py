@@ -289,7 +289,9 @@ def _build_agents(trace=None):
     from src.agents.shenjiao import ShenjiaoAgent
     from src.agents.export import ExportAgent
     from src.utils.trace import TraceTracker
+    from src.tools.tool_tracker import reset_tool_tracker
 
+    reset_tool_tracker()
     celve_trace = trace or TraceTracker()
 
     return {
@@ -406,6 +408,12 @@ def _run_one_scenario(scenario: dict, mode: str, agents: dict) -> dict:
     st.status = "done"
     st.output_summary = {"len": len(str(state.get("review_report", "")))}
     review = state.get("review_report", "")
+
+    # Step 4: 导出（content_list + project_save）
+    st = pipeline.add_stage("export", status="started")
+    state = agents["export"].run(state)
+    st.end_ts = time.time()
+    st.status = "done"
 
     elapsed = time.time() - t_start
 

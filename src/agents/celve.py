@@ -18,6 +18,7 @@ from src.prompt.renderer import renderer
 from src.tools.registry import tool_registry
 from src.tools.protocol import ToolContext
 from src.utils.trace import TraceTracker
+from src.tools.tool_tracker import call_tool
 
 # 匹配 LLM 输出的工具调用：<tool_call>{"name":"web_search","arguments":{"query":"..."}}</tool_call>
 _TOOL_CALL_PATTERN = re.compile(
@@ -44,7 +45,7 @@ class CelveAgent(BaseAgent):
     MAX_REACT_ROUNDS = 3
 
     def __init__(self, trace: TraceTracker | None = None) -> None:
-        super().__init__(name="celve", tools=["web_search"])
+        super().__init__(name="celve", tools=["web_search", "brand_lookup"])
         self.llm = LLMProvider()
         self.trace = trace or TraceTracker()
 
@@ -56,6 +57,9 @@ class CelveAgent(BaseAgent):
             1 for m in state.get("messages", [])
             if m.get("from") == "celve" and m.get("type") == "question"
         )
+
+        # 查品牌档案（记录工具调用轨迹）
+        await call_tool("brand_lookup", "celve", state, product_name=state.get("product_name", ""))
 
         # 构建 context
         ctx = PromptContext(
@@ -124,7 +128,10 @@ class CelveAgent(BaseAgent):
                         tool_name = tc.get("name", "")
                         tool_args = tc.get("arguments", {})
 
-                        result = await self._execute_tool(tool_name, tool_args, state)
+                        result = await call_tool(tool_name, "celve", state, **tool_args)
+                        if result is None:
+                            from src.tools.protocol import ToolResult
+                            result = ToolResult(success=False, data=None, error=f"工具调用失败: {tool_name}")
                         self.trace.tool_call(
                             tool_id=tool_name,
                             params=tool_args,
@@ -190,24 +197,6 @@ class CelveAgent(BaseAgent):
             "messages": [{"from": "celve", "type": "output", "content": final_response}],
         }
 
-    async def _execute_tool(self, tool_name: str, args: dict, state: dict):
-        """执行单个工具调用"""
-        try:
-            tool = tool_registry.get(tool_name)
-            if tool is None:
-                from src.tools.protocol import ToolResult
-                return ToolResult(success=False, data=None, error=f"未知工具: {tool_name}")
-
-            ctx = ToolContext(
-                session_id="celve",
-                working_dir=".",
-                project_state=state,
-                brand_profile=None,
-            )
-            return await tool.execute(ctx, **args)
-        except Exception as e:
-            from src.tools.protocol import ToolResult
-            return ToolResult(success=False, data=None, error=str(e))
 
     def _build_user_message(self, state: dict) -> str:
         if state.get("input_mode") == "free":

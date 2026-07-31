@@ -8,10 +8,11 @@ from src.llm.provider import LLMProvider
 from src.prompt.context import PromptContext
 from src.prompt.renderer import renderer
 from src.tools.registry import tool_registry
+from src.tools.tool_tracker import call_tool_sync
 
 
 class XiaohongshuAgent(BaseAgent):
-    """小红书内容创作者 — MiniMax 2.7"""
+    """小红书内容创作者 — DeepSeek V4"""
 
     def __init__(self) -> None:
         super().__init__(name="xiaohongshu", tools=["content_save"])
@@ -34,18 +35,15 @@ class XiaohongshuAgent(BaseAgent):
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇小红书种草笔记。",
-            },
+            {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇小红书种草笔记。"},
         ]
 
         content = self.llm.chat(messages, agent_type="xiaohongshu")
 
+        call_tool_sync("content_save", "xiaohongshu", state, channel="xiaohongshu", content=content)
+
         return {
             **state,
             "xhs_content": content,
-            "messages": [
-                {"from": "xiaohongshu", "type": "output", "content": content}
-            ],
+            "messages": [{"from": "xiaohongshu", "type": "output", "content": content}],
         }

@@ -1,13 +1,11 @@
-"""公众号 Agent —— 撰写微信公众号深度长文（1500-3000 字）
-
-使用 DeepSeek V4，侧重行业洞察和产品价值。
-"""
+"""公众号 Agent — 深度长文 + 自动保存"""
 
 from src.agents.base import BaseAgent
 from src.llm.provider import LLMProvider
 from src.prompt.context import PromptContext
 from src.prompt.renderer import renderer
 from src.tools.registry import tool_registry
+from src.tools.tool_tracker import call_tool_sync
 
 
 class GongzhonghaoAgent(BaseAgent):
@@ -34,13 +32,13 @@ class GongzhonghaoAgent(BaseAgent):
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇微信公众号深度长文。",
-            },
+            {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇微信公众号深度长文。"},
         ]
 
         content = self.llm.chat(messages, agent_type="gongzhonghao")
+
+        # 自动保存到草稿
+        call_tool_sync("content_save", "gongzhonghao", state, channel="gongzhonghao", content=content)
 
         return {
             **state,

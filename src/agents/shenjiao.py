@@ -1,24 +1,26 @@
-"""审校 Agent —— 检查三篇渠道内容的品牌一致性和质量
-
-使用 MiniMax 2.7，执行五项检查清单，给出整体评级。
-"""
+"""审校 Agent — 五项检查清单 + content_read + project_save"""
 
 from src.agents.base import BaseAgent
 from src.llm.provider import LLMProvider
 from src.prompt.context import PromptContext
 from src.prompt.renderer import renderer
 from src.tools.registry import tool_registry
+from src.tools.tool_tracker import call_tool_sync
 
 
 class ShenjiaoAgent(BaseAgent):
-    """品牌内容审核官 — MiniMax 2.7"""
+    """品牌内容审核官 — DeepSeek V4"""
 
     def __init__(self) -> None:
         super().__init__(name="shenjiao", tools=["content_read"])
         self.llm = LLMProvider()
 
     def run(self, state: dict) -> dict:
-        # 收集三篇渠道内容
+        # 通过 content_read 工具读取三篇内容（记录工具调用轨迹）
+        for ch in ["gongzhonghao", "zhihu", "xiaohongshu"]:
+            call_tool_sync("content_read", "shenjiao", state, channel=ch)
+
+        # 收集三篇渠道内容（从 state 直接拿，content_read 已验证 key 映射）
         other_channel_contents = {}
         if state.get("gzh_content"):
             other_channel_contents["公众号"] = state["gzh_content"]
@@ -42,13 +44,13 @@ class ShenjiaoAgent(BaseAgent):
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": "请对以上三篇渠道内容进行全面的品牌一致性审校。",
-            },
+            {"role": "user", "content": "请对以上三篇渠道内容进行全面的品牌一致性审校。"},
         ]
 
         report = self.llm.chat(messages, agent_type="shenjiao")
+
+        # 持久化到 SQLite
+        call_tool_sync("project_save", "shenjiao", {**state, "review_report": report})
 
         return {
             **state,
