@@ -8,7 +8,7 @@ import copy
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
@@ -24,6 +24,7 @@ from src.agents.zhihu import ZhihuAgent
 from src.agents.xiaohongshu import XiaohongshuAgent
 from src.agents.shenjiao import ShenjiaoAgent
 from src.agents.export import ExportAgent
+from src.orchestrator.gate import ApprovalGate, UserAction
 from src.orchestrator.state import ContentProjectState, ContentStage
 from src.storage.project_store import store
 from src.web.auth import get_user_id
@@ -80,6 +81,19 @@ class ConnectionManager:
 ws_manager = ConnectionManager()
 
 
+# ── ApprovalGate 全局单例 ──
+approval_gate = ApprovalGate(timeout=300)
+
+
+async def _notify_approval(client_id: str, data: dict) -> None:
+    """将 ApprovalGate 通知转发到 WebSocket broadcast"""
+    data["project_id"] = client_id
+    await ws_manager.broadcast(client_id, data)
+
+
+approval_gate.set_notify_callback(_notify_approval)
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     cid = await ws_manager.connect(ws)
@@ -89,6 +103,14 @@ async def ws_endpoint(ws: WebSocket):
             if data.get("action") == "subscribe" and data.get("project_id"):
                 ws_manager.subscribe(cid, data["project_id"])
                 await ws.send_json({"type": "subscribed", "project_id": data["project_id"]})
+            elif data.get("action") in ("approve", "revise", "redo"):
+                request_id = data.get("request_id")
+                feedback = data.get("feedback") if data["action"] == "revise" else None
+                approval_gate.handle_user_action(
+                    request_id=request_id,
+                    action=UserAction(data["action"]),
+                    feedback=feedback,
+                )
     except WebSocketDisconnect:
         ws_manager.disconnect(cid)
 
@@ -164,10 +186,6 @@ class CreateProjectRequest(BaseModel):
     image_urls: list[str] | None = None
 
 
-class ConfirmRequest(BaseModel):
-    confirmed: bool = True
-    feedback: str | None = None
-
 
 @app.post("/api/v1/content-projects")
 async def create_project(req: CreateProjectRequest, user_id: str = Depends(get_user_id)):
@@ -193,6 +211,7 @@ async def create_project(req: CreateProjectRequest, user_id: str = Depends(get_u
         "brand_profile_id": None,
     }
 
+    # ── 策略生成 ──
     await _push_progress(project_id, "celve", "running", "策略分析中…")
     st = pipeline.add("strategy", status="started")
     try:
@@ -210,48 +229,60 @@ async def create_project(req: CreateProjectRequest, user_id: str = Depends(get_u
 
     await _push_progress(project_id, "celve", "done", "策略分析完成")
 
-    # 持久化到 SQLite
+    # 持久化
     store.save(project_id, {**state, "current_stage": str(state.get("current_stage", ""))}, user_id)
 
     return _response(project_id, state)
 
 
-@app.get("/api/v1/content-projects/{project_id}")
-async def get_project(project_id: str, user_id: str = Depends(get_user_id)):
-    proj = store.get(project_id, user_id)
-    if not proj:
-        return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
-    return proj
-
-
 @app.post("/api/v1/content-projects/{project_id}/confirm-strategy")
-async def confirm_strategy(project_id: str, req: ConfirmRequest, user_id: str = Depends(get_user_id)):
-    proj = store.get(project_id, user_id)
-    if not proj:
-        return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
-
+async def confirm_strategy(project_id: str, user_id: str = Depends(get_user_id)):
+    """策略确认 → 人工审批（approve/revise/redo）→ 三渠道生成 → 审校"""
     proj = store.get(project_id, user_id)
     if not proj:
         return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
 
     state = proj.get("_full", proj)
-    pipeline = PipelineTrace(project_id=project_id)
-    agents = _build_agents()
+    celve_trace = TraceTracker()
+    agents = _build_agents(celve_trace=celve_trace)
 
-    # 处理反馈
-    if req.feedback:
-        state["messages"] = state.get("messages", []) + [
-            {"from": "user", "to": "celve", "type": "answer", "content": req.feedback}
-        ]
-        state["ask_user"] = None
-        state = agents["celve"].run(state)
-        if state.get("ask_user"):
-            store.save(project_id, {**state, "current_stage": str(state.get("current_stage", ""))}, user_id)
-            return _response(project_id, state)
+    # ── 审批循环：approve → 继续 / revise → 带反馈重生成 / redo → 清空重生成 ──
+    strategy_version = 1
+    while True:
+        # 策略已生成或已更新，推送审批要求
+        artifact = {
+            "full_content": state.get("strategy") or "",
+            "summary": (state.get("strategy") or "")[:200],
+            "version": strategy_version,
+        }
+        await _push_progress(project_id, "celve", "done", "策略分析完成，等待确认…")
+        result = await approval_gate.wait_for_approval(project_id, "strategy", artifact)
 
+        if result.action == UserAction.APPROVE:
+            break
+        elif result.action == UserAction.REVISE:
+            state["messages"] = state.get("messages", []) + [
+                {"from": "user", "to": "celve", "type": "answer",
+                 "content": result.feedback or ""}
+            ]
+            state["ask_user"] = None
+            strategy_version += 1
+            await _push_progress(project_id, "celve", "running", "根据反馈修改策略…")
+            state = agents["celve"].run(state)
+            await _push_progress(project_id, "celve", "done", "策略已更新")
+            continue
+        elif result.action == UserAction.REDO:
+            state["strategy"] = None
+            state["ask_user"] = None
+            strategy_version += 1
+            await _push_progress(project_id, "celve", "running", "重新生成策略…")
+            state = agents["celve"].run(state)
+            await _push_progress(project_id, "celve", "done", "策略重新生成完成")
+            continue
+
+    # ── 策略已确认：三渠道并行生成 ──
     state["current_stage"] = ContentStage.GENERATING
 
-    # ===== 三路真正并行 =====
     channels = [
         ("gongzhonghao", agents["gongzhonghao"]),
         ("zhihu", agents["zhihu"]),
@@ -291,6 +322,14 @@ async def confirm_strategy(project_id: str, req: ConfirmRequest, user_id: str = 
 
     store.save(project_id, {**state, "current_stage": str(state.get("current_stage", ""))}, user_id)
     return _response(project_id, state)
+
+
+@app.get("/api/v1/content-projects/{project_id}")
+async def get_project(project_id: str, user_id: str = Depends(get_user_id)):
+    proj = store.get(project_id, user_id)
+    if not proj:
+        return {"project_id": project_id, "stage": "not_found", "error": "项目不存在"}
+    return proj
 
 
 @app.get("/api/v1/content-projects/{project_id}/content/{channel}")

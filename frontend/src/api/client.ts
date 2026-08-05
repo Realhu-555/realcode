@@ -11,7 +11,7 @@ function getApiKey(): string {
 
 const client = axios.create({
   baseURL: "/api/v1",
-  timeout: 120_000,
+  timeout: 600_000,  // 10 min — 适配 ApprovalGate 超时 (5 min) + 生成时间
   headers: { "Content-Type": "application/json" },
 })
 
@@ -66,11 +66,9 @@ export async function getProjectStatus(projectId: string): Promise<ProjectStatus
   return data
 }
 
-export async function confirmStrategy(projectId: string, confirmed: boolean, feedback?: string) {
-  const { data } = await client.post(`/content-projects/${projectId}/confirm-strategy`, {
-    confirmed,
-    feedback,
-  })
+export async function confirmStrategy(projectId: string) {
+  // 发起审批流程（阻塞直到用户审批 + 渠道生成完成）
+  const { data } = await client.post(`/content-projects/${projectId}/confirm-strategy`)
   return data
 }
 

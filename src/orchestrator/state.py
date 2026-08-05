@@ -49,3 +49,10 @@ class ContentProjectState(TypedDict, total=False):
 
     # === 记忆 ===
     brand_profile_id: str | None
+
+
+class OutputArtifact(TypedDict, total=False):
+    """Agent 产出物（供 ApprovalGate 使用）"""
+    full_content: str
+    summary: str
+    version: int

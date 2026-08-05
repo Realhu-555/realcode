@@ -1,6 +1,7 @@
 import { defineStore } from "pinia"
 import { ref, computed } from "vue"
-import { createProject, getProjectStatus, confirmStrategy, listProjects, type CreateProjectPayload, type ProjectStatus, type ProjectListItem } from "../api/client"
+import { createProject, getProjectStatus, listProjects, type CreateProjectPayload, type ProjectStatus, type ProjectListItem } from "../api/client"
+import { useWsStore } from "./ws"
 import { MOCK_STATUS_STRATEGY, MOCK_STATUS_PREVIEW } from "./mock"
 
 export const useProjectStore = defineStore("project", () => {
@@ -9,6 +10,7 @@ export const useProjectStore = defineStore("project", () => {
   const projectList = ref<ProjectListItem[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const currentRequestId = ref<string | null>(null)
 
   const stage = computed(() => status.value?.stage ?? "idle")
 
@@ -45,21 +47,34 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function confirm(feedback?: string) {
-    if (!currentProjectId.value) return
-    loading.value = true
-    try {
-      const result = await confirmStrategy(currentProjectId.value, true, feedback)
-      status.value = result
-      return result
-    } catch (e: any) {
-      console.warn("[dev] API 不可用，使用模拟生成数据")
-      currentProjectId.value = "mock-preview"
-      status.value = MOCK_STATUS_PREVIEW
-      return { project_id: "mock-preview" }
-    } finally {
-      loading.value = false
+  // ── 三操作（通过 WebSocket 发送，唤醒后端 ApprovalGate） ──
+  function approve(requestId: string) {
+    currentRequestId.value = null
+    useWsStore().sendApprovalAction(requestId, "approve")
+  }
+
+  function revise(requestId: string, feedback: string) {
+    currentRequestId.value = null
+    useWsStore().sendApprovalAction(requestId, "revise", feedback)
+  }
+
+  function redo(requestId: string) {
+    currentRequestId.value = null
+    useWsStore().sendApprovalAction(requestId, "redo")
+  }
+
+  // 兼容旧 UI（直接确认策略 → 已废弃，改用 approve/revise/redo）
+  async function confirm(_feedback?: string) {
+    if (!currentRequestId.value) return
+    if (_feedback) {
+      revise(currentRequestId.value, _feedback)
+    } else {
+      approve(currentRequestId.value)
     }
+  }
+
+  function setCurrentRequestId(requestId: string) {
+    currentRequestId.value = requestId
   }
 
   async function loadProjects() {
@@ -75,7 +90,13 @@ export const useProjectStore = defineStore("project", () => {
     currentProjectId.value = null
     status.value = null
     error.value = null
+    currentRequestId.value = null
   }
 
-  return { currentProjectId, status, projectList, loading, error, stage, submit, refresh, confirm, reset, loadProjects }
+  return {
+    currentProjectId, status, projectList, loading, error, stage,
+    currentRequestId,
+    submit, refresh, confirm, reset, loadProjects,
+    approve, revise, redo, setCurrentRequestId,
+  }
 })
