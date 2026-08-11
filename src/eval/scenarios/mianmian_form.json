@@ -1,0 +1,13 @@
+{
+  "name": "mianmian_form",
+  "input_mode": "form",
+  "product_name": "眠眠",
+  "product_description": "通过白噪音、呼吸引导和睡眠数据分析，帮助都市白领改善睡眠质量",
+  "target_users": "25-40岁都市白领，尤其是有入睡困难、睡眠浅的人群",
+  "key_selling_points": ["AI 个性化睡眠方案", "300+ 原创白噪音曲库", "智能唤醒浅睡眠阶段", "睡眠报告可视化"],
+  "brand_tone": "轻松",
+  "competitors": ["潮汐", "小睡眠", "Calm"],
+  "user_idea": "",
+  "tags": ["consumer", "form", "medium"],
+  "auto_answer": "信息够了，直接按现有信息生成完整策略，不用追问"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "devgate_form",
+  "input_mode": "form",
+  "product_name": "DevGate API 网关",
+  "product_description": "面向微服务架构的统一 API 网关，支持限流、鉴权、协议转换和实时监控",
+  "target_users": "后端开发工程师、架构师、DevOps 团队",
+  "key_selling_points": ["零停机热更新路由规则", "内置 JWT/OAuth2.0 鉴权", "10万QPS 单节点吞吐", "Prometheus + Grafana 开箱监控"],
+  "brand_tone": "极客",
+  "competitors": ["Kong", "APISIX", "Tyk"],
+  "user_idea": "",
+  "tags": ["devtool", "form", "high"],
+  "auto_answer": "信息够了，直接按现有信息生成完整策略，不用追问"
+}

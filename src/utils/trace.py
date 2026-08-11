@@ -25,6 +25,11 @@ class TraceStep:
     step_type: str        # "llm_call" | "tool_results" | "final"
     timestamp: float = field(default_factory=time.time)
 
+    # 可观测性扩展（评测/成本/耗时）
+    stage: str | None = None            # ContentStage: strategy/generating/review...
+    cost: dict | None = None            # Token 明细: {"prompt_tokens":..,"completion_tokens":..}
+    duration_ms: float | None = None    # 本步耗时（毫秒）
+
     # LLM call — 原生 function calling 格式
     messages: list[dict] | None = None       # 发给 LLM 的消息
     tools: list[dict] | None = None          # 可用的 tools schema
