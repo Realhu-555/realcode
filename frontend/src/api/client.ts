@@ -31,6 +31,23 @@ export interface CreateProjectPayload {
   competitors?: string[]
   user_idea?: string
   image_urls?: string[]
+  model_preference?: string
+}
+
+export interface ModelInfo {
+  id: string
+  label: string
+  capabilities: string[]
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[]
+  default: string
+}
+
+export async function listModels(): Promise<ModelsResponse> {
+  const { data } = await client.get("/models")
+  return data
 }
 
 export interface ProjectStatus {

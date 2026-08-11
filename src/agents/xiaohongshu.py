@@ -38,7 +38,8 @@ class XiaohongshuAgent(BaseAgent):
             {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇小红书种草笔记。"},
         ]
 
-        content = self.llm.chat(messages, agent_type="xiaohongshu")
+        content = self.llm.chat(messages, agent_type="xiaohongshu",
+                                model_id=state.get("model_preference"))
 
         call_tool_sync("content_save", "xiaohongshu", state, channel="xiaohongshu", content=content)
 

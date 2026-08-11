@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useProjectStore } from "../stores/project"
 import { useWsStore } from "../stores/ws"
 import { useImageUpload } from "../composables/useImageUpload"
+import { listModels, type ModelInfo } from "../api/client"
 import GuidedForm from "../components/GuidedForm.vue"
 import FreeInput from "../components/FreeInput.vue"
 
@@ -15,6 +16,22 @@ const { images, uploading, error: imgError, addImages, removeImage, clear: clear
 const mode = ref<"guided" | "free">("guided")
 const submitting = ref(false)
 
+// 模型选择（留空 = 跟随系统默认）
+const models = ref<ModelInfo[]>([])
+const modelPreference = ref<string>("")
+const modelOptions = computed(() =>
+  models.value.map((m) => ({ label: m.label, value: m.id }))
+)
+
+onMounted(async () => {
+  try {
+    const res = await listModels()
+    models.value = res.models
+  } catch {
+    models.value = []
+  }
+})
+
 wsStore.connect()
 
 async function handleFormSubmit(payload: any) {
@@ -24,6 +41,7 @@ async function handleFormSubmit(payload: any) {
       mode: "form",
       ...payload,
       image_urls: images.value.length > 0 ? [...images.value] : undefined,
+      model_preference: modelPreference.value || undefined,
     })
     router.push(`/strategy/${result.project_id}`)
   } finally {
@@ -38,6 +56,7 @@ async function handleFreeSubmit(idea: string) {
       mode: "free",
       user_idea: idea,
       image_urls: images.value.length > 0 ? [...images.value] : undefined,
+      model_preference: modelPreference.value || undefined,
     })
     router.push(`/strategy/${result.project_id}`)
   } finally {
@@ -81,6 +100,22 @@ function onFileInput(e: Event) {
         <span class="text-xs text-muted ml-auto hidden sm:block">
           {{ mode === 'guided' ? '填表单，AI 整理策略' : '写描述，AI 自主策划' }}
         </span>
+      </div>
+    </div>
+
+    <!-- 模型选择（两种模式共用） -->
+    <div class="border-b border-[var(--border)] bg-[var(--bg-card)]/50">
+      <div class="max-w-2xl mx-auto px-8 py-2 flex items-center gap-3">
+        <span class="text-xs text-muted shrink-0">🤖 生成模型</span>
+        <n-select
+          v-model:value="modelPreference"
+          :options="modelOptions"
+          size="small"
+          clearable
+          placeholder="跟随系统默认（DeepSeek）"
+          class="!w-56"
+        />
+        <span class="text-xs text-muted hidden sm:block">主模型故障自动切换备用，全程无感</span>
       </div>
     </div>
 

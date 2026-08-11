@@ -38,7 +38,8 @@ class ZhihuAgent(BaseAgent):
             {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇知乎专业回答。"},
         ]
 
-        content = self.llm.chat(messages, agent_type="zhihu")
+        content = self.llm.chat(messages, agent_type="zhihu",
+                                model_id=state.get("model_preference"))
 
         call_tool_sync("content_save", "zhihu", state, channel="zhihu", content=content)
 

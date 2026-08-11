@@ -33,6 +33,7 @@ class ContentProjectState(TypedDict, total=False):
     competitors: list[str]
     user_idea: str
     image_urls: list[str]              # 上传图片（base64 data URLs）
+    model_preference: str | None       # 用户选择的模型 ID（None = Agent 默认）
 
     # === Agent 产出 ===
     strategy: str | None

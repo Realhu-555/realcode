@@ -6,22 +6,28 @@ from unittest.mock import MagicMock, patch
 from src.llm.provider import LLMProvider
 
 
-def test_model_map_exists():
-    """MODEL_MAP 存在且非空"""
-    assert len(LLMProvider.MODEL_MAP) > 0
+def test_registry_exists():
+    """模型注册表存在且非空"""
+    from src.llm.models import load_registry
+    registry = load_registry()
+    assert len(registry.models) > 0
 
 
 def test_all_content_agents_have_deepseek_model():
-    """内容平台 Agent 全部使用 DeepSeek"""
+    """内容平台 Agent 默认全部使用 DeepSeek"""
+    from src.llm.models import load_registry
+    registry = load_registry()
     agents = ["celve", "gongzhonghao", "zhihu", "xiaohongshu", "shenjiao", "export"]
     for agent_type in agents:
-        model = LLMProvider.MODEL_MAP[agent_type]
-        assert "deepseek" in model, f"{agent_type}: {model}"
+        model = registry.default_for(agent_type)
+        assert model == "deepseek-v4-pro", f"{agent_type}: {model}"
 
 
 def test_vision_moved_to_vision_module():
-    """视觉模型已移至 src.vision，provider 只做文本 LLM"""
-    assert "vision" not in LLMProvider.MODEL_MAP  # 视觉功能在 vision/__init__.py
+    """视觉模型独立于 LLM 注册表（vision/__init__.py）"""
+    from src.llm.models import load_registry
+    registry = load_registry()
+    assert "vision" not in registry.models
 
 
 def test_chat_returns_string():

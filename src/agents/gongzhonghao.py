@@ -35,7 +35,8 @@ class GongzhonghaoAgent(BaseAgent):
             {"role": "user", "content": f"请基于以上策略，为产品「{state.get('product_name', '')}」撰写一篇微信公众号深度长文。"},
         ]
 
-        content = self.llm.chat(messages, agent_type="gongzhonghao")
+        content = self.llm.chat(messages, agent_type="gongzhonghao",
+                                model_id=state.get("model_preference"))
 
         # 自动保存到草稿
         call_tool_sync("content_save", "gongzhonghao", state, channel="gongzhonghao", content=content)

@@ -47,7 +47,8 @@ class ShenjiaoAgent(BaseAgent):
             {"role": "user", "content": "请对以上三篇渠道内容进行全面的品牌一致性审校。"},
         ]
 
-        report = self.llm.chat(messages, agent_type="shenjiao")
+        report = self.llm.chat(messages, agent_type="shenjiao",
+                               model_id=state.get("model_preference"))
 
         # 持久化到 SQLite
         call_tool_sync("project_save", "shenjiao", {**state, "review_report": report})

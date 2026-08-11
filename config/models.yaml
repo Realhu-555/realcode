@@ -1,0 +1,49 @@
+# 素宣模型注册表 — 多模型接入配置
+# 新增模型 = 在此加一段配置，不用改代码
+# api_key 从环境变量读取（api_key_env），不在此存明文
+
+models:
+  deepseek-v4-pro:
+    label: "DeepSeek V4 Pro"
+    provider: openai-compatible
+    model: deepseek-v4-pro
+    base_url: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    input_price_per_m: 0.27
+    output_price_per_m: 1.10
+    capabilities: [chat, tools]
+
+  minimax-2.7:
+    label: "MiniMax 2.7"
+    provider: openai-compatible
+    model: MiniMax-Text-01
+    base_url: "https://api.minimax.io/v1"
+    api_key_env: MINIMAX_API_KEY
+    input_price_per_m: 0.20
+    output_price_per_m: 1.00
+    capabilities: [chat, tools]
+
+  openrouter-auto:
+    label: "OpenRouter 自动"
+    provider: openai-compatible
+    model: auto
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: OPENROUTER_API_KEY
+    input_price_per_m: 0.00
+    output_price_per_m: 0.00
+    capabilities: [chat, tools]
+
+# Agent 默认模型路由
+agent_defaults:
+  celve: deepseek-v4-pro
+  gongzhonghao: deepseek-v4-pro
+  zhihu: deepseek-v4-pro
+  xiaohongshu: deepseek-v4-pro
+  shenjiao: deepseek-v4-pro
+  export: deepseek-v4-pro
+
+# Failover 候选链：主模型重试耗尽 → 依次尝试备用
+fallback_chains:
+  deepseek-v4-pro: [minimax-2.7, openrouter-auto]
+  minimax-2.7: [deepseek-v4-pro, openrouter-auto]
+  openrouter-auto: [deepseek-v4-pro]

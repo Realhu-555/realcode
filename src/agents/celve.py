@@ -89,7 +89,8 @@ class CelveAgent(BaseAgent):
             if force_output and round_idx > 0:
                 break  # 强制产出模式只调一次，不循环
 
-            resp = self.llm.chat_with_tools(messages, tools=openai_tools, agent_type="celve")
+            resp = self.llm.chat_with_tools(messages, tools=openai_tools, agent_type="celve",
+                                            model_id=state.get("model_preference"))
 
             content = resp.get("content", "")
             tool_calls = resp.get("tool_calls") or []

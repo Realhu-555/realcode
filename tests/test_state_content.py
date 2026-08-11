@@ -137,13 +137,13 @@ class TestStageLabels:
 
 class TestLLMProviderModelMap:
     def test_all_content_agents_use_deepseek(self):
-        from src.llm.provider import LLMProvider
+        from src.llm.models import load_registry
 
+        registry = load_registry()
         agents = ["celve", "gongzhonghao", "zhihu", "xiaohongshu", "shenjiao", "export"]
         for name in agents:
-            model = LLMProvider.MODEL_MAP.get(name)
-            assert model is not None, f"缺少 {name} 模型映射"
-            assert "deepseek" in model, f"{name} 应该用 DeepSeek，实际: {model}"
+            model = registry.default_for(name)
+            assert model == "deepseek-v4-pro", f"{name} 应该用 DeepSeek，实际: {model}"
 
     def test_vision_module_standalone(self):
         """视觉模块独立 — describe_images 可用"""
@@ -156,4 +156,4 @@ class TestLLMProviderModelMap:
         from src.llm.provider import LLMProvider
         llm = LLMProvider()
         assert callable(llm.chat)
-        assert "vision" not in LLMProvider.MODEL_MAP
+        assert callable(llm.chat_with_tools)

@@ -184,6 +184,7 @@ class CreateProjectRequest(BaseModel):
     competitors: list[str] | None = None
     user_idea: str | None = None
     image_urls: list[str] | None = None
+    model_preference: str | None = None
 
 
 
@@ -204,6 +205,7 @@ async def create_project(req: CreateProjectRequest, user_id: str = Depends(get_u
         "competitors": req.competitors or [],
         "user_idea": req.user_idea or "",
         "image_urls": req.image_urls or [],
+        "model_preference": req.model_preference or None,
         "strategy": None, "gzh_content": None, "zhihu_content": None,
         "xhs_content": None, "review_report": None,
         "current_stage": ContentStage.STRATEGY,
@@ -215,7 +217,8 @@ async def create_project(req: CreateProjectRequest, user_id: str = Depends(get_u
     await _push_progress(project_id, "celve", "running", "策略分析中…")
     st = pipeline.add("strategy", status="started")
     try:
-        state = agents["celve"].run(state)
+        loop = asyncio.get_running_loop()
+        state = await loop.run_in_executor(_thread_pool, agents["celve"].run, state)
         st.end_ts = time.time(); st.status = "done"
         st.tool_calls = [
             {"name": tr["name"], "arguments": tr["arguments"],
@@ -268,7 +271,8 @@ async def confirm_strategy(project_id: str, user_id: str = Depends(get_user_id))
             state["ask_user"] = None
             strategy_version += 1
             await _push_progress(project_id, "celve", "running", "根据反馈修改策略…")
-            state = agents["celve"].run(state)
+            loop = asyncio.get_running_loop()
+            state = await loop.run_in_executor(_thread_pool, agents["celve"].run, state)
             await _push_progress(project_id, "celve", "done", "策略已更新")
             continue
         elif result.action == UserAction.REDO:
@@ -276,7 +280,8 @@ async def confirm_strategy(project_id: str, user_id: str = Depends(get_user_id))
             state["ask_user"] = None
             strategy_version += 1
             await _push_progress(project_id, "celve", "running", "重新生成策略…")
-            state = agents["celve"].run(state)
+            loop = asyncio.get_running_loop()
+            state = await loop.run_in_executor(_thread_pool, agents["celve"].run, state)
             await _push_progress(project_id, "celve", "done", "策略重新生成完成")
             continue
 
@@ -383,7 +388,18 @@ async def list_projects(user_id: str = Depends(get_user_id)):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/models")
+async def list_models(user_id: str = Depends(get_user_id)):
+    """列出可用模型（前端模型选择下拉）"""
+    from src.llm.models import load_registry
+    registry = load_registry()
+    return {
+        "models": registry.list_models(),
+        "default": registry.default_model_id(),
+    }
 
 
 # ════════════════════════════════════════════════════════════

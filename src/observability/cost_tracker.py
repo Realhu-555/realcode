@@ -89,11 +89,11 @@ class CostTracker:
         return sum(r.completion_tokens for r in self.records)
 
     def estimate_cost(self, model: str | None = None) -> float:
-        """估算金额（美元）。按模型单价，未知模型用 default。"""
+        """估算金额（美元）。按模型单价，未知模型用 default 兜底。"""
         total = 0.0
+        default_price = self.pricing.get("default", {"input": 0.27, "output": 1.10})
         for r in self.records:
-            key = r.model if r.model in self.pricing else "default"
-            price = self.pricing.get(key, self.pricing["default"])
+            price = self.pricing.get(r.model, default_price)
             total += (r.prompt_tokens / 1_000_000) * price["input"]
             total += (r.completion_tokens / 1_000_000) * price["output"]
         return round(total, 6)
