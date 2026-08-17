@@ -5,13 +5,15 @@
 
 import asyncio
 import copy
+import json
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import Depends, FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -19,22 +21,34 @@ _thread_pool = ThreadPoolExecutor(max_workers=4)
 from pydantic import BaseModel
 
 from src.agents.celve import CelveAgent
-from src.agents.gongzhonghao import GongzhonghaoAgent
-from src.agents.zhihu import ZhihuAgent
-from src.agents.xiaohongshu import XiaohongshuAgent
-from src.agents.shenjiao import ShenjiaoAgent
 from src.agents.export import ExportAgent
+from src.agents.gis_checker import CheckerAgent
+from src.agents.gis_codegen import CodegenAgent
+from src.agents.gis_design import DesignAgent
+from src.agents.gis_plan import PlanAgent
+from src.agents.gongzhonghao import GongzhonghaoAgent
+from src.agents.shenjiao import ShenjiaoAgent
+from src.agents.xiaohongshu import XiaohongshuAgent
+from src.agents.zhihu import ZhihuAgent
 from src.orchestrator.gate import ApprovalGate, UserAction
-from src.orchestrator.state import ContentProjectState, ContentStage
+from src.orchestrator.graph import create_gis_graph
+from src.orchestrator.state import ContentProjectState, ContentStage, GisProjectState
 from src.storage.project_store import store
-from src.web.auth import get_user_id
+from src.tools.implementations.data_inspect import inspect_file
 from src.utils.trace import TraceTracker
+from src.web.auth import get_user_id
 
 app = FastAPI(title="素宣 Suxuan", version="1.0.0")
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")))
+
+# GIS 上传限制（SPEC v1.2 Task 4）
+GIS_UPLOAD_DIR = Path("data/gis_uploads")
+GIS_EXPORT_DIR = Path("data/gis_exports")
+ALLOWED_GIS_EXTENSIONS = {".csv", ".geojson", ".json", ".zip"}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
 @app.get("/")
@@ -111,6 +125,18 @@ async def ws_endpoint(ws: WebSocket):
                     action=UserAction(data["action"]),
                     feedback=feedback,
                 )
+            elif data.get("action") == "build_gis":
+                project_id = uuid.uuid4().hex[:12]
+                asyncio.create_task(
+                    _run_gis_ws(
+                        client_id=cid,
+                        project_id=project_id,
+                        user_request=data.get("user_request", ""),
+                        data_file=data.get("data_file"),
+                        model_preference=data.get("model_preference"),
+                    )
+                )
+                await ws.send_json({"type": "gis_started", "project_id": project_id})
     except WebSocketDisconnect:
         ws_manager.disconnect(cid)
 
@@ -400,6 +426,182 @@ async def list_models(user_id: str = Depends(get_user_id)):
         "models": registry.list_models(),
         "default": registry.default_model_id(),
     }
+
+
+# ════════════════════════════════════════════════════════════
+# GIS 智能操作平台（SPEC v1.2）
+# ════════════════════════════════════════════════════════════
+
+class GisBuildRequest(BaseModel):
+    user_request: str
+    data_file: str | None = None
+    model_preference: str | None = None
+
+
+@app.post("/api/v1/gis/upload")
+async def upload_gis_data(file: UploadFile = File(...), user_id: str = Depends(get_user_id)):
+    """上传 GIS 数据文件（CSV / GeoJSON / Shapefile zip）"""
+    filename = Path(file.filename or "data").name
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_GIS_EXTENSIONS:
+        return {
+            "success": False,
+            "error": f"不支持的文件类型: {ext}（支持 .csv / .geojson / .zip）",
+        }
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        return {"success": False, "error": "文件超过 10MB 限制"}
+    user_dir = GIS_UPLOAD_DIR / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    target = user_dir / filename
+    target.write_bytes(content)
+    return {"success": True, "path": str(target), "filename": filename, "size": len(content)}
+
+
+@app.post("/api/v1/gis/build")
+async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
+    """启动 GIS 流水线（plan→design→codegen→exec→checker→export），同步返回结果"""
+    project_id = uuid.uuid4().hex[:12]
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        _thread_pool,
+        _run_gis_sync,
+        project_id,
+        req.user_request,
+        req.data_file,
+        req.model_preference,
+    )
+    return {"project_id": project_id, **result}
+
+
+# ════════════════════════════════════════════════════════════
+# GIS helpers
+# ════════════════════════════════════════════════════════════
+
+def _build_gis_agents() -> dict:
+    return {
+        "plan": PlanAgent(),
+        "design": DesignAgent(),
+        "codegen": CodegenAgent(),
+        "checker": CheckerAgent(),
+    }
+
+
+class _GisProgressAgent:
+    """包装 GIS Agent，推送阶段进度（跨线程安全，WebSocket 用）"""
+
+    def __init__(
+        self,
+        name: str,
+        agent: Any,
+        project_id: str,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self.name = name
+        self.agent = agent
+        self.project_id = project_id
+        self.loop = loop
+
+    def run(self, state: dict) -> dict:
+        self._push("started")
+        try:
+            result = self.agent.run(state)
+        except Exception:
+            self._push("error")
+            raise
+        self._push("done")
+        return result
+
+    def _push(self, status: str) -> None:
+        coro = _push_progress(self.project_id, self.name, status)
+        asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+
+def _run_gis_sync(
+    project_id: str,
+    user_request: str,
+    data_file: str | None,
+    model_preference: str | None,
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> dict:
+    """在后台线程同步执行 GIS 流水线（REST / WebSocket 复用）"""
+    data_schema = None
+    if data_file and Path(data_file).is_file():
+        try:
+            schema = inspect_file(data_file, str(Path(data_file).parent))
+            schema["filename"] = Path(data_file).name
+            data_schema = json.dumps(schema, ensure_ascii=False)
+        except ValueError as exc:
+            return {"stage": "error", "error_message": f"数据检查失败: {exc}"}
+
+    state: GisProjectState = {
+        "user_request": user_request,
+        "data_file": data_file,
+        "data_schema": data_schema,
+        "model_preference": model_preference,
+        "current_stage": "plan",
+        "messages": [],
+    }
+    agents = _build_gis_agents()
+    if loop is not None:
+        agents = {
+            name: _GisProgressAgent(name, agent, project_id, loop)
+            for name, agent in agents.items()
+        }
+    graph = create_gis_graph(
+        agents,
+        export_dir=str(GIS_EXPORT_DIR),
+        project_id=project_id,
+    )
+    try:
+        result = graph.invoke(state)
+    except Exception as exc:
+        return {"stage": "error", "error_message": f"流水线执行失败: {exc}"}
+    return _gis_response(result)
+
+
+def _gis_response(state: dict) -> dict:
+    """GIS 流水线结果序列化（供 REST / WebSocket）"""
+    return {
+        "stage": str(state.get("current_stage", "plan")),
+        "ask_user": state.get("ask_user"),
+        "task_plan": state.get("task_plan"),
+        "tech_plan": state.get("tech_plan"),
+        "script": state.get("script"),
+        "exec_log": state.get("exec_log"),
+        "artifacts": state.get("artifacts"),
+        "check_report": state.get("check_report"),
+        "artifact_path": state.get("artifact_path"),
+        "error_message": state.get("error_message"),
+        "rewrite_round": state.get("rewrite_round"),
+    }
+
+
+async def _run_gis_ws(
+    client_id: str,
+    project_id: str,
+    user_request: str,
+    data_file: str | None,
+    model_preference: str | None,
+) -> None:
+    """WebSocket 后台执行 GIS 流水线，完成后广播结果"""
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            _thread_pool,
+            _run_gis_sync,
+            project_id,
+            user_request,
+            data_file,
+            model_preference,
+            loop,
+        )
+        await ws_manager.broadcast(project_id, {"type": "gis_result", "project_id": project_id, **result})
+    except Exception as exc:
+        await ws_manager.broadcast(
+            project_id,
+            {"type": "gis_error", "project_id": project_id, "error": str(exc)},
+        )
 
 
 # ════════════════════════════════════════════════════════════

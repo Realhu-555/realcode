@@ -1,8 +1,85 @@
-# 素宣 Suxuan — 营销内容多 Agent 平台
+# 素宣 Suxuan — 多 Agent 应用开发平台
 
-> *一张白宣铺开，AI 蘸墨，写出千万种可能。*
+> **当前主线：GIS 智能操作平台** —— 用户用自然语言描述 GIS 操作需求，系统自动完成
+> 任务解析 → 步骤规划 → GIS 脚本生成 → 沙箱执行 → 结果校验 → 成果导出。
+> 一句话定位：**把「说人话 → 出图/出数据」变成一条多 Agent 流水线。**
+>
+> 执行文档：`docs/SPEC-GIS智能操作平台.md`（Phase 1 MVP）｜ 引擎选型与分阶段演进：`docs/GIS-引擎选型与分阶段演进.md`
 
-基于 LangGraph 的营销内容自动化生成平台。用户输入产品信息，系统通过 **6 个协作 AI Agent** 自动完成 **策略分析 → 三渠道并行生成（公众号/知乎/小红书）→ 审校 → 导出**全流程。
+---
+
+# GIS 智能操作平台
+
+## 流水线
+
+```
+用户需求 + 数据文件（CSV / GeoJSON / ZIP）
+    ↓
+┌─────────────┐   ┌──────────────┐   ┌───────────────┐
+│  plan 任务规划 │ → │ design 技术方案 │ → │ codegen 脚本生成 │
+│ 拆解/追问/给schema │   │ 坐标系/算子/出图  │   │ GeoPandas 完整脚本 │
+└─────────────┘   └──────────────┘   └───────┬───────┘
+                                             ↓
+┌─────────────┐   ┌──────────────┐   ┌───────────────┐
+│ export 成果包  │ ← │ checker 结果校验│ ← │ exec 沙箱执行    │
+│ zip+操作说明    │   │ 三层核对/重写回环 │   │ AST 扫描→运行→收产物 │
+└─────────────┘   └──────────────┘   └───────────────┘
+```
+
+- **plan**：拆解用户需求，信息不足时输出 `[ASK_USER]` 追问；`data_inspect` 预注入数据 schema（唯一注册的 LLM 工具，只读 + 路径白名单 + 10MB）；
+- **design**：确定坐标系（缺失默认 EPSG:4326）、分析算子（分级设色/缓冲区/相交…）、出图方案与输出文件清单；
+- **codegen**：生成完整可运行脚本（GeoPandas + matplotlib），必须自包含 import、只用当前目录相对路径、只用输入数据文件；
+- **exec**：纯代码节点——快照源数据 → AST 静态扫描（禁 `os.remove` 等危险调用）→ 沙箱执行 → 收集产物；
+- **checker**：三层校验（规则断言 → 脚本打印的 figure/CRS 信息 → 可选视觉模型 OCR），FAIL 且重写轮次 < 2 时回 codegen 自愈；
+- **export**：打包成果 zip（PNG / GeoJSON / CSV + `操作说明.md` + `校验报告.md`），产物落在 `data/gis_exports/`。
+
+## 快速开始（MVP 验收示例）
+
+```bash
+cd ai-dev-platform
+pip install -e ".[dev]"
+echo "DEEPSEEK_API_KEY=sk-..." >> .env    # 必须
+python -m uvicorn src.web.server:app --host 0.0.0.0 --port 8080 --reload
+```
+
+```bash
+# 1. 上传示例数据（31 省 GDP 点数据）
+curl -X POST http://localhost:8080/api/v1/gis/upload   -H "X-API-Key: $DEEPSEEK_API_KEY"   -F "file=@data/gis_demo/gdp_demo.csv"
+
+# 2. 发起构建，返回 stage=done 即成功
+curl -X POST http://localhost:8080/api/v1/gis/build   -H "X-API-Key: $DEEPSEEK_API_KEY"   -H "Content-Type: application/json"   -d '{"user_request":"把 gdp_demo.csv 按省份做分级设色图","data_file":"data/gis_uploads/<user>/gdp_demo.csv"}'
+```
+
+> 已通过真实 LLM 端到端冒烟：`gdp_demo.csv` → 分级设色图 `choropleth.png` + 分级统计 `summary.csv`，checker 逐项 PASS。
+
+## API 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/gis/upload` | 上传数据文件（.csv / .geojson / .json / .zip，≤10MB） |
+| POST | `/api/v1/gis/build` | 同步启动 GIS 流水线，返回阶段 / 校验报告 / 产物 |
+| WS | `/ws`（`action=build_gis`） | 异步流水线 + 阶段进度推送 |
+
+## 目录结构（GIS 相关）
+
+```
+src/
+├── agents/gis_{plan,design,codegen,checker}.py   # 四个 LLM Agent
+├── orchestrator/graph.py                          # create_gis_graph() 编排
+├── orchestrator/state.py                          # GisProjectState
+├── sandbox/security.py + executor.py              # AST 静态扫描 + 沙箱执行
+├── tools/implementations/data_inspect.py          # 唯一 LLM 工具（只读/白名单/10MB）
+├── prompt/templates/gis_*.md                      # Jinja2 prompt 模板
+└── web/server.py                                  # /api/v1/gis/* 路由
+tests/test_gis_*.py                                # 42 个用例（sandbox/state/agents/tools/graph/api/demo）
+data/gis_demo/gdp_demo.csv                         # 验收示例数据
+```
+
+---
+
+# 历史方向：营销内容多 Agent 平台（已暂停）
+
+> 项目已切换至 GIS 智能操作平台，以下为原营销方向内容，仅作历史参考。
 
 ## 核心流程
 

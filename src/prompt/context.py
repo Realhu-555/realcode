@@ -8,6 +8,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from src.tools.protocol import ToolDescription
 
@@ -54,6 +55,9 @@ class PromptContext:
     # === 审校 Agent 专用 ===
     other_channel_contents: dict[str, str] | None = None  # 其他渠道的内容
 
+    # === GIS（GIS 智能操作平台）===
+    gis: dict[str, Any] | None = None       # user_request / data_schema / tech_plan / exec_log 等
+
     # === 记忆 ===
     user_preferences: str = ""             # 长期记忆中提取的用户偏好
 
@@ -79,6 +83,7 @@ class PromptContext:
             "other_channels": self.other_channel_contents or {},
             "preferences": self.user_preferences,
             "images": self.image_descriptions,
+            "gis": self.gis or {},
             "current_date": self.current_date,
         }
 

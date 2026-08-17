@@ -2,9 +2,12 @@
 
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from src.sandbox.security import scan_script
 
 
 @dataclass
@@ -60,7 +63,7 @@ class SandboxExecutor:
                 text=True,
                 timeout=timeout or self.config.timeout,
             )
-            return result.stdout + result.stderr, result.returncode
+            return (result.stdout or "") + (result.stderr or ""), result.returncode
         except subprocess.TimeoutExpired:
             return f"执行超时（{timeout or self.config.timeout}秒）", -1
 
@@ -84,6 +87,47 @@ class SandboxExecutor:
             raise RuntimeError("沙箱未初始化，请先调用 create()")
         zip_base = str(Path(output_path).with_suffix(""))
         return shutil.make_archive(zip_base, "zip", self.work_dir)
+
+    def run_script(
+        self,
+        relative_path: str,
+        source: str | None = None,
+        timeout: int | None = None,
+    ) -> tuple[str, int]:
+        """写入脚本并通过 AST 扫描后，用当前解释器在沙箱内执行
+
+        Args:
+            relative_path: 脚本相对路径（如 "main.py"）
+            source: 脚本源码；为 None 时读取沙箱内已有文件
+            timeout: 超时秒数，None 则用沙箱默认
+
+        Returns:
+            (stdout+stderr 输出, 退出码)；被安全扫描拒绝时退出码为 -2
+        """
+        if not self.work_dir:
+            raise RuntimeError("沙箱未初始化，请先调用 create()")
+        if source is not None:
+            self.write_file(relative_path, source)
+        script_path = self.work_dir / relative_path
+        violations = scan_script(script_path.read_text(encoding="utf-8"))
+        if violations:
+            return "脚本被安全扫描拒绝：\n- " + "\n- ".join(violations), -2
+
+        command = f'"{sys.executable}" -X utf8 "{script_path}"'
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=self.work_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout or self.config.timeout,
+            )
+            return result.stdout + result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return f"执行超时（{timeout or self.config.timeout}秒）", -1
 
     def cleanup(self):
         """清理临时目录"""

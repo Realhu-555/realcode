@@ -48,6 +48,10 @@ BUILTIN_AGENT_DEFAULTS: dict[str, str] = {
     "xiaohongshu": "deepseek-v4-pro",
     "shenjiao": "deepseek-v4-pro",
     "export": "deepseek-v4-pro",
+    "plan": "deepseek-v4-pro",
+    "design": "deepseek-v4-pro",
+    "codegen": "deepseek-v4-pro",
+    "checker": "deepseek-v4-pro",
 }
 BUILTIN_FALLBACK: dict[str, list[str]] = {}
 

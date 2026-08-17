@@ -209,6 +209,7 @@ class LLMProvider:
             messages=messages,
             temperature=0.7,
             max_tokens=4096,
+            extra_body={"thinking": {"type": "disabled"}},
         )
         usage = getattr(response, "usage", None)
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
