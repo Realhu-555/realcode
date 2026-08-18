@@ -340,11 +340,12 @@ function download(url: string, name: string) {
 /* ---- 页面骨架 ---- */
 .gis-page {
   position: relative;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
   background-color: var(--bg);
   color: var(--text);
-  overflow-x: hidden;
 }
 
 /* ---- 氛围背景：制图网格 + 顶部光晕 ---- */
@@ -375,10 +376,11 @@ function download(url: string, name: string) {
 
 /* ---- 头部 ---- */
 .gis-header {
-  position: relative;
-  z-index: 1;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
 }
 .gis-seal {
