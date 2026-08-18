@@ -1,12 +1,9 @@
 """GIS 共享状态测试"""
 
 from src.orchestrator.state import (
-    ContentProjectState,
-    ContentStage,
     GisProjectState,
     GisStage,
     _latest_gis_stage,
-    _latest_stage,
 )
 
 
@@ -33,12 +30,3 @@ def test_gis_state_accepts_user_input():
 def test_gis_stage_reducer_keeps_latest():
     """current_stage reducer 取最新值"""
     assert _latest_gis_stage(GisStage.PLAN, GisStage.CODEGEN) == GisStage.CODEGEN
-
-
-def test_content_state_still_compatible():
-    """向后兼容：营销内容 State 与 reducer 仍可用"""
-    state: ContentProjectState = {
-        "product_name": "RAG 系统",
-        "current_stage": ContentStage.STRATEGY,
-    }
-    assert _latest_stage(state["current_stage"], ContentStage.DONE) == ContentStage.DONE

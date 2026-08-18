@@ -11,29 +11,12 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    AppLayout: typeof import('./components/AppLayout.vue')['default']
-    ApprovalPanel: typeof import('./components/ApprovalPanel.vue')['default']
-    ContentPanel: typeof import('./components/ContentPanel.vue')['default']
-    FreeInput: typeof import('./components/FreeInput.vue')['default']
-    GuidedForm: typeof import('./components/GuidedForm.vue')['default']
+    NButton: typeof import('naive-ui')['NButton']
     NConfigProvider: typeof import('naive-ui')['NConfigProvider']
-    NForm: typeof import('naive-ui')['NForm']
-    NFormItem: typeof import('naive-ui')['NFormItem']
     NInput: typeof import('naive-ui')['NInput']
     NMessageProvider: typeof import('naive-ui')['NMessageProvider']
-    NModal: typeof import('naive-ui')['NModal']
     NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
-    NProgress: typeof import('naive-ui')['NProgress']
-    NRadioButton: typeof import('naive-ui')['NRadioButton']
-    NRadioGroup: typeof import('naive-ui')['NRadioGroup']
-    NSelect: typeof import('naive-ui')['NSelect']
-    NSpin: typeof import('naive-ui')['NSpin']
-    NTabPane: typeof import('naive-ui')['NTabPane']
-    NTabs: typeof import('naive-ui')['NTabs']
-    ProgressTimeline: typeof import('./components/ProgressTimeline.vue')['default']
-    ReviewReport: typeof import('./components/ReviewReport.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
-    StrategyCard: typeof import('./components/StrategyCard.vue')['default']
   }
 }

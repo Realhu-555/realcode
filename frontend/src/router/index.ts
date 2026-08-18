@@ -5,22 +5,7 @@ const router = createRouter({
   routes: [
     {
       path: "/",
-      redirect: "/create",
-    },
-    {
-      path: "/create",
-      name: "create",
-      component: () => import("../views/Create.vue"),
-    },
-    {
-      path: "/strategy/:projectId",
-      name: "strategy",
-      component: () => import("../views/Strategy.vue"),
-    },
-    {
-      path: "/preview/:projectId",
-      name: "preview",
-      component: () => import("../views/Preview.vue"),
+      redirect: "/gis",
     },
     {
       path: "/gis",

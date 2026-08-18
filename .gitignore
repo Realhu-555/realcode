@@ -39,3 +39,15 @@ data/gis_sessions.json
 # 运行时日志（流式调试）
 backend.*.log
 frontend.dev*.log
+
+# GIS runtime outputs (not committed)
+data/gis_bench_results/
+data/gis_exports/
+data/gis_toolkit_out/
+data/gis_traces/
+data/gis_uploads/
+data/run_metrics.db
+
+# test temp dirs
+.pytest_tmp/
+tests/eval_output/
