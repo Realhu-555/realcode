@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { useMessage } from "naive-ui"
 import { useTheme } from "../composables/useTheme"
 import {
   uploadGisFile,
   runGisAssistant,
   objectUrlFor,
+  listGisSessions,
+  getGisSessionDetail,
+  deleteGisSession,
   type GisAssistantResult,
+  type GisSessionSummary,
+  type GisSessionDetail,
 } from "../api/gis"
 
 useTheme()
@@ -22,6 +27,8 @@ const error = ref("")
 const sessionId = ref("")
 const chatEl = ref<HTMLElement | null>(null)
 const expandedTrajectories = ref<Record<number, boolean>>({})
+const sessions = ref<GisSessionSummary[]>([])
+const sidebarOpen = ref(true)
 
 interface Artifact {
   name: string
@@ -42,19 +49,96 @@ const messages = ref<ChatMessage[]>([])
 
 const canSubmit = computed(() => request.value.trim().length > 0 && !running.value)
 
-// 工具分组（仅供输入区提示）
-const toolGroups = [
-  { label: "数据接入", tools: ["load_data", "inspect_data"] },
-  { label: "空间分析", tools: ["buffer", "overlay", "summarize"] },
-  { label: "可视化", tools: ["choropleth", "scatter_plot"] },
-  { label: "导出", tools: ["export_geojson", "finish"] },
-]
-
 // 消息更新后自动滚动到底部
 watch([messages, running], async () => {
   await nextTick()
   if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
 })
+
+onMounted(loadSessions)
+
+function formatTime(ts: number): string {
+  if (!ts) return ""
+  const ms = ts * 1000
+  const diff = Date.now() - ms
+  if (diff < 60_000) return "刚刚"
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+  const d = new Date(ms)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+async function loadSessions() {
+  try {
+    sessions.value = await listGisSessions()
+  } catch {
+    sessions.value = []
+  }
+}
+
+async function selectSession(s: GisSessionSummary) {
+  if (running.value) return
+  if (s.session_id === sessionId.value && messages.value.length) return
+  try {
+    const detail = await getGisSessionDetail(s.session_id)
+    await restoreMessages(detail)
+  } catch {
+    message.error("恢复会话失败")
+  }
+}
+
+async function restoreMessages(detail: GisSessionDetail) {
+  sessionId.value = detail.session_id
+  messages.value = []
+  expandedTrajectories.value = {}
+  for (const r of detail.rounds) {
+    messages.value.push({ role: "user", content: r.user })
+    const png: Artifact[] = []
+    const files: FileArtifact[] = []
+    for (const name of r.outputs) {
+      try {
+        const url = await objectUrlFor(name, detail.session_id)
+        if (name.toLowerCase().endsWith(".png")) {
+          png.push({ name, url })
+        } else {
+          files.push({ name, url, ext: name.split(".").pop()?.toUpperCase() || "FILE" })
+        }
+      } catch {
+        // 产物文件可能已被清理，跳过
+      }
+    }
+    messages.value.push({
+      role: "assistant",
+      content: r.final,
+      result: {
+        project_id: detail.session_id,
+        session_id: detail.session_id,
+        stage: "done",
+        trajectory: r.trajectory,
+        outputs: r.outputs,
+        final: r.final,
+        steps: r.steps,
+        timed_out: r.timed_out,
+        out_dir: "",
+      },
+      pngArtifacts: png,
+      fileArtifacts: files,
+    })
+  }
+}
+
+async function removeSession(s: GisSessionSummary, e: Event) {
+  e.stopPropagation()
+  if (running.value) return
+  try {
+    await deleteGisSession(s.session_id)
+    if (sessionId.value === s.session_id) newConversation()
+    await loadSessions()
+    message.success("会话已删除")
+  } catch {
+    message.error("删除失败")
+  }
+}
 
 function toggleTrajectory(i: number) {
   expandedTrajectories.value[i] = !expandedTrajectories.value[i]
@@ -151,6 +235,7 @@ async function onSubmit() {
     })
   } finally {
     running.value = false
+    await loadSessions()
   }
 }
 
@@ -159,6 +244,8 @@ function newConversation() {
   messages.value = []
   expandedTrajectories.value = {}
   error.value = ""
+  dataFile.value = ""
+  fileName.value = ""
   message.info("已开启新对话")
 }
 
@@ -178,184 +265,228 @@ function download(url: string, name: string) {
       <div class="gis-bg-glow" />
     </div>
 
-    <!-- 顶部 -->
-    <header class="gis-header">
-      <div class="mx-auto max-w-5xl px-6 py-4 flex items-center justify-between gap-4">
-        <div class="flex items-center gap-3.5 min-w-0">
-          <div class="gis-seal shrink-0">制</div>
-          <div class="min-w-0">
-            <h1 class="font-display text-lg font-black tracking-tight">GIS 智能助手</h1>
-            <p class="text-[11px] text-dim mt-0.5 tracking-wide truncate">多轮对话 · 工具调用全轨迹可审计</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2.5 shrink-0">
-          <button class="gis-new-btn" :disabled="running" @click="newConversation">↺ 新对话</button>
-          <span class="gis-status">
-            <span class="gis-status-dot" />
-            <span class="hidden sm:inline">引擎在线</span>
-          </span>
-        </div>
+    <!-- ===== 左侧：会话管理 ===== -->
+    <aside class="gis-sidebar" :class="{ 'gis-sidebar-closed': !sidebarOpen }">
+      <div class="gis-sidebar-head">
+        <span class="text-[11px] tracking-[0.2em] text-muted font-semibold">会话</span>
+        <button class="gis-sidebar-new" :disabled="running" @click="newConversation" title="新会话">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
       </div>
-    </header>
 
-    <!-- 主对话区 -->
-    <main ref="chatEl" class="gis-chat">
-      <div class="mx-auto max-w-3xl px-6 py-8 space-y-6">
-        <!-- 空状态 -->
-        <div v-if="!messages.length" class="gis-empty animate-enter">
-          <div class="gis-empty-compass">⌖</div>
-          <p class="font-display text-lg font-semibold">开始你的 GIS 对话</p>
-          <p class="text-sm text-muted mt-2 leading-relaxed max-w-md">
-            像和桌面助手聊天一样描述需求：支持多轮连续对话，引擎会记住当前图层与产物，
-            随时可以继续追问或修改。
-          </p>
-          <div class="mt-6 w-full max-w-md text-left space-y-2">
-            <p class="text-[11px] tracking-[0.2em] text-muted">示例</p>
-            <button
-              v-for="ex in ['把 gdp_demo.csv 按省份做分级设色图，并导出分级统计 summary.csv', '对 gdp_demo.csv 做 0.5 度缓冲区后导出 GeoJSON']"
-              :key="ex"
-              class="gis-example-chip"
-              @click="request = ex"
-            >
-              {{ ex }}
+      <div class="gis-sidebar-list">
+        <button
+          v-for="s in sessions"
+          :key="s.session_id"
+          class="gis-session-item"
+          :class="{ 'gis-session-active': s.session_id === sessionId }"
+          :disabled="running"
+          @click="selectSession(s)"
+        >
+          <div class="min-w-0 flex-1 text-left">
+            <p class="gis-session-title">{{ s.title }}</p>
+            <p class="gis-session-meta">{{ s.rounds }} 轮 · {{ formatTime(s.updated_at) }}</p>
+          </div>
+          <span
+            class="gis-session-del"
+            :title="'删除 ' + s.title"
+            @click="removeSession(s, $event)"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+          </span>
+        </button>
+
+        <p v-if="!sessions.length" class="gis-sidebar-empty">暂无历史会话</p>
+      </div>
+    </aside>
+
+    <!-- ===== 主区域 ===== -->
+    <div class="gis-main">
+      <!-- 顶部 -->
+      <header class="gis-header">
+        <div class="mx-auto max-w-3xl px-6 py-4 flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3.5 min-w-0">
+            <button class="gis-sidebar-toggle" @click="sidebarOpen = !sidebarOpen" title="切换会话栏">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18" /></svg>
             </button>
+            <div class="gis-seal shrink-0">制</div>
+            <div class="min-w-0">
+              <h1 class="font-display text-lg font-black tracking-tight">GIS 智能助手</h1>
+              <p class="text-[11px] text-dim mt-0.5 tracking-wide truncate">多轮对话 · 工具调用全轨迹可审计</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2.5 shrink-0">
+            <button class="gis-new-btn" :disabled="running" @click="newConversation">↺ 新对话</button>
+            <span class="gis-status">
+              <span class="gis-status-dot" />
+              <span class="hidden sm:inline">引擎在线</span>
+            </span>
           </div>
         </div>
+      </header>
 
-        <!-- 消息流 -->
-        <template v-for="(m, i) in messages" :key="i">
-          <!-- 用户消息 -->
-          <div v-if="m.role === 'user'" class="gis-msg-row gis-msg-user animate-enter">
-            <div class="gis-user-text">{{ m.content }}</div>
+      <!-- 主对话区 -->
+      <main ref="chatEl" class="gis-chat">
+        <div class="mx-auto max-w-3xl px-6 py-8 space-y-6">
+          <!-- 空状态 -->
+          <div v-if="!messages.length" class="gis-empty animate-enter">
+            <div class="gis-empty-compass">⌖</div>
+            <p class="font-display text-lg font-semibold">开始你的 GIS 对话</p>
+            <p class="text-sm text-muted mt-2 leading-relaxed max-w-md">
+              像和桌面助手聊天一样描述需求：支持多轮连续对话，引擎会记住当前图层与产物，
+              随时可以继续追问或修改。
+            </p>
+            <div class="mt-6 w-full max-w-md text-left space-y-2">
+              <p class="text-[11px] tracking-[0.2em] text-muted">示例</p>
+              <button
+                v-for="ex in ['把 gdp_demo.csv 按省份做分级设色图，并导出分级统计 summary.csv', '对 gdp_demo.csv 做 0.5 度缓冲区后导出 GeoJSON']"
+                :key="ex"
+                class="gis-example-chip"
+                @click="request = ex"
+              >
+                {{ ex }}
+              </button>
+            </div>
           </div>
 
-          <!-- 助手回复 -->
-          <div v-else class="gis-msg-row gis-msg-assistant animate-enter">
-            <div v-if="m.error" class="gis-error w-full">{{ m.error }}</div>
+          <!-- 消息流 -->
+          <template v-for="(m, i) in messages" :key="i">
+            <!-- 用户消息 -->
+            <div v-if="m.role === 'user'" class="gis-msg-row gis-msg-user animate-enter">
+              <div class="gis-user-text">{{ m.content }}</div>
+            </div>
 
-            <template v-else>
-              <div v-if="m.content" class="gis-answer">
-                <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ m.content }}</p>
-              </div>
+            <!-- 助手回复 -->
+            <div v-else class="gis-msg-row gis-msg-assistant animate-enter">
+              <div v-if="m.error" class="gis-error w-full">{{ m.error }}</div>
 
-              <!-- 产物优先展示 -->
-              <div v-if="m.result && (m.pngArtifacts?.length || m.fileArtifacts?.length)" class="space-y-3">
-                <div v-if="m.pngArtifacts?.length" class="grid gap-4 sm:grid-cols-2">
-                  <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact">
-                    <img :src="p.url" :alt="p.name" class="w-full block" />
-                    <figcaption class="flex items-center justify-between gap-2">
-                      <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
-                      <a class="gis-download-link shrink-0" @click="download(p.url, p.name)">下载</a>
-                    </figcaption>
-                  </figure>
+              <template v-else>
+                <div v-if="m.content" class="gis-answer">
+                  <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ m.content }}</p>
                 </div>
-                <div v-if="m.fileArtifacts?.length" class="space-y-2">
-                  <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row">
-                    <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
-                    <span class="text-sm truncate">{{ f.name }}</span>
-                    <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
+
+                <div v-if="m.result && (m.pngArtifacts?.length || m.fileArtifacts?.length)" class="space-y-3">
+                  <div v-if="m.pngArtifacts?.length" class="grid gap-4 sm:grid-cols-2">
+                    <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact">
+                      <img :src="p.url" :alt="p.name" class="w-full block" />
+                      <figcaption class="flex items-center justify-between gap-2">
+                        <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
+                        <a class="gis-download-link shrink-0" @click="download(p.url, p.name)">下载</a>
+                      </figcaption>
+                    </figure>
+                  </div>
+                  <div v-if="m.fileArtifacts?.length" class="space-y-2">
+                    <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row">
+                      <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
+                      <span class="text-sm truncate">{{ f.name }}</span>
+                      <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- 轨迹折叠 -->
-              <div v-if="m.result" class="gis-trajectory-wrap">
-                <button class="gis-trajectory-toggle" @click="toggleTrajectory(i)">
-                  <svg class="gis-chevron" :class="{ 'gis-chevron-open': expandedTrajectories[i] }" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4" /></svg>
-                  <span>工具调用轨迹</span>
-                  <span class="gis-chip gis-chip-accent">{{ m.result.steps }} 步</span>
-                </button>
-                <div v-if="expandedTrajectories[i]" class="gis-trajectory-body">
-                  <ol class="gis-timeline">
-                    <li
-                      v-for="t in m.result.trajectory"
-                      :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
-                      class="gis-timeline-item"
-                    >
-                      <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
-                      <div class="gis-timeline-card">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                          <span class="gis-step-index shrink-0">#{{ t.step }}</span>
-                          <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
-                          <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
-                          <span
-                            class="ml-auto shrink-0"
-                            :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
-                          >
-                            {{ toolStatusText(t) }}
-                          </span>
+                <div v-if="m.result" class="gis-trajectory-wrap">
+                  <button class="gis-trajectory-toggle" @click="toggleTrajectory(i)">
+                    <svg class="gis-chevron" :class="{ 'gis-chevron-open': expandedTrajectories[i] }" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4" /></svg>
+                    <span>工具调用轨迹</span>
+                    <span class="gis-chip gis-chip-accent">{{ m.result.steps }} 步</span>
+                  </button>
+                  <div v-if="expandedTrajectories[i]" class="gis-trajectory-body">
+                    <ol class="gis-timeline">
+                      <li
+                        v-for="t in m.result.trajectory"
+                        :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
+                        class="gis-timeline-item"
+                      >
+                        <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
+                        <div class="gis-timeline-card">
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="gis-step-index shrink-0">#{{ t.step }}</span>
+                            <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
+                            <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
+                            <span
+                              class="ml-auto shrink-0"
+                              :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
+                            >
+                              {{ toolStatusText(t) }}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  </ol>
+                      </li>
+                    </ol>
+                  </div>
                 </div>
-              </div>
-            </template>
+              </template>
+            </div>
+          </template>
+
+          <!-- 执行中 -->
+          <div v-if="running" class="gis-thinking animate-enter">
+            <span class="gis-spinner gis-spinner-lg" />
+            <span class="text-sm text-dim">引擎正在调用 GIS 工具…</span>
           </div>
-        </template>
-
-        <!-- 执行中 -->
-        <div v-if="running" class="gis-thinking animate-enter">
-          <span class="gis-spinner gis-spinner-lg" />
-          <span class="text-sm text-dim">引擎正在调用 GIS 工具…</span>
         </div>
-      </div>
-    </main>
+      </main>
 
-    <!-- 底部输入区 -->
-    <footer class="gis-composer">
-      <div class="mx-auto max-w-3xl px-6 py-4">
-        <!-- 已上传文件 -->
-        <div v-if="fileName" class="mb-2 flex items-center gap-2">
-          <span class="gis-file-chip">
-            📄 {{ fileName }}
-            <button class="gis-file-chip-x" :disabled="running" @click="clearFile">×</button>
-          </span>
-          <span class="text-[11px] text-muted">该文件将用于本会话</span>
-        </div>
-
-        <!-- 输入行 -->
-        <div class="gis-input-row" :class="{ 'gis-input-row-focus': false }">
-          <label class="gis-attach-btn" title="上传数据文件（CSV / GeoJSON / ZIP）">
-            <input type="file" accept=".csv,.geojson,.json,.zip" class="hidden" :disabled="running" @change="onFileSelected" />
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
-          </label>
-          <n-input
-            v-model:value="request"
-            type="textarea"
-            :autosize="{ minRows: 1, maxRows: 6 }"
-            placeholder="输入你的 GIS 需求…（Enter 发送，Shift+Enter 换行）"
-            :disabled="running"
-            @keydown.enter.exact.prevent="onSubmit"
-          />
-          <button class="gis-send-btn" :disabled="!canSubmit" title="发送" @click="onSubmit">
-            <span v-if="!running">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
+      <!-- 底部输入区 -->
+      <footer class="gis-composer">
+        <div class="mx-auto max-w-3xl px-6 py-4">
+          <div v-if="fileName" class="mb-2 flex items-center gap-2">
+            <span class="gis-file-chip">
+              📄 {{ fileName }}
+              <button class="gis-file-chip-x" :disabled="running" @click="clearFile">×</button>
             </span>
-            <span v-else class="gis-spinner" />
-          </button>
-        </div>
+            <span class="text-[11px] text-muted">该文件将用于本会话</span>
+          </div>
 
-        <div class="mt-2 flex items-center justify-between text-[11px] text-muted">
-          <span>📎 可上传数据 · 未上传时自动使用演示数据</span>
-          <span class="hidden sm:inline">{{ sessionId ? "多轮对话中 · 图层与产物已保留" : "新会话" }}</span>
+          <div class="gis-input-row">
+            <label class="gis-attach-btn" title="上传数据文件（CSV / GeoJSON / ZIP）">
+              <input type="file" accept=".csv,.geojson,.json,.zip" class="hidden" :disabled="running" @change="onFileSelected" />
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+            </label>
+            <n-input
+              v-model:value="request"
+              type="textarea"
+              :autosize="{ minRows: 1, maxRows: 6 }"
+              placeholder="输入你的 GIS 需求…（Enter 发送，Shift+Enter 换行）"
+              :disabled="running"
+              @keydown.enter.exact.prevent="onSubmit"
+            />
+            <button class="gis-send-btn" :disabled="!canSubmit" title="发送" @click="onSubmit">
+              <span v-if="!running">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
+              </span>
+              <span v-else class="gis-spinner" />
+            </button>
+          </div>
+
+          <div class="mt-2 flex items-center justify-between text-[11px] text-muted">
+            <span>📎 可上传数据 · 未上传时自动使用演示数据</span>
+            <span class="hidden sm:inline">{{ sessionId ? "多轮对话中 · 图层与产物已保留" : "新会话" }}</span>
+          </div>
         </div>
-      </div>
-    </footer>
+      </footer>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* ---- 页面骨架：header / chat / composer 三段式 ---- */
+/* ---- 页面骨架：sidebar + main ---- */
 .gis-page {
   position: relative;
   height: 100vh;
   height: 100dvh;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
   background-color: var(--bg);
   color: var(--text);
+}
+.gis-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- 氛围背景 ---- */
@@ -384,10 +515,140 @@ function download(url: string, name: string) {
     radial-gradient(ellipse 40% 30% at 100% 100%, rgba(212, 168, 83, 0.05) 0%, transparent 70%);
 }
 
-/* ---- 头部 ---- */
-.gis-header {
+/* ---- 左侧会话栏 ---- */
+.gis-sidebar {
   position: relative;
   z-index: 10;
+  width: 248px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
+  backdrop-filter: blur(10px);
+  transition: margin-left 0.25s ease;
+}
+.gis-sidebar-closed {
+  margin-left: -248px;
+}
+.gis-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+}
+.gis-sidebar-new {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.gis-sidebar-new:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.gis-sidebar-new:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.gis-sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gis-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.gis-session-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.gis-session-active {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+.gis-session-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.gis-session-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gis-session-meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.gis-session-del {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  opacity: 0;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+.gis-session-item:hover .gis-session-del {
+  opacity: 1;
+}
+.gis-session-del:hover {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+.gis-sidebar-empty {
+  padding: 18px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.gis-sidebar-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.gis-sidebar-toggle:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* ---- 头部 ---- */
+.gis-header {
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
@@ -460,8 +721,6 @@ function download(url: string, name: string) {
 
 /* ---- 主对话区 ---- */
 .gis-chat {
-  position: relative;
-  z-index: 1;
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -479,6 +738,7 @@ function download(url: string, name: string) {
 }
 .gis-msg-assistant {
   justify-content: flex-start;
+  width: 100%;
 }
 .gis-user-text {
   max-width: 82%;
@@ -491,10 +751,6 @@ function download(url: string, name: string) {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-}
-.gis-assistant {
-  width: 100%;
-  min-width: 0;
 }
 .gis-answer {
   padding: 2px 2px 0;
@@ -739,8 +995,6 @@ function download(url: string, name: string) {
 
 /* ---- 底部输入区 ---- */
 .gis-composer {
-  position: relative;
-  z-index: 10;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   backdrop-filter: blur(12px);

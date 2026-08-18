@@ -511,7 +511,7 @@ async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
 async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get_user_id)):
     """运行工具调用版 GIS 助手；带 session_id 时复用会话（引擎状态 + 对话历史）"""
     project_id = uuid.uuid4().hex[:12]
-    session_id, session = gis_sessions.get_or_create(req.session_id)
+    session_id, session = gis_sessions.get_or_create(req.session_id, user_id)
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _thread_pool,
@@ -522,6 +522,7 @@ async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get
         session,
         user_id,
     )
+    gis_sessions.save(user_id, session)
     return {"project_id": project_id, "session_id": session_id, **result}
 
 
@@ -538,6 +539,34 @@ async def gis_assistant_file(session_id: str, filename: str, user_id: str = Depe
         raise HTTPException(status_code=404, detail="文件不存在")
     media = _GIS_TOOLKIT_MEDIA.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media)
+
+
+@app.get("/api/v1/gis-assistant/sessions")
+async def gis_sessions_list(user_id: str = Depends(get_user_id)):
+    """当前用户的会话列表（摘要，按更新时间倒序）"""
+    return {"sessions": gis_sessions.list_sessions(user_id)}
+
+
+@app.get("/api/v1/gis-assistant/sessions/{session_id}")
+async def gis_session_detail(session_id: str, user_id: str = Depends(get_user_id)):
+    """会话详情（含每轮展示数据，供前端恢复对话）"""
+    if len(session_id) != 12 or not all(c in "0123456789abcdef" for c in session_id):
+        raise HTTPException(status_code=400, detail="非法会话 ID")
+    detail = gis_sessions.get_detail(user_id, session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return detail
+
+
+@app.delete("/api/v1/gis-assistant/sessions/{session_id}")
+async def gis_session_delete(session_id: str, user_id: str = Depends(get_user_id)):
+    """删除会话（内存 + 持久化 + 产物目录）"""
+    if len(session_id) != 12 or not all(c in "0123456789abcdef" for c in session_id):
+        raise HTTPException(status_code=400, detail="非法会话 ID")
+    ok = gis_sessions.delete(user_id, session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"success": True}
 
 
 # ════════════════════════════════════════════════════════════

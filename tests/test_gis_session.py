@@ -113,3 +113,56 @@ def test_new_session_starts_fresh(tmp_path):
     r = fresh.run("看看")
     assert r["trajectory"][0]["result"]["status"] == "error"
     assert "没有图层" in r["trajectory"][0]["result"]["error"]
+
+
+def test_store_persist_list_and_detail(tmp_path):
+    """save 后 list 返回摘要、get_detail 返回轮次数据"""
+    store = GisSessionStore(db_path=str(tmp_path / "sessions.json"), ttl=3600)
+    sid, sess = store.get_or_create(user_id="u1")
+    sess.append_round(
+        [],
+        "把 gdp_demo.csv 做分级设色图",
+        "已完成",
+        {"steps": 2, "outputs": ["map.png"], "trajectory": [{"step": 1, "tool": "load_data", "args": {}, "result": {"status": "ok"}}], "timed_out": False},
+    )
+    store.save("u1", sess)
+
+    items = store.list_sessions("u1")
+    assert len(items) == 1
+    assert items[0]["session_id"] == sid
+    assert items[0]["title"] == "把 gdp_demo.csv 做分级设色图"
+    assert items[0]["rounds"] == 1
+
+    detail = store.get_detail("u1", sid)
+    assert detail is not None
+    assert detail["rounds"][0]["user"] == "把 gdp_demo.csv 做分级设色图"
+    assert detail["rounds"][0]["outputs"] == ["map.png"]
+
+    # 其它用户隔离
+    assert store.list_sessions("u2") == []
+
+
+def test_store_delete(tmp_path):
+    store = GisSessionStore(db_path=str(tmp_path / "sessions.json"), ttl=3600)
+    sid, sess = store.get_or_create(user_id="u1")
+    store.save("u1", sess)
+    assert store.delete("u1", sid) is True
+    assert store.get_detail("u1", sid) is None
+    assert store.list_sessions("u1") == []
+    assert store.delete("u1", sid) is False
+
+
+def test_store_restore_from_persistence(tmp_path):
+    """新 store 实例能通过持久化 JSON 恢复会话详情"""
+    db = str(tmp_path / "sessions.json")
+    store1 = GisSessionStore(db_path=db, ttl=3600)
+    sid, sess = store1.get_or_create(user_id="u1")
+    sess.append_round([], "分析数据", "完成", {"steps": 1, "outputs": [], "trajectory": [], "timed_out": False})
+    store1.save("u1", sess)
+
+    store2 = GisSessionStore(db_path=db, ttl=3600)
+    sid2, sess2 = store2.get_or_create(sid, user_id="u1")
+    assert sid2 == sid
+    assert sess2.title == "分析数据"
+    assert len(sess2.rounds) == 1
+    assert sess2.messages == []

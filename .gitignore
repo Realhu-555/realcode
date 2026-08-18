@@ -32,3 +32,6 @@ build/
 backend.log
 frontend.log
 .e2e_pids
+
+data/gis_sessions.json
+

@@ -162,7 +162,12 @@ class GisToolAgent:
             timed_out = True
 
         if session is not None:
-            session.append_round(messages[1:], user_request, final)
+            session.append_round(
+                messages[1:],
+                user_request,
+                final,
+                {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
+            )
 
         return self._wrap(
             trajectory,

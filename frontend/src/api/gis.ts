@@ -65,3 +65,46 @@ export async function objectUrlFor(name: string, sessionId: string): Promise<str
   const blob = await fetchGisFile(name, sessionId)
   return URL.createObjectURL(blob)
 }
+
+
+export interface GisSessionSummary {
+  session_id: string
+  title: string
+  created_at: number
+  updated_at: number
+  rounds: number
+}
+
+export interface GisSessionRound {
+  user: string
+  final: string
+  steps: number
+  outputs: string[]
+  trajectory: GisTrajectoryStep[]
+  timed_out: boolean
+}
+
+export interface GisSessionDetail {
+  session_id: string
+  title: string
+  created_at: number
+  updated_at: number
+  rounds: GisSessionRound[]
+}
+
+/** 当前用户的会话列表 */
+export async function listGisSessions(): Promise<GisSessionSummary[]> {
+  const { data } = await client.get("/gis-assistant/sessions")
+  return data.sessions ?? []
+}
+
+/** 会话详情（恢复对话历史） */
+export async function getGisSessionDetail(sessionId: string): Promise<GisSessionDetail> {
+  const { data } = await client.get(`/gis-assistant/sessions/${sessionId}`)
+  return data
+}
+
+/** 删除会话 */
+export async function deleteGisSession(sessionId: string): Promise<void> {
+  await client.delete(`/gis-assistant/sessions/${sessionId}`)
+}
