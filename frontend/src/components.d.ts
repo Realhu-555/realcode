@@ -16,7 +16,6 @@ declare module 'vue' {
     ContentPanel: typeof import('./components/ContentPanel.vue')['default']
     FreeInput: typeof import('./components/FreeInput.vue')['default']
     GuidedForm: typeof import('./components/GuidedForm.vue')['default']
-    NButton: typeof import('naive-ui')['NButton']
     NConfigProvider: typeof import('naive-ui')['NConfigProvider']
     NForm: typeof import('naive-ui')['NForm']
     NFormItem: typeof import('naive-ui')['NFormItem']

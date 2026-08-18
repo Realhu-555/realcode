@@ -26,3 +26,9 @@ build/
 
 # 鍓嶇鏋勫缓缂撳瓨
 *.tsbuildinfo
+
+# 本地启动临时文件
+.dev_pids.txt
+backend.log
+frontend.log
+.e2e_pids
