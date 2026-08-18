@@ -19,9 +19,24 @@ const fileName = ref("")
 const uploading = ref(false)
 const running = ref(false)
 const error = ref("")
-const result = ref<GisAssistantResult | null>(null)
-const pngArtifacts = ref<{ name: string; url: string }[]>([])
-const fileArtifacts = ref<{ name: string; url: string; ext: string }[]>([])
+const sessionId = ref("")
+
+interface Artifact {
+  name: string
+  url: string
+}
+interface FileArtifact extends Artifact {
+  ext: string
+}
+interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+  result?: GisAssistantResult
+  pngArtifacts?: Artifact[]
+  fileArtifacts?: FileArtifact[]
+  error?: string
+}
+const messages = ref<ChatMessage[]>([])
 
 const canSubmit = computed(() => request.value.trim().length > 0 && !running.value)
 
@@ -82,31 +97,50 @@ async function onSubmit() {
   if (!canSubmit.value) return
   running.value = true
   error.value = ""
-  result.value = null
-  pngArtifacts.value = []
-  fileArtifacts.value = []
+  const ask = request.value.trim()
+  messages.value.push({ role: "user", content: ask })
   try {
-    const res = await runGisAssistant(request.value, dataFile.value || undefined)
-    result.value = res
+    const res = await runGisAssistant(ask, dataFile.value || undefined, sessionId.value || undefined)
+    sessionId.value = res.session_id
     if (res.stage === "error") {
-      error.value = res.error_message || "执行失败"
+      messages.value.push({ role: "assistant", content: "", error: res.error_message || "执行失败" })
       return
     }
+    const png: Artifact[] = []
+    const files: FileArtifact[] = []
     for (const name of res.outputs) {
-      const url = await objectUrlFor(name)
+      const url = await objectUrlFor(name, res.session_id)
       if (name.toLowerCase().endsWith(".png")) {
-        pngArtifacts.value.push({ name, url })
+        png.push({ name, url })
       } else {
         const ext = name.split(".").pop()?.toUpperCase() || "FILE"
-        fileArtifacts.value.push({ name, url, ext })
+        files.push({ name, url, ext })
       }
     }
+    messages.value.push({
+      role: "assistant",
+      content: res.final,
+      result: res,
+      pngArtifacts: png,
+      fileArtifacts: files,
+    })
     message.success(`完成，共 ${res.outputs.length} 个产物`)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    messages.value.push({
+      role: "assistant",
+      content: "",
+      error: err instanceof Error ? err.message : String(err),
+    })
   } finally {
     running.value = false
   }
+}
+
+function newConversation() {
+  sessionId.value = ""
+  messages.value = []
+  error.value = ""
+  message.info("已开启新对话")
 }
 
 function download(url: string, name: string) {
@@ -132,11 +166,12 @@ function download(url: string, name: string) {
           <div class="gis-seal shrink-0">制</div>
           <div class="min-w-0">
             <h1 class="font-display text-xl font-black tracking-tight">GIS 智能助手</h1>
-            <p class="text-xs text-dim mt-0.5 tracking-wide truncate">自然语言驱动 GIS 引擎 · 工具调用全轨迹可审计</p>
+            <p class="text-xs text-dim mt-0.5 tracking-wide truncate">自然语言驱动 GIS 引擎 · 多轮对话 · 工具调用全轨迹可审计</p>
           </div>
         </div>
         <div class="flex items-center gap-2.5 shrink-0">
-          <span class="gis-badge">9 工具就绪</span>
+          <button class="gis-new-btn" :disabled="running" @click="newConversation">↺ 新对话</button>
+          <span class="gis-badge hidden sm:inline-flex">9 工具就绪</span>
           <span class="gis-status">
             <span class="gis-status-dot" />
             引擎在线
@@ -190,12 +225,13 @@ function download(url: string, name: string) {
           <n-input
             v-model:value="request"
             type="textarea"
-            :rows="5"
+            :rows="4"
             placeholder="例如：找出 gdp_demo.csv 中 gdp 最高的省份并画散点图"
             :disabled="running"
+            @keydown.enter.exact.prevent="onSubmit"
           />
           <div class="mt-2 flex items-center justify-between text-xs text-muted">
-            <span>自然语言描述分析目标与出图要求</span>
+            <span>{{ sessionId ? "多轮对话中 · 图层与产物已保留" : "输入后回车或点击开始分析" }}</span>
             <span class="font-mono">{{ request.length }}</span>
           </div>
         </div>
@@ -227,21 +263,15 @@ function download(url: string, name: string) {
         <p v-if="error" class="gis-error animate-enter">{{ error }}</p>
       </section>
 
-      <!-- ===== 右：结果区 ===== -->
+      <!-- ===== 右：对话区 ===== -->
       <section class="space-y-5 min-w-0">
-        <!-- 运行中 -->
-        <div v-if="running" class="gis-card p-10 flex flex-col items-center gap-4 text-sm text-dim">
-          <span class="gis-spinner gis-spinner-lg" />
-          <p class="font-display tracking-wide">引擎正在调用 GIS 工具…</p>
-          <p class="text-xs text-muted">每个工具调用都会被记录并展示在下方轨迹中</p>
-        </div>
-
         <!-- 空状态 -->
-        <div v-else-if="!result" class="gis-card gis-empty animate-enter">
+        <div v-if="!messages.length" class="gis-card gis-empty animate-enter">
           <div class="gis-empty-compass">⌖</div>
-          <p class="font-display text-base font-semibold">等待分析指令</p>
+          <p class="font-display text-base font-semibold">开始你的 GIS 对话</p>
           <p class="text-sm text-muted mt-2 leading-relaxed max-w-md">
-            输入需求后点击「开始分析」。引擎将自动编排工具调用，生成地图与统计产物。
+            支持多轮连续对话：第一轮加载数据出图后，下一轮可以直接说
+            「把颜色换成绿色」或「导出这份结果为 GeoJSON」，引擎会记住当前图层与产物。
           </p>
           <div class="mt-5 w-full max-w-md">
             <div class="h-px bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
@@ -252,85 +282,105 @@ function download(url: string, name: string) {
           </div>
         </div>
 
-        <!-- 结果 -->
-        <template v-else>
-          <!-- 结论 -->
-          <div v-if="result.final" class="gis-card animate-enter relative overflow-hidden">
-            <div class="flex items-start gap-4">
-              <div class="gis-seal gis-seal-sm shrink-0">结</div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-3 mb-3">
-                  <div class="accent-line" />
-                  <h3 class="heading-section">结论</h3>
-                </div>
-                <p class="text-sm text-[var(--text)]/90 leading-relaxed whitespace-pre-wrap">{{ result.final }}</p>
-              </div>
-            </div>
+        <!-- 对话消息 -->
+        <template v-for="(m, i) in messages" :key="i">
+          <!-- 用户消息 -->
+          <div v-if="m.role === 'user'" class="gis-user-msg animate-enter">
+            <span class="gis-user-tag">你</span>
+            <span class="gis-user-text">{{ m.content }}</span>
           </div>
 
-          <!-- 工具调用轨迹 -->
-          <div class="gis-card animate-enter stagger-1">
-            <div class="flex items-center gap-3 mb-5">
-              <div class="accent-line" />
-              <h3 class="heading-section">工具调用轨迹</h3>
-              <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ result.steps }} 步</span>
-            </div>
+          <!-- 助手回复 -->
+          <div v-else class="space-y-5">
+            <div v-if="m.error" class="gis-error animate-enter">{{ m.error }}</div>
 
-            <ol class="gis-timeline">
-              <li
-                v-for="t in result.trajectory"
-                :key="`${t.step}-${t.tool}`"
-                class="gis-timeline-item"
-                :class="`stagger-${Math.min(t.step, 5)}`"
-              >
-                <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
-                <div class="gis-timeline-card">
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <span class="gis-step-index shrink-0">#{{ t.step }}</span>
-                    <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
-                    <span class="gis-tool-args min-w-0">{{ toolArgsText(t) }}</span>
-                    <span class="ml-auto shrink-0" :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'">
-                      {{ toolStatusText(t) }}
-                    </span>
+            <template v-else>
+              <!-- 结论 -->
+              <div v-if="m.content" class="gis-card animate-enter relative overflow-hidden">
+                <div class="flex items-start gap-4">
+                  <div class="gis-seal gis-seal-sm shrink-0">结</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-3 mb-3">
+                      <div class="accent-line" />
+                      <h3 class="heading-section">结论</h3>
+                    </div>
+                    <p class="text-sm text-[var(--text)]/90 leading-relaxed whitespace-pre-wrap">{{ m.content }}</p>
                   </div>
                 </div>
-              </li>
-            </ol>
-          </div>
-
-          <!-- 产物 -->
-          <div class="gis-card animate-enter stagger-2">
-            <div class="flex items-center gap-3 mb-5">
-              <div class="accent-line" />
-              <h3 class="heading-section">产物</h3>
-              <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ result.outputs.length }} 个</span>
-            </div>
-
-            <!-- PNG 画廊 -->
-            <div v-if="pngArtifacts.length" class="grid gap-4 md:grid-cols-2">
-              <figure v-for="p in pngArtifacts" :key="p.name" class="gis-artifact animate-enter">
-                <img :src="p.url" :alt="p.name" class="w-full block" />
-                <figcaption class="flex items-center justify-between gap-2">
-                  <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
-                  <a class="gis-download-link shrink-0" @click="download(p.url, p.name)">下载</a>
-                </figcaption>
-              </figure>
-            </div>
-
-            <!-- 其他文件 -->
-            <div v-if="fileArtifacts.length" class="space-y-2">
-              <div v-for="f in fileArtifacts" :key="f.name" class="gis-file-row animate-enter">
-                <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
-                <span class="text-sm truncate">{{ f.name }}</span>
-                <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
               </div>
-            </div>
 
-            <p v-if="!pngArtifacts.length && !fileArtifacts.length" class="text-sm text-muted py-4 text-center">
-              本次任务没有声明产物。
-            </p>
+              <!-- 工具调用轨迹 -->
+              <div v-if="m.result" class="gis-card animate-enter stagger-1">
+                <div class="flex items-center gap-3 mb-5">
+                  <div class="accent-line" />
+                  <h3 class="heading-section">工具调用轨迹</h3>
+                  <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ m.result.steps }} 步</span>
+                </div>
+                <ol class="gis-timeline">
+                  <li
+                    v-for="t in m.result.trajectory"
+                    :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
+                    class="gis-timeline-item"
+                    :class="`stagger-${Math.min(t.step, 5)}`"
+                  >
+                    <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
+                    <div class="gis-timeline-card">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="gis-step-index shrink-0">#{{ t.step }}</span>
+                        <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
+                        <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
+                        <span
+                          class="ml-auto shrink-0"
+                          :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
+                        >
+                          {{ toolStatusText(t) }}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+
+              <!-- 产物 -->
+              <div v-if="m.result" class="gis-card animate-enter stagger-2">
+                <div class="flex items-center gap-3 mb-5">
+                  <div class="accent-line" />
+                  <h3 class="heading-section">产物</h3>
+                  <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ m.result.outputs.length }} 个</span>
+                </div>
+
+                <div v-if="m.pngArtifacts?.length" class="grid gap-4 md:grid-cols-2">
+                  <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact animate-enter">
+                    <img :src="p.url" :alt="p.name" class="w-full block" />
+                    <figcaption class="flex items-center justify-between gap-2">
+                      <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
+                      <a class="gis-download-link shrink-0" @click="download(p.url, p.name)">下载</a>
+                    </figcaption>
+                  </figure>
+                </div>
+
+                <div v-if="m.fileArtifacts?.length" class="space-y-2">
+                  <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row animate-enter">
+                    <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
+                    <span class="text-sm truncate">{{ f.name }}</span>
+                    <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
+                  </div>
+                </div>
+
+                <p v-if="!m.pngArtifacts?.length && !m.fileArtifacts?.length" class="text-sm text-muted py-4 text-center">
+                  本次任务没有声明产物。
+                </p>
+              </div>
+            </template>
           </div>
         </template>
+
+        <!-- 执行中占位 -->
+        <div v-if="running" class="gis-card p-10 flex flex-col items-center gap-4 text-sm text-dim animate-enter">
+          <span class="gis-spinner gis-spinner-lg" />
+          <p class="font-display tracking-wide">引擎正在调用 GIS 工具…</p>
+          <p class="text-xs text-muted">每个工具调用都会被记录并展示在下方轨迹中</p>
+        </div>
       </section>
     </main>
   </div>
@@ -443,6 +493,29 @@ function download(url: string, name: string) {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.45; transform: scale(0.82); }
 }
+.gis-new-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.gis-new-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.gis-new-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* ---- 卡片 ---- */
 .gis-card {
@@ -473,6 +546,44 @@ function download(url: string, name: string) {
   font-size: 12px;
 }
 
+/* ---- 用户消息 ---- */
+.gis-user-msg {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.gis-user-tag {
+  order: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: var(--accent-glow);
+}
+.gis-user-text {
+  order: 1;
+  max-width: 76%;
+  padding: 10px 14px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---- 上传区 ---- */
 .gis-upload {
   display: flex;
@@ -480,7 +591,7 @@ function download(url: string, name: string) {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 26px 18px;
+  padding: 24px 18px;
   border: 1.5px dashed var(--border-light);
   border-radius: var(--radius-md);
   cursor: pointer;

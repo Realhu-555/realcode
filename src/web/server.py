@@ -37,6 +37,8 @@ from src.storage.project_store import store
 from src.tools.implementations.data_inspect import inspect_file
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import GisEngine
+from src.gis_toolkit.session import GisSessionStore
+from src.orchestrator.long_term_memory import LongTermMemory, Lesson
 from src.utils.trace import TraceTracker
 from src.web.auth import get_user_id
 
@@ -52,6 +54,8 @@ GIS_EXPORT_DIR = Path("data/gis_exports")
 ALLOWED_GIS_EXTENSIONS = {".csv", ".geojson", ".json", ".zip"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 GIS_TOOLKIT_OUT_DIR = Path("data/gis_toolkit_out")
+gis_sessions = GisSessionStore()
+ltm = LongTermMemory()
 _GIS_TOOLKIT_MEDIA = {
     ".png": "image/png",
     ".csv": "text/csv; charset=utf-8",
@@ -465,6 +469,7 @@ class GisAssistantRequest(BaseModel):
     user_request: str
     data_file: str | None = None
     model_preference: str | None = None
+    session_id: str | None = None
 
 
 @app.post("/api/v1/gis/upload")
@@ -504,8 +509,9 @@ async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
 
 @app.post("/api/v1/gis-assistant/run")
 async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get_user_id)):
-    """????? GIS ???????????????????? Task E?"""
+    """运行工具调用版 GIS 助手；带 session_id 时复用会话（引擎状态 + 对话历史）"""
     project_id = uuid.uuid4().hex[:12]
+    session_id, session = gis_sessions.get_or_create(req.session_id)
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _thread_pool,
@@ -513,17 +519,21 @@ async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get
         req.user_request,
         req.data_file,
         req.model_preference,
+        session,
+        user_id,
     )
-    return {"project_id": project_id, **result}
+    return {"project_id": project_id, "session_id": session_id, **result}
 
 
-@app.get("/api/v1/gis-assistant/files/{filename}")
-async def gis_assistant_file(filename: str, user_id: str = Depends(get_user_id)):
-    """访问工具调用版 GIS 助手产物文件（防路径穿越，按扩展名给 MIME）"""
+@app.get("/api/v1/gis-assistant/files/{session_id}/{filename}")
+async def gis_assistant_file(session_id: str, filename: str, user_id: str = Depends(get_user_id)):
+    """访问指定会话的 GIS 助手产物文件（防路径穿越，按扩展名给 MIME）"""
+    if len(session_id) != 12 or not all(c in "0123456789abcdef" for c in session_id):
+        raise HTTPException(status_code=400, detail="非法会话 ID")
     safe = Path(filename).name
     if safe != filename:
         raise HTTPException(status_code=400, detail="非法文件名")
-    path = GIS_TOOLKIT_OUT_DIR / safe
+    path = GIS_TOOLKIT_OUT_DIR / session_id / safe
     if not path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
     media = _GIS_TOOLKIT_MEDIA.get(path.suffix.lower(), "application/octet-stream")
@@ -573,16 +583,63 @@ class _GisProgressAgent:
         asyncio.run_coroutine_threadsafe(coro, self.loop)
 
 
+def _build_ltm_hint(user_request: str, user_id: str) -> str:
+    """检索当前用户的 GIS 历史任务经验，注入 system prompt"""
+    try:
+        lessons = ltm.get_relevant_lessons(user_request, limit=5)
+        mine = [l for l in lessons if l.agent_name == f"gis_assistant:{user_id}"]
+    except Exception:
+        mine = []
+    if not mine:
+        return ""
+    lines = "\n".join(f"- {l.lesson}" for l in mine[:3])
+    return "你之前的 GIS 任务经验（仅作参考，按当前请求重新执行）：\n" + lines
+
+
+def _save_gis_lesson(user_id: str, session_id: str, user_request: str, result: dict) -> None:
+    """任务产出成功时，把用户请求 + 结论存入长期记忆"""
+    outputs = result.get("outputs") or []
+    if not outputs:
+        return
+    try:
+        lesson = Lesson(
+            id=uuid.uuid4().hex[:16],
+            project_id=session_id,
+            agent_name=f"gis_assistant:{user_id}",
+            category="success",
+            lesson=(
+                f"GIS 任务完成：{user_request} → {result.get('final', '')}"
+                f"（产物: {', '.join(outputs)}）"
+            ),
+        )
+        ltm.save_lesson(lesson)
+    except Exception:
+        pass  # 记忆写入失败不影响主流程
+
+
 def _run_gis_assistant_sync(
     user_request: str,
     data_file: str | None,
     model_preference: str | None,
+    session=None,
+    user_id: str = "anonymous",
 ) -> dict:
-    """工具调用版 GIS 助手（后台线程执行，REST / WebSocket 复用）"""
+    """工具调用版 GIS 助手（后台线程执行，REST / WebSocket 复用）
+
+    传入 session（GisSession）时复用引擎状态与对话历史，实现多轮连续对话。
+    """
     try:
-        engine = GisEngine(allowed_roots=["data"])
+        engine = session.engine if session is not None else GisEngine(allowed_roots=["data"])
         agent = GisToolAgent(engine=engine, max_steps=12, model_id=model_preference)
-        result = agent.run(user_request, data_file=data_file)
+        ltm_hint = _build_ltm_hint(user_request, user_id)
+        result = agent.run(
+            user_request,
+            data_file=data_file,
+            session=session,
+            ltm_hint=ltm_hint,
+        )
+        if session is not None:
+            _save_gis_lesson(user_id, session.session_id, user_request, result)
         return {
             "stage": "done",
             "trajectory": result["trajectory"],

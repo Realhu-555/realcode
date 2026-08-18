@@ -132,7 +132,7 @@ def test_build_gis_with_data_schema(monkeypatch, tmp_path):
 # ── 工具调用版助手端点 ─────────────────────────────────
 
 def test_gis_assistant_run_ok(monkeypatch):
-    def fake_sync(user_request, data_file, model_preference):
+    def fake_sync(user_request, data_file, model_preference, session=None, user_id="x"):
         return {
             "stage": "done",
             "trajectory": [{"step": 1, "tool": "choropleth", "args": {}, "result": {"status": "ok"}}],
@@ -163,7 +163,7 @@ def test_gis_assistant_run_requires_auth():
 
 
 def test_gis_assistant_run_error_path(monkeypatch):
-    def fake_sync(user_request, data_file, model_preference):
+    def fake_sync(user_request, data_file, model_preference, session=None, user_id="x"):
         return {"stage": "error", "error_message": "执行失败"}
 
     monkeypatch.setattr(server, "_run_gis_assistant_sync", fake_sync)
@@ -181,7 +181,7 @@ def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
         def __init__(self, engine, max_steps=12, model_id=None):
             self.engine = engine
 
-        def run(self, request, data_file=None):
+        def run(self, request, data_file=None, session=None, ltm_hint=""):
             raise RuntimeError("模型调用失败")
 
     monkeypatch.setattr(server, "GisToolAgent", BoomAgent)
@@ -193,9 +193,10 @@ def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
 # ── 产物文件访问端点 ─────────────────────────────────
 
 def test_gis_assistant_file_ok(monkeypatch, tmp_path):
-    (tmp_path / "map.png").write_bytes(b"PNG-content-bytes-123456")
+    (tmp_path / "0123456789ab").mkdir()
+    (tmp_path / "0123456789ab" / "map.png").write_bytes(b"PNG-content-bytes-123456")
     monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
-    resp = client.get("/api/v1/gis-assistant/files/map.png", headers=HEADERS)
+    resp = client.get("/api/v1/gis-assistant/files/0123456789ab/map.png", headers=HEADERS)
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("image/png")
     assert len(resp.content) > 0
@@ -203,20 +204,23 @@ def test_gis_assistant_file_ok(monkeypatch, tmp_path):
 
 def test_gis_assistant_file_rejects_traversal(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
+    # 非法 session_id 直接被拒
+    resp0 = client.get("/api/v1/gis-assistant/files/abc/map.png", headers=HEADERS)
+    assert resp0.status_code == 400
     # 含路径分隔符的请求在路由层即被拒绝（Starlette 路径参数不匹配 %2F）
-    resp = client.get("/api/v1/gis-assistant/files/..%2F..%2F.env", headers=HEADERS)
+    resp = client.get("/api/v1/gis-assistant/files/0123456789ab/..%2F..%2F.env", headers=HEADERS)
     assert resp.status_code == 404
-    resp2 = client.get("/api/v1/gis-assistant/files/a%2Fb.png", headers=HEADERS)
+    resp2 = client.get("/api/v1/gis-assistant/files/0123456789ab/a%2Fb.png", headers=HEADERS)
     assert resp2.status_code == 404
 
 
 def test_gis_assistant_file_404(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
-    resp = client.get("/api/v1/gis-assistant/files/nope.png", headers=HEADERS)
+    resp = client.get("/api/v1/gis-assistant/files/0123456789ab/nope.png", headers=HEADERS)
     assert resp.status_code == 404
 
 
 def test_gis_assistant_file_requires_auth(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
-    resp = client.get("/api/v1/gis-assistant/files/map.png")
+    resp = client.get("/api/v1/gis-assistant/files/0123456789ab/map.png")
     assert resp.status_code == 401

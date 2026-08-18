@@ -63,8 +63,17 @@ class GisToolAgent:
             + lines
         )
 
-    def run(self, user_request: str, data_file: str | None = None) -> dict:
+    def run(
+        self,
+        user_request: str,
+        data_file: str | None = None,
+        session=None,
+        ltm_hint: str = "",
+    ) -> dict:
         """执行一次 GIS 助手会话，返回轨迹与结果
+
+        多轮对话：传入 session（GisSession）时复用引擎状态与对话历史；
+        ltm_hint 为长期记忆检索注入的提示文本。
 
         Returns:
             {
@@ -75,6 +84,13 @@ class GisToolAgent:
               "timed_out": 是否达到步数上限,
             }
         """
+        system_content = SYSTEM_PROMPT
+        demo_hint = self._demo_file_hint()
+        if demo_hint:
+            system_content += "\n\n" + demo_hint
+        if ltm_hint:
+            system_content += "\n\n" + ltm_hint
+
         user_content = user_request
         if data_file and self.engine._layer is not None:
             user_content = (
@@ -86,19 +102,20 @@ class GisToolAgent:
                 f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
             )
 
-        system_content = SYSTEM_PROMPT
-        demo_hint = self._demo_file_hint()
-        if demo_hint:
-            system_content += "\n\n" + demo_hint
+        messages: list[dict] = [{"role": "system", "content": system_content}]
+        if session is not None and getattr(session, "messages", None):
+            messages.extend(session.messages)
+        messages.append({"role": "user", "content": user_content})
 
-        messages: list[dict] = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
-        ]
         trajectory: list[dict] = []
         last_result: dict = {}
+        final = ""
+        outputs: list[str] = []
+        timed_out = False
+        steps_used = self.max_steps
 
         for step in range(1, self.max_steps + 1):
+            steps_used = step
             resp = self.llm.chat_with_tools(
                 messages, TOOL_SCHEMAS, agent_type=self.agent_type, model_id=self.model_id
             )
@@ -106,7 +123,8 @@ class GisToolAgent:
             tool_calls = resp.get("tool_calls") or []
             if not tool_calls:
                 messages.append({"role": "assistant", "content": content or ""})
-                return self._wrap(trajectory, step, final=content or "", outputs=[], last=last_result)
+                final = content or ""
+                break
 
             messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
             finished = False
@@ -137,11 +155,23 @@ class GisToolAgent:
                     }
                 )
             if finished:
-                return self._wrap(
-                    trajectory, step, final=last_result.get("explanation") or "", outputs=last_result.get("outputs") or [], last=last_result
-                )
+                final = last_result.get("explanation") or ""
+                outputs = last_result.get("outputs") or []
+                break
+        else:
+            timed_out = True
 
-        return self._wrap(trajectory, self.max_steps, final="", outputs=[], last=last_result, timed_out=True)
+        if session is not None:
+            session.append_round(messages[1:], user_request, final)
+
+        return self._wrap(
+            trajectory,
+            steps_used,
+            final=final,
+            outputs=outputs,
+            last=last_result,
+            timed_out=timed_out,
+        )
 
     # ── 内部 ──
     def _execute(self, name: str, args: dict) -> dict:
