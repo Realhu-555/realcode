@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 from src.gis_toolkit.engine import GisEngine
@@ -95,7 +96,7 @@ class GisSession:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "GisSession":
+    def from_dict(cls, data: dict) -> GisSession:
         """从持久化数据恢复会话（引擎由调用方重建）"""
         sid = data["session_id"]
         out_dir = Path("data/gis_toolkit_out") / sid
@@ -185,15 +186,11 @@ class GisSessionStore:
         self._write_user(user_id, data)
         out_dir = Path("data/gis_toolkit_out") / session_id
         if out_dir.is_dir():
-            for f in out_dir.iterdir():
-                try:
+            with suppress(OSError):
+                for f in out_dir.iterdir():
                     f.unlink()
-                except OSError:
-                    pass
-            try:
+            with suppress(OSError):
                 out_dir.rmdir()
-            except OSError:
-                pass
         return True
 
     def clear(self) -> None:
