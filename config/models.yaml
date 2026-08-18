@@ -45,6 +45,7 @@ agent_defaults:
   design: deepseek-v4-pro
   codegen: deepseek-v4-pro
   checker: deepseek-v4-pro
+  gis_assistant: deepseek-v4-pro
 
 # Failover 候选链：主模型重试耗尽 → 依次尝试备用
 fallback_chains:

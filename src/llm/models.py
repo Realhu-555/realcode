@@ -52,6 +52,7 @@ BUILTIN_AGENT_DEFAULTS: dict[str, str] = {
     "design": "deepseek-v4-pro",
     "codegen": "deepseek-v4-pro",
     "checker": "deepseek-v4-pro",
+    "gis_assistant": "deepseek-v4-pro",
 }
 BUILTIN_FALLBACK: dict[str, list[str]] = {}
 
