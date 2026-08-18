@@ -164,7 +164,7 @@ function download(url: string, name: string) {
               <span class="gis-upload-icon">🗺</span>
               <span class="text-sm font-medium">点击选择数据文件</span>
               <span class="text-xs text-muted">支持 CSV / GeoJSON / JSON / ZIP</span>
-              <span class="text-[11px] text-muted/70 mt-1">将文件拖入此区域亦可</span>
+              <span class="text-[11px] text-muted/70 mt-1">未上传时，将尝试从引擎演示数据目录查找</span>
             </template>
 
             <!-- 已上传 -->

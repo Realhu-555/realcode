@@ -158,3 +158,45 @@ def test_preloaded_data_skips_load(tmp_path):
     result = agent.run("看看数据", data_file=csv)
     assert result["trajectory"][0]["tool"] == "inspect_data"
     assert result["trajectory"][0]["result"]["rows"] == 2
+
+
+def test_demo_file_hint_lists_demo_files(tmp_path, monkeypatch):
+    """无显式数据文件时，system prompt 注入可用演示文件清单（忽略非数据文件）"""
+    monkeypatch.chdir(tmp_path)
+    demo = tmp_path / "data" / "gis_demo"
+    demo.mkdir(parents=True)
+    (demo / "gdp_demo.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    (demo / "readme.txt").write_text("ignore", encoding="utf-8")
+
+    hint = GisToolAgent._demo_file_hint()
+    assert "data/gis_demo/gdp_demo.csv" in hint
+    assert "readme.txt" not in hint
+
+
+def test_system_prompt_contains_demo_hint_when_no_file(tmp_path, monkeypatch):
+    """未传 data_file 时：user 消息为原始请求，system 消息含演示文件路径"""
+    monkeypatch.chdir(tmp_path)
+    demo = tmp_path / "data" / "gis_demo"
+    demo.mkdir(parents=True)
+    (demo / "gdp_demo.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    agent = _agent(tmp_path, [{"content": "完成", "tool_calls": None}])
+    agent.run("把 gdp_demo.csv 画成分级设色图")
+
+    system_msg = agent.llm.calls[0][0]["content"]
+    user_msg = agent.llm.calls[0][1]["content"]
+    assert "data/gis_demo/gdp_demo.csv" in system_msg
+    assert user_msg == "把 gdp_demo.csv 画成分级设色图"
+
+
+def test_data_file_prompt_has_no_garbled_text(tmp_path):
+    """传入 data_file 时 user 提示为正常中文，无乱码占位符"""
+    csv = _point_csv(tmp_path)
+    engine = GisEngine(out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
+    agent = GisToolAgent(engine=engine, max_steps=12)
+    agent.llm = FakeLLM([{"content": "完成", "tool_calls": None}])
+    agent.run("分析", data_file=csv)
+
+    user_msg = agent.llm.calls[0][1]["content"]
+    assert "数据文件已就绪" in user_msg
+    assert "?" not in user_msg

@@ -7,6 +7,7 @@ LLM 通过 function calling 操作 GisEngine，每个工具调用的 (工具名,
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.gis_toolkit.engine import GisEngine, GisEngineError, _jsonable
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
@@ -44,6 +45,24 @@ class GisToolAgent:
         self.agent_type = agent_type
         self.model_id = model_id
 
+    @staticmethod
+    def _demo_file_hint() -> str:
+        """无显式数据文件时，提示引擎工作目录内可用的演示数据"""
+        demo_dir = Path("data/gis_demo")
+        if not demo_dir.is_dir():
+            return ""
+        allowed = {".csv", ".geojson", ".json", ".zip"}
+        files = sorted(
+            p for p in demo_dir.iterdir() if p.is_file() and p.suffix.lower() in allowed
+        )
+        if not files:
+            return ""
+        lines = "\n".join(f"- {p.as_posix()}（演示数据集）" for p in files)
+        return (
+            "引擎工作目录中可用的数据文件（用户未显式提供时可直接 load_data 使用）：\n"
+            + lines
+        )
+
     def run(self, user_request: str, data_file: str | None = None) -> dict:
         """执行一次 GIS 助手会话，返回轨迹与结果
 
@@ -59,16 +78,21 @@ class GisToolAgent:
         user_content = user_request
         if data_file and self.engine._layer is not None:
             user_content = (
-                f"??????????????: {data_file}??"
-                f"?? inspect_data ???????????????????\n\n?????{user_request}"
+                f"当前已加载数据文件: {data_file}。"
+                f"可先调用 inspect_data 查看字段与 CRS，再继续后续任务。\n\n用户请求: {user_request}"
             )
         elif data_file:
             user_content = (
-                f"??????: {data_file}???? load_data ???? inspect_data ???\n\n?????{user_request}"
+                f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
             )
 
+        system_content = SYSTEM_PROMPT
+        demo_hint = self._demo_file_hint()
+        if demo_hint:
+            system_content += "\n\n" + demo_hint
+
         messages: list[dict] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         trajectory: list[dict] = []
