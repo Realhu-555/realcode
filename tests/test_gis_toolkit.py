@@ -232,3 +232,48 @@ def test_csv_without_coords_rejected(tmp_path):
     eng = _engine(tmp_path)
     with pytest.raises(GisEngineError, match="经纬度"):
         eng.load_data(str(p))
+
+
+# ── 省界底图 choropleth ─────────────────────────────
+
+def _fake_base_map():
+    """假省界：北京 / 上海 两个矩形（EPSG:4326），name 带行政后缀"""
+    return gpd.GeoDataFrame(
+        {"name": ["北京市", "上海市"], "adcode": [110000, 310000]},
+        geometry=[box(116.0, 39.5, 117.0, 40.5), box(121.0, 31.0, 122.0, 32.0)],
+        crs="EPSG:4326",
+    )
+
+
+def test_province_norm():
+    assert GisEngine._province_norm("北京市") == "北京"
+    assert GisEngine._province_norm("河北省") == "河北"
+    assert GisEngine._province_norm("内蒙古自治区") == "内蒙古"
+    assert GisEngine._province_norm("广西壮族自治区") == "广西"
+    assert GisEngine._province_norm("新疆维吾尔自治区") == "新疆"
+    assert GisEngine._province_norm("香港特别行政区") == "香港"
+
+
+def test_choropleth_aggregates_province_onto_base_map(point_csv, tmp_path):
+    """点数据 + province 列 + 省界底图 → 按省份聚合输出省面图"""
+    eng = GisEngine(data_file=point_csv, out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
+    eng._base_map = _fake_base_map()
+    res = eng.choropleth(column="gdp", scheme="Quantiles", k=3, output="province_map.png")
+    assert res["status"] == "ok"
+    assert (tmp_path / "out" / "province_map.png").is_file()
+    assert "按省份聚合" in res["message"]
+
+
+def test_choropleth_points_overlay_base_map(tmp_path):
+    """点数据无 province 列 + 省界底图 → 底图叠加点着色"""
+    p = tmp_path / "cities.csv"
+    p.write_text(
+        "city,gdp,lon,lat\nA,100,116.5,39.9\nB,200,121.5,31.2\n",
+        encoding="utf-8",
+    )
+    eng = GisEngine(data_file=str(p), out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
+    eng._base_map = _fake_base_map()
+    res = eng.choropleth(column="gdp", output="overlay.png")
+    assert res["status"] == "ok"
+    assert (tmp_path / "out" / "overlay.png").is_file()
+    assert "底图" in res["message"]

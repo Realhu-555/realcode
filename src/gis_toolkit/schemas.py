@@ -80,7 +80,7 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "choropleth",
-            "description": "对当前图层的数值列做分级设色图并保存 PNG。数值列会自动转数字，非数值列会失败。",
+            "description": "对当前图层的数值列做分级设色图并保存 PNG。数值列会自动转数字，非数值列会失败。若当前为点数据且引擎内置中国省界底图，将按省份聚合输出省面地图（点数据含 province 列时）。",
             "parameters": {
                 "type": "object",
                 "properties": {

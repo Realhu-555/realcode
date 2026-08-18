@@ -16,6 +16,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+plt.rcParams["font.sans-serif"] = [
+    "Microsoft YaHei",
+    "SimHei",
+    "Noto Sans CJK SC",
+    "sans-serif",
+]
+plt.rcParams["axes.unicode_minus"] = False
+
 DEFAULT_CRS = "EPSG:4326"
 MAX_FILE_BYTES = 10 * 1024 * 1024
 _LON_COLS = ("lon", "lng", "longitude", "经度", "x")
@@ -77,8 +85,37 @@ class GisEngine:
         self._roots = [Path(r).resolve() for r in (allowed_roots or ["data"])]
         self.outputs: list[str] = []
         self._layer: gpd.GeoDataFrame | None = None
+        self._base_map: gpd.GeoDataFrame | None = self._load_base_map()
         if data_file:
             self.load_data(data_file)
+
+    # ── 底图 / 名称归一化 ──
+    def _load_base_map(self) -> gpd.GeoDataFrame | None:
+        """加载内置中国省界底图（data/gis_base/china_province.geojson），失败返回 None"""
+        base_path = Path("data/gis_base/china_province.geojson")
+        if not base_path.is_file():
+            return None
+        try:
+            gdf = gpd.read_file(base_path)
+            return gdf if "name" in gdf.columns else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _province_norm(name: str) -> str:
+        """省级名称归一化：'北京市' → '北京'、'内蒙古自治区' → '内蒙古'"""
+        name = name.strip()
+        for suffix in (
+            "壮族自治区",
+            "维吾尔自治区",
+            "回族自治区",
+            "特别行政区",
+            "自治区",
+            "省",
+            "市",
+        ):
+            name = name.replace(suffix, "")
+        return name
 
     # ── 内部工具 ──
     def _check_input(self, path: str) -> Path:
@@ -193,38 +230,101 @@ class GisEngine:
         k: int = 5,
         output: str = "choropleth.png",
     ) -> dict:
-        """对数值列做分级设色图并保存 PNG（scheme: NaturalBreaks/Quantiles/EqualInterval）"""
+        """对数值列做分级设色图并保存 PNG（scheme: NaturalBreaks/Quantiles/EqualInterval）
+
+        点数据 + 内置中国省界底图时：优先按省份聚合为省面地图；
+        无省份列则底图叠加点着色；面数据直接分级设色。
+        """
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         if column not in self._layer.columns:
             raise GisEngineError(f"列不存在: {column}（可用列: {list(self._layer.columns)}）")
         out = self.out_dir / _sanitize_filename(output)
         fig, ax = plt.subplots(figsize=(10, 8))
+        note = ""
         try:
-            self._layer.plot(
-                column=column,
-                scheme=scheme,
-                k=int(k),
-                cmap="YlOrRd",
-                legend=True,
-                ax=ax,
-                legend_kwds={
-                    "title": column,
-                    "loc": "lower right",
-                    "fontsize": 8,
-                    "title_fontsize": 9,
-                },
-            )
+            layer = self._layer
+            is_points = bool(len(layer)) and bool(layer.geometry.geom_type.eq("Point").all())
+            if (
+                is_points
+                and self._base_map is not None
+                and "name" in self._base_map.columns
+                and "province" in layer.columns
+            ):
+                # 按省聚合：省界底图 merge 点数据的省聚合值 → 省面分级设色
+                agg = (
+                    layer.drop(columns=[layer.geometry.name])
+                    .groupby("province")[column]
+                    .agg("sum")
+                    .reset_index()
+                )
+                agg["_province_norm"] = agg["province"].map(self._province_norm)
+                base = self._base_map.copy()
+                base["_province_norm"] = base["name"].map(self._province_norm)
+                merged = base.merge(agg, on="_province_norm", how="left")
+                missing = sorted(merged.loc[merged[column].isna(), "name"].tolist())
+                merged.plot(
+                    column=column,
+                    scheme=scheme,
+                    k=int(k),
+                    cmap="YlOrRd",
+                    legend=True,
+                    ax=ax,
+                    missing_kwds={"color": "#e6ddd0", "edgecolor": "#9a9082", "linewidth": 0.5},
+                    legend_kwds={
+                        "title": column,
+                        "loc": "lower right",
+                        "fontsize": 8,
+                        "title_fontsize": 9,
+                    },
+                )
+                note = f"（按省份聚合省界底图，{len(missing)} 个无数据省份）"
+            elif is_points and self._base_map is not None:
+                # 底图 + 点叠加着色
+                self._base_map.plot(
+                    ax=ax, color="#f0e9dd", edgecolor="#9a9082", linewidth=0.5
+                )
+                layer.plot(
+                    column=column,
+                    scheme=scheme,
+                    k=int(k),
+                    cmap="YlOrRd",
+                    legend=True,
+                    ax=ax,
+                    markersize=42,
+                    legend_kwds={
+                        "title": column,
+                        "loc": "lower right",
+                        "fontsize": 8,
+                        "title_fontsize": 9,
+                    },
+                )
+                note = "（省界底图 + 点分级着色）"
+            else:
+                layer.plot(
+                    column=column,
+                    scheme=scheme,
+                    k=int(k),
+                    cmap="YlOrRd",
+                    legend=True,
+                    ax=ax,
+                    legend_kwds={
+                        "title": column,
+                        "loc": "lower right",
+                        "fontsize": 8,
+                        "title_fontsize": 9,
+                    },
+                )
         except Exception as exc:
             plt.close(fig)
             raise GisEngineError(f"分级设色失败（检查 scheme/k 或列是否为数值）: {exc}") from exc
-        ax.set_title(f"{column} ({scheme}, k={k})")
+        ax.set_title(f"{column} 分级设色 ({scheme}, k={k}){note}")
         ax.set_axis_off()
         fig.tight_layout()
         fig.savefig(out, dpi=150, bbox_inches="tight")
         plt.close(fig)
         self.outputs.append(output)
-        return self._result(f"已保存分级设色图 {output}", size_bytes=out.stat().st_size)
+        return self._result(f"已保存分级设色图 {output}{note}", size_bytes=out.stat().st_size)
 
     def scatter_plot(self, x: str, y: str, output: str = "scatter.png") -> dict:
         """两个数值列的散点图"""
