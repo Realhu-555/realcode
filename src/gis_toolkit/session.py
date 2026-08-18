@@ -13,7 +13,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from src.gis_toolkit.engine import GisEngine
+from src.gis_toolkit.engine import create_gis_engine
 
 SESSION_TTL_SECONDS = 30 * 60  # 内存中空闲 30 分钟过期（持久化保留）
 SESSIONS_DB = "data/gis_sessions.json"
@@ -25,7 +25,7 @@ class GisSession:
     def __init__(self, session_id: str, out_dir: Path, title: str = "新会话") -> None:
         self.session_id = session_id
         self.out_dir = Path(out_dir)
-        self.engine = GisEngine(out_dir=str(self.out_dir), allowed_roots=["data"])
+        self.engine = create_gis_engine(out_dir=str(self.out_dir), allowed_roots=["data"])
         self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）
         self.rounds: list[dict] = []  # 每轮展示数据（前端恢复用）
@@ -66,7 +66,7 @@ class GisSession:
             return
         try:
             self.out_dir.mkdir(parents=True, exist_ok=True)
-            self.engine._layer.to_file(str(self.out_dir / "layer.geojson"), driver="GeoJSON")
+            self.engine.save_layer_snapshot(str(self.out_dir / "layer.geojson"))
             self.has_layer = True
         except Exception:
             self.has_layer = False

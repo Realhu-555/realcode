@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -66,6 +67,19 @@ def _jsonable(obj):
     return str(obj)
 
 
+
+def _check_input_path(path: str, roots: list[Path]) -> Path:
+    """校验输入路径：必须在白名单内、存在、且 ≤10MB"""
+    resolved = Path(path).resolve()
+    if not any(resolved == root or root in resolved.parents for root in roots):
+        raise GisEngineError(f"拒绝访问白名单外的文件: {path}")
+    if not resolved.is_file():
+        raise GisEngineError(f"文件不存在: {path}")
+    if resolved.stat().st_size > MAX_FILE_BYTES:
+        raise GisEngineError(f"文件超过 {MAX_FILE_BYTES // 1024 // 1024}MB 限制: {path}")
+    return resolved
+
+
 class GisEngineError(RuntimeError):
     """GIS 工具执行失败（错误消息会回传给 LLM，供其修正）"""
 
@@ -119,16 +133,8 @@ class GisEngine:
 
     # ── 内部工具 ──
     def _check_input(self, path: str) -> Path:
-        """校验输入路径：必须在白名单内、存在、且 ≤10MB"""
-        p = Path(path)
-        resolved = p.resolve()
-        if not any(resolved == root or root in resolved.parents for root in self._roots):
-            raise GisEngineError(f"拒绝访问白名单外的文件: {path}")
-        if not resolved.is_file():
-            raise GisEngineError(f"文件不存在: {path}")
-        if resolved.stat().st_size > MAX_FILE_BYTES:
-            raise GisEngineError(f"文件超过 {MAX_FILE_BYTES // 1024 // 1024}MB 限制: {path}")
-        return resolved
+        """??????????????????? ?10MB"""
+        return _check_input_path(path, self._roots)
 
     def _summary(self, gdf: gpd.GeoDataFrame) -> dict:
         geom_col = gdf.geometry.name
@@ -382,6 +388,12 @@ class GisEngine:
         self.outputs.append(output)
         return self._result(f"已导出 {output}", size_bytes=out.stat().st_size)
 
+    def save_layer_snapshot(self, path: str) -> None:
+        """???????? GeoJSON????????????????"""
+        if self._layer is None:
+            return
+        self._layer.to_file(path, driver="GeoJSON")
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（以该工具结束对话）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]
@@ -402,3 +414,14 @@ class GisEngine:
             },
             ensure_ascii=False,
         )
+
+def create_gis_engine(engine: str | None = None, **kwargs) -> GisEngine:
+    """按 GIS_ENGINE 环境变量（geopandas 默认 / qgis）创建引擎"""
+    name = (engine or os.environ.get("GIS_ENGINE") or "geopandas").strip().lower()
+    if name == "qgis":
+        from src.gis_toolkit.qgis_engine import QgsEngine  # 延迟导入，无 QGIS 环境不报错
+
+        return QgsEngine(**kwargs)
+    if name != "geopandas":
+        raise GisEngineError(f"未知引擎: {name}（可选 geopandas/qgis）")
+    return GisEngine(**kwargs)

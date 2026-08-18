@@ -1,0 +1,563 @@
+﻿"""QGIS 引擎 worker — 由 QGIS 自带 Python（python-qgis-ltr.bat）运行。
+
+与主进程通过 stdin/stdout JSON-lines 通信：
+    请求: {"op": "call"|"ping"|"exit", "tool": "...", "args": {...}}
+    响应: {"ok": true, "result": {...}} | {"ok": false, "error": "..."}
+
+本进程只维护「当前图层 + 输出目录」两类状态；产物文件名与输入路径
+安全校验由主进程负责（白名单/文件名净化），worker 只做 GIS 运算。
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+from PyQt5.QtCore import QSize, QVariant
+from PyQt5.QtGui import QColor, QImage
+from qgis import processing
+from qgis.analysis import QgsNativeAlgorithms
+from qgis.core import (
+    QgsApplication,
+    QgsClassificationEqualInterval,
+    QgsClassificationJenks,
+    QgsClassificationQuantile,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransformContext,
+    QgsFeature,
+    QgsField,
+    QgsFields,
+    QgsGraduatedSymbolRenderer,
+    QgsMapRendererParallelJob,
+    QgsMapSettings,
+    QgsVectorFileWriter,
+    QgsVectorLayer,
+    QgsWkbTypes,
+)
+
+DEFAULT_CRS = "EPSG:4326"
+_LON_COLS = ("lon", "lng", "longitude", "经度", "x")
+_LAT_COLS = ("lat", "latitude", "纬度", "y")
+_NORM_SUFFIXES = (
+    "壮族自治区",
+    "维吾尔自治区",
+    "回族自治区",
+    "特别行政区",
+    "自治区",
+    "省",
+    "市",
+)
+_OVERLAY_ALGS = {
+    "intersection": "native:intersection",
+    "union": "native:union",
+    "difference": "native:difference",
+    "symmetric_difference": "native:symmetricaldifference",
+}
+_SCHEME_CLASS = {
+    "NaturalBreaks": QgsClassificationJenks,
+    "Quantiles": QgsClassificationQuantile,
+    "EqualInterval": QgsClassificationEqualInterval,
+}
+
+STATE: dict = {}
+
+
+# ── 初始化 ──
+
+def _find_prefix() -> str:
+    """定位 QGIS 前缀目录（含 python/qgis/core 的 apps/qgis-ltr）"""
+    candidates = [os.environ.get("QGIS_PREFIX_PATH", "")]
+    candidates += [
+        r"D:\QGIS\apps\qgis-ltr",
+        r"C:\Program Files\QGIS 3.40.10\apps\qgis-ltr",
+    ]
+    for c in candidates:
+        if c and os.path.isdir(os.path.join(c, "python", "qgis", "core")):
+            return c
+    raise RuntimeError("未找到 QGIS 前缀目录（QGIS_PREFIX_PATH 未设置）")
+
+
+def _init(out_dir: str) -> None:
+    prefix = _find_prefix()
+    QgsApplication.setPrefixPath(prefix, True)
+    app = QgsApplication([], False)
+    app.initQgis()
+    STATE["app"] = app  # keep a reference to avoid GC breaking the render thread
+    QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
+    sys.path.append(os.path.join(prefix, "python", "plugins"))
+    from processing.core.Processing import Processing
+
+    Processing.initialize()
+    STATE["layer"] = None
+    STATE["out_dir"] = os.path.abspath(out_dir)
+    STATE["base_map"] = None
+    base_path = os.path.join(os.getcwd(), "data", "gis_base", "china_province.geojson")
+    if os.path.isfile(base_path):
+        base = QgsVectorLayer(base_path, "base", "ogr")
+        if base.isValid():
+            STATE["base_map"] = base
+
+
+# ── 通用小工具 ──
+
+def _pick_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    cols = {str(c).lower(): c for c in df.columns}
+    for cand in candidates:
+        if cand.lower() in cols:
+            return str(cols[cand.lower()])
+    return None
+
+
+def _province_norm(name: str) -> str:
+    name = str(name).strip()
+    for suffix in _NORM_SUFFIXES:
+        name = name.replace(suffix, "")
+    return name
+
+
+def _jsonable(v):
+    if isinstance(v, dict):
+        return {str(k): _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    if v is None or isinstance(v, (str, bool)):
+        return v
+    if isinstance(v, (int, float)):
+        if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+            return None
+        return v
+    return str(v)
+
+
+def _crs_str(layer: QgsVectorLayer) -> str:
+    crs = layer.crs()
+    return crs.authid() or crs.toWkt()
+
+
+def _field_names(layer: QgsVectorLayer) -> list[str]:
+    return [f.name() for f in layer.fields()]
+
+
+def _require_layer() -> QgsVectorLayer:
+    layer = STATE.get("layer")
+    if layer is None:
+        raise RuntimeError("当前没有图层，请先 load_data")
+    return layer
+
+
+def _result(message: str, **extra) -> dict:
+    data: dict = {"status": "ok", "message": message}
+    if STATE.get("layer") is not None:
+        data["layer"] = _summary(STATE["layer"])
+    data.update(extra)
+    return data
+
+
+def _geometry_type(layer: QgsVectorLayer) -> str:
+    """Display geometry type name (aligned with geopandas geom_type)."""
+    wkb = layer.wkbType()
+    if int(wkb) == 0:  # WkbType.Unknown
+        for _ in layer.getFeatures():
+            pass
+        wkb = layer.wkbType()
+    return QgsWkbTypes.displayString(wkb)
+
+
+def _summary(layer: QgsVectorLayer) -> dict:
+    return {
+        "rows": int(layer.featureCount()),
+        "columns": _field_names(layer),
+        "crs": _crs_str(layer),
+        "geometry_type": _geometry_type(layer),
+    }
+
+
+def _new_memory_layer(name: str, geom_type: str, crs: str, fields: QgsFields | None = None) -> QgsVectorLayer:
+    layer = QgsVectorLayer(f"{geom_type}?crs={crs}", name, "memory")
+    if fields is not None:
+        layer.dataProvider().addAttributes(fields)
+        layer.updateFields()
+    return layer
+
+
+def _load_layer(path: str) -> QgsVectorLayer:
+    """按后缀加载图层：CSV → delimitedtext 点层；其余 → ogr"""
+    name = os.path.splitext(os.path.basename(path))[0]
+    if path.lower().endswith(".csv"):
+        head = pd.read_csv(path, nrows=5)
+        x_col = _pick_col(head, _LON_COLS)
+        y_col = _pick_col(head, _LAT_COLS)
+        if not (x_col and y_col):
+            raise RuntimeError(
+                f"CSV 缺少经纬度列（可用列: {list(head.columns)}），无法转成空间数据"
+            )
+        uri = (
+            f"file:///{path.replace(os.sep, '/')}"
+            f"?delimiter=,&xField={x_col}&yField={y_col}&crs={DEFAULT_CRS}&encoding=UTF-8"
+        )
+        layer = QgsVectorLayer(uri, name, "delimitedtext")
+    else:
+        layer = QgsVectorLayer(path, name, "ogr")
+    if not layer.isValid():
+        raise RuntimeError(f"无法加载 {path}，QGIS 图层无效")
+    if not layer.crs().isValid():
+        layer.setCrs(QgsCoordinateReferenceSystem(DEFAULT_CRS))
+    return layer
+
+
+# ── 工具实现 ──
+
+def tool_load_data(path: str) -> dict:
+    layer = _load_layer(path)
+    STATE["layer"] = layer
+    return _result(f"已加载 {os.path.basename(path)}，{layer.featureCount()} 行")
+
+
+def tool_inspect_data() -> dict:
+    layer = _require_layer()
+    info = _summary(layer)
+    ext = layer.extent()
+    bounds = [ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum()]
+    samples: list[dict] = []
+    for i, feat in enumerate(layer.getFeatures()):
+        if i >= 5:
+            break
+        samples.append({f.name(): _jsonable(feat.attribute(f.name())) for f in layer.fields()})
+    return {
+        "status": "ok",
+        "message": f"图层 {layer.featureCount()} 行，CRS: {_crs_str(layer)}",
+        **info,
+        "bounds": bounds,
+        "sample_rows": samples,
+    }
+
+
+def tool_buffer(distance: float) -> dict:
+    layer = _require_layer()
+    out = _new_memory_layer(
+        layer.name() + "_buffer", "MultiPolygon", _crs_str(layer), layer.fields()
+    )
+    out.startEditing()
+    for feat in layer.getFeatures():
+        geom = feat.geometry()
+        if geom is None or geom.isEmpty():
+            continue
+        new_geom = geom.buffer(float(distance), 16)
+        new_geom.convertToMultiType()
+        f = QgsFeature(out.fields())
+        f.setGeometry(new_geom)
+        f.setAttributes(feat.attributes())
+        out.addFeature(f)
+    out.commitChanges()
+    STATE["layer"] = out
+    return _result(f"已生成 {distance} 单位缓冲区（CRS: {_crs_str(out)}，单位以坐标系为准）")
+
+
+def tool_overlay(other_path: str, how: str = "intersection") -> dict:
+    layer = _require_layer()
+    if how not in _OVERLAY_ALGS:
+        raise RuntimeError(
+            f"overlay 的 how 必须是 intersection/union/difference/symmetric_difference，收到: {how}"
+        )
+    other = _load_layer(other_path)
+    if _crs_str(layer) != _crs_str(other):
+        raise RuntimeError(
+            f"两个图层 CRS 不一致（{_crs_str(layer)} vs {_crs_str(other)}），先统一坐标系"
+        )
+    params = {"INPUT": layer, "OVERLAY": other, "OUTPUT": "memory:"}
+    result = processing.run(_OVERLAY_ALGS[how], params)
+    out_layer = result["OUTPUT"]
+    STATE["layer"] = out_layer
+    return _result(f"overlay({how}) 完成，结果 {out_layer.featureCount()} 行")
+
+
+def tool_choropleth(
+    column: str,
+    scheme: str = "NaturalBreaks",
+    k: int = 5,
+    output: str = "choropleth.png",
+) -> dict:
+    layer = _require_layer()
+    if column not in _field_names(layer):
+        raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
+    if scheme not in _SCHEME_CLASS:
+        raise RuntimeError(f"scheme 必须是 NaturalBreaks/Quantiles/EqualInterval，收到: {scheme}")
+
+    target, note = _prepare_choropleth_layer(layer, column)
+    ranges = _apply_graduated(target, column, scheme, int(k))
+
+    map_pil = _qimage_to_pil(_render_map(target))
+    legend_img = _render_legend(ranges, column)
+    combined = Image.new(
+        "RGB", (map_pil.width + legend_img.width, map_pil.height), "white"
+    )
+    combined.paste(map_pil, (0, 0))
+    combined.paste(legend_img, (map_pil.width, 0))
+    out_path = os.path.join(STATE["out_dir"], output)
+    combined.save(out_path)
+    return _result(
+        f"已保存分级设色图 {output}{note}",
+        size_bytes=os.path.getsize(out_path),
+        classes=[[r.lowerValue(), r.upperValue()] for r in ranges],
+    )
+
+
+def _prepare_choropleth_layer(layer: QgsVectorLayer, column: str):
+    """点数据优先聚合到省界底图；否则直接用当前图层"""
+    note = ""
+    is_points = layer.geometryType() == QgsWkbTypes.PointGeometry
+    base = STATE.get("base_map")
+    if is_points and base is not None:
+        if "province" in _field_names(layer) and "name" in _field_names(base):
+            agg_layer = _aggregate_to_province(layer, base, column)
+            note = "（按省份聚合省界底图）"
+            return agg_layer, note
+        note = "（省界底图 + 点分级着色）"
+        # 底图与点一起渲染：这里返回 (点层, 底图) 特殊组合
+        return (layer, base), note
+    return layer, note
+
+
+def _aggregate_to_province(points: QgsVectorLayer, base: QgsVectorLayer, column: str) -> QgsVectorLayer:
+    """点层按 province 字段聚合后，把聚合值 join 到省界底图"""
+    rows = [
+        {f.name(): feat.attribute(f.name()) for f in points.fields()}
+        for feat in points.getFeatures()
+    ]
+    df = pd.DataFrame(rows)
+    if column not in df.columns:
+        raise RuntimeError(f"列不存在: {column}")
+    agg = df.groupby("province")[column].agg("sum").reset_index()
+    agg["_norm"] = agg["province"].map(_province_norm)
+    val_map = dict(zip(agg["_norm"], agg[column], strict=False))
+
+    fields = QgsFields()
+    fields.append(QgsField("name", QVariant.String))
+    fields.append(QgsField(column, QVariant.Double))
+    out = _new_memory_layer("province_agg", "MultiPolygon", _crs_str(base), fields)
+    out.startEditing()
+    for feat in base.getFeatures():
+        norm = _province_norm(feat.attribute("name"))
+        if norm not in val_map:
+            continue
+        f = QgsFeature(out.fields())
+        f.setGeometry(feat.geometry())
+        f.setAttributes([feat.attribute("name"), float(val_map[norm])])
+        out.addFeature(f)
+    out.commitChanges()
+    return out
+
+
+def _apply_graduated(layer: QgsVectorLayer, column: str, scheme: str, k: int):
+    renderer = QgsGraduatedSymbolRenderer()
+    renderer.setClassAttribute(column)
+    renderer.setClassificationMethod(_SCHEME_CLASS[scheme]())
+    renderer.updateClasses(layer, k)
+    layer.setRenderer(renderer)
+    return renderer.ranges()
+
+
+def _render_map(layers) -> QImage:
+    if isinstance(layers, tuple):
+        base, points = layers
+        render_layers = [base, points]
+        extent = points.extent().united(base.extent())
+    else:
+        render_layers = [layers]
+        extent = layers.extent()
+    settings = QgsMapSettings()
+    settings.setLayers(render_layers)
+    settings.setExtent(extent)
+    settings.setOutputSize(QSize(1400, 1000))
+    settings.setBackgroundColor(QColor("white"))
+    job = QgsMapRendererParallelJob(settings)
+    job.start()
+    job.waitForFinished()
+    return job.renderedImage()
+
+
+def _qimage_to_pil(qimg) -> Image.Image:
+    """Convert a PyQt5 QImage to a PIL Image in memory."""
+    from PyQt5.QtCore import QBuffer, QIODevice
+
+    buf = QBuffer()
+    buf.open(QIODevice.WriteOnly)
+    qimg.save(buf, "PNG")
+    data = bytes(buf.data())
+    buf.close()
+    return Image.open(io.BytesIO(data)).convert("RGB")
+
+
+def _render_legend(ranges, title: str) -> Image.Image:
+    """Draw a graduated legend (color bands, values, title) with PIL."""
+    band_w, label_w = 56, 200
+    band_h = 36
+    pad = 44
+    legend_h = pad + band_h * len(ranges)
+    img = Image.new("RGB", (band_w + label_w, legend_h), "white")
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(r"C:\Windows\Fonts\msyh.ttc", 15)
+    font_small = ImageFont.truetype(r"C:\Windows\Fonts\msyh.ttc", 12)
+    draw.text((0, 4), title, fill=(30, 30, 30), font=font)
+    for i, r in enumerate(ranges):
+        color = r.symbol().color()
+        fill = (color.red(), color.green(), color.blue())
+        y0 = pad + i * band_h
+        draw.rectangle([0, y0, band_w, y0 + band_h - 2], fill=fill, outline=(120, 120, 120))
+        lower = r.lowerValue()
+        upper = r.upperValue()
+        if i == 0:
+            label = f"<= {upper:g}"
+        elif i == len(ranges) - 1:
+            label = f"> {lower:g}"
+        else:
+            label = f"{lower:g} - {upper:g}"
+        draw.text((band_w + 12, y0 + band_h // 2 - 9), label, fill=(30, 30, 30), font=font_small)
+    return img
+
+
+def tool_scatter_plot(x: str, y: str, output: str = "scatter.png") -> dict:
+    layer = _require_layer()
+    for col in (x, y):
+        if col not in _field_names(layer):
+            raise RuntimeError(f"列不存在: {col}（可用列: {_field_names(layer)}）")
+    xs, ys = [], []
+    for feat in layer.getFeatures():
+        try:
+            xs.append(float(feat.attribute(x)))
+            ys.append(float(feat.attribute(y)))
+        except (TypeError, ValueError):
+            raise RuntimeError(f"列 {x}/{y} 不是数值类型，无法画散点图") from None
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.scatter(xs, ys, s=18, alpha=0.7)
+    ax.set_xlabel(x)
+    ax.set_ylabel(y)
+    ax.set_title(f"{x} vs {y}")
+    fig.tight_layout()
+    out_path = os.path.join(STATE["out_dir"], output)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return _result(f"已保存散点图 {output}", size_bytes=os.path.getsize(out_path))
+
+
+def tool_summarize(
+    column: str,
+    groupby: str | None = None,
+    agg: str = "sum",
+    output: str = "summary.csv",
+) -> dict:
+    layer = _require_layer()
+    if column not in _field_names(layer):
+        raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
+    if agg not in {"sum", "mean", "count", "min", "max"}:
+        raise RuntimeError(f"agg 必须是 sum/mean/count/min/max，收到: {agg}")
+    rows = [
+        {f.name(): feat.attribute(f.name()) for f in layer.fields()}
+        for feat in layer.getFeatures()
+    ]
+    df = pd.DataFrame(rows)
+    if groupby:
+        if groupby not in df.columns:
+            raise RuntimeError(f"分组列不存在: {groupby}（可用列: {list(df.columns)}）")
+        out_df = df.groupby(groupby)[column].agg(agg).reset_index()
+    else:
+        out_df = pd.DataFrame({column: [getattr(df[column], agg)()]})
+    out_path = os.path.join(STATE["out_dir"], output)
+    out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+    return _result(
+        f"已保存统计结果 {output}（{len(out_df)} 行，agg={agg}）",
+        summary_rows=int(len(out_df)),
+    )
+
+
+def tool_export_geojson(output: str = "layer.geojson") -> dict:
+    layer = _require_layer()
+    out_path = os.path.join(STATE["out_dir"], output)
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GeoJSON"
+    options.fileEncoding = "utf-8"
+    err, _, _, msg = QgsVectorFileWriter.writeAsVectorFormatV3(
+        layer, out_path, QgsCoordinateTransformContext(), options
+    )
+    if err != QgsVectorFileWriter.NoError:
+        raise RuntimeError(f"导出 GeoJSON 失败: {err} {msg}")
+    return _result(f"已导出 {output}", size_bytes=os.path.getsize(out_path))
+
+
+def tool_save_layer(path: str) -> dict:
+    """会话快照：把当前图层写到指定绝对路径（主进程已校验安全）"""
+    layer = _require_layer()
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GeoJSON"
+    options.fileEncoding = "utf-8"
+    err, _, _, msg = QgsVectorFileWriter.writeAsVectorFormatV3(
+        layer, path, QgsCoordinateTransformContext(), options
+    )
+    if err != QgsVectorFileWriter.NoError:
+        raise RuntimeError(f"快照导出失败: {err} {msg}")
+    return {"ok": True}
+
+
+HANDLERS = {
+    "load_data": tool_load_data,
+    "inspect_data": tool_inspect_data,
+    "buffer": tool_buffer,
+    "overlay": tool_overlay,
+    "choropleth": tool_choropleth,
+    "scatter_plot": tool_scatter_plot,
+    "summarize": tool_summarize,
+    "export_geojson": tool_export_geojson,
+    "save_layer": tool_save_layer,
+}
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        sys.stderr.write("usage: qgis_worker.py <out_dir>\n")
+        return 2
+    _init(sys.argv[1])
+    sys.stdout.reconfigure(encoding="utf-8")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except json.JSONDecodeError:
+            sys.stdout.write(json.dumps({"ok": False, "error": "非法请求"}, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+            continue
+        op = req.get("op")
+        if op == "exit":
+            break
+        if op == "ping":
+            resp = {"ok": True, "result": {"pong": True}}
+        elif op == "call":
+            handler = HANDLERS.get(req.get("tool"))
+            if handler is None:
+                resp = {"ok": False, "error": f"未知工具: {req.get('tool')}"}
+            else:
+                try:
+                    result = handler(**(req.get("args") or {}))
+                    resp = {"ok": True, "result": result}
+                except Exception as exc:  # 工具异常回传主进程，不让 worker 崩溃
+                    resp = {"ok": False, "error": str(exc)}
+        else:
+            resp = {"ok": False, "error": f"未知操作: {op}"}
+        sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

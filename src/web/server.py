@@ -28,7 +28,7 @@ from src.orchestrator.graph import create_gis_graph
 from src.orchestrator.state import GisProjectState
 from src.tools.implementations.data_inspect import inspect_file
 from src.gis_toolkit.agent import GisToolAgent
-from src.gis_toolkit.engine import GisEngine, _jsonable
+from src.gis_toolkit.engine import _jsonable, create_gis_engine
 from src.gis_toolkit.session import GisSessionStore
 from src.orchestrator.long_term_memory import LongTermMemory, Lesson
 from src.web.auth import get_user_id
@@ -430,7 +430,7 @@ def _run_gis_assistant_sync(
     传入 session（GisSession）时复用引擎状态与对话历史，实现多轮连续对话。
     """
     try:
-        engine = session.engine if session is not None else GisEngine(allowed_roots=["data"])
+        engine = session.engine if session is not None else create_gis_engine(allowed_roots=["data"])
         agent = GisToolAgent(engine=engine, max_steps=12, model_id=model_preference)
         ltm_hint = _build_ltm_hint(user_request, user_id)
         result = agent.run(

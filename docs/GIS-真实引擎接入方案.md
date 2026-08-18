@@ -2,7 +2,7 @@
 
 > 配套文档：`docs/SPEC-GIS智能操作平台.md`（Phase 1 MVP）｜`docs/GIS-引擎选型与分阶段演进.md`（选型结论）｜`docs/GIS-智能助手-工具调用设计.md`（9 个工具定义）
 > 本文档回答一个问题：demo 已验证、内容生成模块已删除之后，**如何把「伪引擎（geopandas 本地模拟）」替换成「真实开源 GIS 系统」**，以及**是否需要去 GitHub 找开源系统**。
-> 版本：v0.1（待评审）｜日期：2026-08-18 ｜作者：胡贞虎
+> 版本：v0.2（Gate 1/2 已完成）｜日期：2026-08-18 ｜作者：胡贞虎
 
 ---
 
@@ -117,6 +117,16 @@ class QgsEngine:                      # 与 GisEngine 同名方法、同返回�
 | `export_geojson` | `gdf.to_file(driver="GeoJSON")` | `QgsVectorFileWriter.writeAsVectorFormatV3(..., "GeoJSON")` | 需注意 writer 版本 API 差异 |
 | `finish` | 声明完成 | — | — |
 
+### 3.3 实际落地：OSGeo4W 常驻 worker（Gate 1/2 采用）
+
+本机部署走「OSGeo4W + 常驻 worker 子进程」，介于路径 A/B 之间：
+
+- **主进程**（项目 venv，零 QGIS 依赖）：`src/gis_toolkit/qgis_engine.py` 的 `QgsEngine`——安全校验（路径白名单/文件名净化/产物目录）、worker 进程生命周期、9 工具同接口；
+- **worker 子进程**（QGIS 自带 Python 运行 `qgis_worker.py`）：持有当前 `QgsVectorLayer`，执行 9 工具（CSV→delimitedtext、buffer/overlay 用 native 算法、choropleth 用 `QgsGraduatedSymbolRenderer` + PIL 图例拼接、导出 `QgsVectorFileWriter`）；
+- **协议**：stdin/stdout JSON-lines，`{"op":"call","tool":...,"args":...}` ↔ `{"ok":true,"result":...}`；QGIS 渲染线程崩溃问题已通过保留 `QgsApplication` 引用解决；
+- **切换**：`GIS_ENGINE=qgis` 环境变量（`create_gis_engine` 工厂），Agent/schema/前端零改动；
+- **已知差异**：choropleth 分级边界以 QGIS 分类器为准（Jenks/Quantile/EqualInterval 与 mapclassify 略有出入）；buffer 输出统一为 MultiPolygon。
+
 ### 4.3 会话状态与底图
 
 - 当前图层 = 引擎持有的单个 `QgsVectorLayer` 引用；`load_data` 后替换；
@@ -132,6 +142,8 @@ class QgsEngine:                      # 与 GisEngine 同名方法、同返回�
 | A. Docker（**推荐**） | `docker pull qgis/qgis-server`，容器内提供 `qgis_process`；宿主 Python 通过 subprocess/REST 调用 | 路径 A，成本最低 |
 | B. OSGeo4W 本机安装 | 安装 QGIS LTR（含 PyQGIS），需配置 `PYTHONPATH` 指向 QGIS Python 目录 | 路径 B / 本机调试 |
 | C. conda-forge | `conda install -c conda-forge qgis` | 备选，版本较新 |
+
+> **本机现状（2026-08-18）**：Docker 拉取 `qgis/qgis-server` 超时（国外大流量源网络问题），已改走 **OSGeo4W 本机安装**——阿里云镜像下载 `QGIS-OSGeo4W-3.40.10-1.msi`（1.3GB），提权静默安装到 `D:\QGIS`（C 盘空间不足）；源码浅克隆 `final-3_40_10` 到 `D:\qgis-src` 作 API 参考。
 
 > **Gate 1 验收**：跑通一个最小 PyQGIS 脚本——读 `china_province.geojson` → 出 PNG + GeoJSON，输出与 geopandas 引擎结果一致。
 
@@ -152,8 +164,8 @@ class QgsEngine:                      # 与 GisEngine 同名方法、同返回�
 
 | Gate | 内容 | 工期 | 验收标准 |
 |---|---|---|---|
-| **Gate 1** | 环境验证：Docker `qgis/qgis-server` 或 OSGeo4W 装 QGIS；跑通最小 PyQGIS 脚本 | 0.5 周 | `china_province.geojson` → PNG + GeoJSON 与 geopandas 输出一致 |
-| **Gate 2** | 实现 `QgsEngine`（9 个工具）+ 单元测试 | 1–1.5 周 | 同一批用例在 `GisEngine` / `QgsEngine` 下产物与摘要 diff 通过（choropleth 分级校准在内） |
+| **Gate 1** ✅ 2026-08-18 | 环境验证：Docker `qgis/qgis-server` 或 OSGeo4W 装 QGIS；跑通最小 PyQGIS 脚本 | 0.5 周 | `china_province.geojson` → PNG + GeoJSON 与 geopandas 输出一致 |
+| **Gate 2** ✅ 2026-08-18 | 实现 `QgsEngine`（9 个工具）+ 单元测试 | 1–1.5 周 | 同一批用例在 `GisEngine` / `QgsEngine` 下产物与摘要 diff 通过（choropleth 分级校准在内） |
 | **Gate 3** | 后端引擎可切换：`GIS_ENGINE=geopandas|qgis` 环境变量，会话级选择；前端不动 | 0.5–1 周 | 冒烟：同一句自然语言在两种引擎下走通，产物可下载 |
 
 **总工期约 2–3 周**。Phase 4（可选）：QGIS 插件面板嵌入、危险操作审批、RAG 空间检索。

@@ -67,7 +67,9 @@ src/
 ├── agents/gis_{plan,design,codegen,checker}.py   # 四个 LLM Agent（流水线）
 ├── gis_toolkit/
 │   ├── agent.py        # GisToolAgent：工具调用版 GIS 助手（多轮对话）
-│   ├── engine.py       # GisEngine：伪 GIS 引擎（geopandas 执行层）
+│   ├── engine.py       # GisEngine：默认引擎（geopandas）+ create_gis_engine 工厂
+│   ├── qgis_engine.py  # QgsEngine：QGIS 真实引擎（常驻 worker 子进程）
+│   ├── qgis_worker.py  # QGIS worker：PyQGIS 执行 9 工具（QGIS 自带 Python 运行）
 │   ├── schemas.py      # 工具定义（load_data/inspect_data/choropleth/overlay...）
 │   └── session.py      # GisSessionStore：会话持久化
 ├── orchestrator/graph.py                          # create_gis_graph() 编排
@@ -78,11 +80,21 @@ src/
 ├── prompt/templates/gis_*.md                      # Jinja2 prompt 模板
 └── web/server.py                                  # /api/v1/gis/* + gis-assistant/* 路由
 frontend/src/views/GisAssistant.vue                # 会话式前端（流式输出 + 会话管理）
-tests/test_gis_*.py                                # 171 个用例（sandbox/state/agents/tools/toolkit/graph/api）
+tests/test_gis_*.py + test_qgis_engine.py         # 184 个用例（sandbox/state/agents/tools/toolkit/graph/api/qgis）
 data/gis_demo/gdp_demo.csv                         # 验收示例数据
 ```
 ---
 
+
+## QGIS 真实引擎（可选）
+
+默认引擎为 geopandas 本地模拟；安装 QGIS 后可切换为真实 GIS 渲染引擎：
+
+- **安装**：OSGeo4W QGIS 3.40 LTR（本机 `D:\QGIS`），PyQGIS 环境自动发现，可用 `QGIS_PREFIX_PATH` 覆盖；
+- **切换**：`GIS_ENGINE=qgis` 启动后端，同一套 9 工具 schema / Agent / 前端零改动；
+- **架构**：`QgsEngine`（主进程，安全校验/产物管理）→ 常驻 `qgis_worker` 子进程（QGIS Python，图层运算）→ JSON-lines 协议；
+- **安全边界不变**：输入路径白名单、文件名净化、固定产物目录均留在主进程，QGIS 表达式/处理脚本不向 LLM 暴露；
+- **验证**：`tests/test_qgis_engine.py` 13 个用例（含 overlay 与 geopandas 对照、引擎切换、白名单）。
 
 ## GIS 助手 API（工具调用版）
 
