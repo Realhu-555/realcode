@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { useMessage } from "naive-ui"
 import { useTheme } from "../composables/useTheme"
 import {
@@ -13,13 +13,15 @@ useTheme()
 
 const message = useMessage()
 
-const request = ref("把 gdp_demo.csv 按省份做分级设色图，并导出分级统计 summary.csv")
+const request = ref("")
 const dataFile = ref("")
 const fileName = ref("")
 const uploading = ref(false)
 const running = ref(false)
 const error = ref("")
 const sessionId = ref("")
+const chatEl = ref<HTMLElement | null>(null)
+const expandedTrajectories = ref<Record<number, boolean>>({})
 
 interface Artifact {
   name: string
@@ -40,13 +42,23 @@ const messages = ref<ChatMessage[]>([])
 
 const canSubmit = computed(() => request.value.trim().length > 0 && !running.value)
 
-// 工具分组（仅供展示）
+// 工具分组（仅供输入区提示）
 const toolGroups = [
   { label: "数据接入", tools: ["load_data", "inspect_data"] },
   { label: "空间分析", tools: ["buffer", "overlay", "summarize"] },
   { label: "可视化", tools: ["choropleth", "scatter_plot"] },
   { label: "导出", tools: ["export_geojson", "finish"] },
 ]
+
+// 消息更新后自动滚动到底部
+watch([messages, running], async () => {
+  await nextTick()
+  if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
+})
+
+function toggleTrajectory(i: number) {
+  expandedTrajectories.value[i] = !expandedTrajectories.value[i]
+}
 
 async function onFileSelected(e: Event) {
   const input = e.target as HTMLInputElement
@@ -69,6 +81,11 @@ async function onFileSelected(e: Event) {
     uploading.value = false
     input.value = ""
   }
+}
+
+function clearFile() {
+  dataFile.value = ""
+  fileName.value = ""
 }
 
 function toolStatusText(step: { result: Record<string, unknown> }): string {
@@ -99,6 +116,7 @@ async function onSubmit() {
   error.value = ""
   const ask = request.value.trim()
   messages.value.push({ role: "user", content: ask })
+  request.value = ""
   try {
     const res = await runGisAssistant(ask, dataFile.value || undefined, sessionId.value || undefined)
     sessionId.value = res.session_id
@@ -139,6 +157,7 @@ async function onSubmit() {
 function newConversation() {
   sessionId.value = ""
   messages.value = []
+  expandedTrajectories.value = {}
   error.value = ""
   message.info("已开启新对话")
 }
@@ -161,196 +180,68 @@ function download(url: string, name: string) {
 
     <!-- 顶部 -->
     <header class="gis-header">
-      <div class="mx-auto max-w-7xl px-6 lg:px-8 py-5 flex items-center justify-between gap-4">
-        <div class="flex items-center gap-4 min-w-0">
+      <div class="mx-auto max-w-5xl px-6 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5 min-w-0">
           <div class="gis-seal shrink-0">制</div>
           <div class="min-w-0">
-            <h1 class="font-display text-xl font-black tracking-tight">GIS 智能助手</h1>
-            <p class="text-xs text-dim mt-0.5 tracking-wide truncate">自然语言驱动 GIS 引擎 · 多轮对话 · 工具调用全轨迹可审计</p>
+            <h1 class="font-display text-lg font-black tracking-tight">GIS 智能助手</h1>
+            <p class="text-[11px] text-dim mt-0.5 tracking-wide truncate">多轮对话 · 工具调用全轨迹可审计</p>
           </div>
         </div>
         <div class="flex items-center gap-2.5 shrink-0">
           <button class="gis-new-btn" :disabled="running" @click="newConversation">↺ 新对话</button>
-          <span class="gis-badge hidden sm:inline-flex">9 工具就绪</span>
           <span class="gis-status">
             <span class="gis-status-dot" />
-            引擎在线
+            <span class="hidden sm:inline">引擎在线</span>
           </span>
         </div>
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-6 lg:px-8 pb-10 grid gap-6 lg:grid-cols-[400px_1fr] items-start">
-      <!-- ===== 左：输入区 ===== -->
-      <section class="space-y-5">
-        <!-- ① 数据文件 -->
-        <div class="gis-card animate-enter">
-          <div class="flex items-center gap-2.5 mb-4">
-            <span class="gis-step-no">一</span>
-            <h2 class="heading-section">数据文件</h2>
-            <span class="text-xs text-muted ml-auto">可选</span>
-          </div>
-
-          <label class="gis-upload" :class="{ 'gis-upload-done': fileName }">
-            <input type="file" accept=".csv,.geojson,.json,.zip" class="hidden" :disabled="running" @change="onFileSelected" />
-
-            <!-- 未上传 -->
-            <template v-if="!fileName">
-              <span class="gis-upload-icon">🗺</span>
-              <span class="text-sm font-medium">点击选择数据文件</span>
-              <span class="text-xs text-muted">支持 CSV / GeoJSON / JSON / ZIP</span>
-              <span class="text-[11px] text-muted/70 mt-1">未上传时，将尝试从引擎演示数据目录查找</span>
-            </template>
-
-            <!-- 已上传 -->
-            <template v-else>
-              <div class="flex items-center gap-3 w-full">
-                <span class="gis-file-icon">📄</span>
-                <div class="text-left min-w-0 flex-1">
-                  <p class="text-sm font-medium truncate">{{ fileName }}</p>
-                  <p class="text-xs text-muted">{{ uploading ? "上传中…" : "已就绪 · 点击可重新选择" }}</p>
-                </div>
-                <span class="gis-chip gis-chip-ok shrink-0">✓ 已上传</span>
-              </div>
-            </template>
-          </label>
-        </div>
-
-        <!-- ② 你的需求 -->
-        <div class="gis-card animate-enter stagger-1">
-          <div class="flex items-center gap-2.5 mb-4">
-            <span class="gis-step-no">二</span>
-            <h2 class="heading-section">你的需求</h2>
-          </div>
-          <n-input
-            v-model:value="request"
-            type="textarea"
-            :rows="4"
-            placeholder="例如：找出 gdp_demo.csv 中 gdp 最高的省份并画散点图"
-            :disabled="running"
-            @keydown.enter.exact.prevent="onSubmit"
-          />
-          <div class="mt-2 flex items-center justify-between text-xs text-muted">
-            <span>{{ sessionId ? "多轮对话中 · 图层与产物已保留" : "输入后回车或点击开始分析" }}</span>
-            <span class="font-mono">{{ request.length }}</span>
-          </div>
-        </div>
-
-        <!-- ③ 可用工具 -->
-        <div class="gis-card animate-enter stagger-2">
-          <div class="flex items-center gap-2.5 mb-4">
-            <span class="gis-step-no">三</span>
-            <h2 class="heading-section">可用工具</h2>
-            <span class="text-xs text-muted ml-auto">9 个已就绪</span>
-          </div>
-          <div v-for="group in toolGroups" :key="group.label" class="mb-3.5 last:mb-0">
-            <p class="gis-group-label">{{ group.label }}</p>
-            <div class="flex flex-wrap gap-1.5">
-              <span v-for="t in group.tools" :key="t" class="gis-tool-pill">{{ t }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 执行按钮 -->
-        <button class="gis-run-btn animate-enter stagger-3" :disabled="!canSubmit" @click="onSubmit">
-          <span v-if="!running">▸ 开始分析</span>
-          <span v-else class="flex items-center gap-2.5">
-            <span class="gis-spinner" />
-            GIS 引擎执行中…
-          </span>
-        </button>
-
-        <p v-if="error" class="gis-error animate-enter">{{ error }}</p>
-      </section>
-
-      <!-- ===== 右：对话区 ===== -->
-      <section class="space-y-5 min-w-0">
+    <!-- 主对话区 -->
+    <main ref="chatEl" class="gis-chat">
+      <div class="mx-auto max-w-3xl px-6 py-8 space-y-6">
         <!-- 空状态 -->
-        <div v-if="!messages.length" class="gis-card gis-empty animate-enter">
+        <div v-if="!messages.length" class="gis-empty animate-enter">
           <div class="gis-empty-compass">⌖</div>
-          <p class="font-display text-base font-semibold">开始你的 GIS 对话</p>
+          <p class="font-display text-lg font-semibold">开始你的 GIS 对话</p>
           <p class="text-sm text-muted mt-2 leading-relaxed max-w-md">
-            支持多轮连续对话：第一轮加载数据出图后，下一轮可以直接说
-            「把颜色换成绿色」或「导出这份结果为 GeoJSON」，引擎会记住当前图层与产物。
+            像和桌面助手聊天一样描述需求：支持多轮连续对话，引擎会记住当前图层与产物，
+            随时可以继续追问或修改。
           </p>
-          <div class="mt-5 w-full max-w-md">
-            <div class="h-px bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
-            <p class="text-[11px] tracking-[0.2em] text-muted mt-3">示例</p>
-            <p class="text-xs text-dim/80 mt-1.5 leading-relaxed">
-              “把 gdp_demo.csv 按省份做分级设色图，并导出分级统计 summary.csv”
-            </p>
+          <div class="mt-6 w-full max-w-md text-left space-y-2">
+            <p class="text-[11px] tracking-[0.2em] text-muted">示例</p>
+            <button
+              v-for="ex in ['把 gdp_demo.csv 按省份做分级设色图，并导出分级统计 summary.csv', '对 gdp_demo.csv 做 0.5 度缓冲区后导出 GeoJSON']"
+              :key="ex"
+              class="gis-example-chip"
+              @click="request = ex"
+            >
+              {{ ex }}
+            </button>
           </div>
         </div>
 
-        <!-- 对话消息 -->
+        <!-- 消息流 -->
         <template v-for="(m, i) in messages" :key="i">
           <!-- 用户消息 -->
-          <div v-if="m.role === 'user'" class="gis-user-msg animate-enter">
-            <span class="gis-user-tag">你</span>
-            <span class="gis-user-text">{{ m.content }}</span>
+          <div v-if="m.role === 'user'" class="gis-msg-row gis-msg-user animate-enter">
+            <div class="gis-user-text">{{ m.content }}</div>
           </div>
 
           <!-- 助手回复 -->
-          <div v-else class="space-y-5">
-            <div v-if="m.error" class="gis-error animate-enter">{{ m.error }}</div>
+          <div v-else class="gis-msg-row gis-msg-assistant animate-enter">
+            <div v-if="m.error" class="gis-error w-full">{{ m.error }}</div>
 
             <template v-else>
-              <!-- 结论 -->
-              <div v-if="m.content" class="gis-card animate-enter relative overflow-hidden">
-                <div class="flex items-start gap-4">
-                  <div class="gis-seal gis-seal-sm shrink-0">结</div>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-3 mb-3">
-                      <div class="accent-line" />
-                      <h3 class="heading-section">结论</h3>
-                    </div>
-                    <p class="text-sm text-[var(--text)]/90 leading-relaxed whitespace-pre-wrap">{{ m.content }}</p>
-                  </div>
-                </div>
+              <div v-if="m.content" class="gis-answer">
+                <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ m.content }}</p>
               </div>
 
-              <!-- 工具调用轨迹 -->
-              <div v-if="m.result" class="gis-card animate-enter stagger-1">
-                <div class="flex items-center gap-3 mb-5">
-                  <div class="accent-line" />
-                  <h3 class="heading-section">工具调用轨迹</h3>
-                  <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ m.result.steps }} 步</span>
-                </div>
-                <ol class="gis-timeline">
-                  <li
-                    v-for="t in m.result.trajectory"
-                    :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
-                    class="gis-timeline-item"
-                    :class="`stagger-${Math.min(t.step, 5)}`"
-                  >
-                    <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
-                    <div class="gis-timeline-card">
-                      <div class="flex items-center gap-2.5 min-w-0">
-                        <span class="gis-step-index shrink-0">#{{ t.step }}</span>
-                        <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
-                        <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
-                        <span
-                          class="ml-auto shrink-0"
-                          :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
-                        >
-                          {{ toolStatusText(t) }}
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                </ol>
-              </div>
-
-              <!-- 产物 -->
-              <div v-if="m.result" class="gis-card animate-enter stagger-2">
-                <div class="flex items-center gap-3 mb-5">
-                  <div class="accent-line" />
-                  <h3 class="heading-section">产物</h3>
-                  <span class="gis-chip gis-chip-accent ml-auto shrink-0">{{ m.result.outputs.length }} 个</span>
-                </div>
-
-                <div v-if="m.pngArtifacts?.length" class="grid gap-4 md:grid-cols-2">
-                  <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact animate-enter">
+              <!-- 产物优先展示 -->
+              <div v-if="m.result && (m.pngArtifacts?.length || m.fileArtifacts?.length)" class="space-y-3">
+                <div v-if="m.pngArtifacts?.length" class="grid gap-4 sm:grid-cols-2">
+                  <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact">
                     <img :src="p.url" :alt="p.name" class="w-full block" />
                     <figcaption class="flex items-center justify-between gap-2">
                       <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
@@ -358,47 +249,116 @@ function download(url: string, name: string) {
                     </figcaption>
                   </figure>
                 </div>
-
                 <div v-if="m.fileArtifacts?.length" class="space-y-2">
-                  <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row animate-enter">
+                  <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row">
                     <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
                     <span class="text-sm truncate">{{ f.name }}</span>
                     <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
                   </div>
                 </div>
+              </div>
 
-                <p v-if="!m.pngArtifacts?.length && !m.fileArtifacts?.length" class="text-sm text-muted py-4 text-center">
-                  本次任务没有声明产物。
-                </p>
+              <!-- 轨迹折叠 -->
+              <div v-if="m.result" class="gis-trajectory-wrap">
+                <button class="gis-trajectory-toggle" @click="toggleTrajectory(i)">
+                  <svg class="gis-chevron" :class="{ 'gis-chevron-open': expandedTrajectories[i] }" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4" /></svg>
+                  <span>工具调用轨迹</span>
+                  <span class="gis-chip gis-chip-accent">{{ m.result.steps }} 步</span>
+                </button>
+                <div v-if="expandedTrajectories[i]" class="gis-trajectory-body">
+                  <ol class="gis-timeline">
+                    <li
+                      v-for="t in m.result.trajectory"
+                      :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
+                      class="gis-timeline-item"
+                    >
+                      <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
+                      <div class="gis-timeline-card">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <span class="gis-step-index shrink-0">#{{ t.step }}</span>
+                          <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
+                          <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
+                          <span
+                            class="ml-auto shrink-0"
+                            :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
+                          >
+                            {{ toolStatusText(t) }}
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  </ol>
+                </div>
               </div>
             </template>
           </div>
         </template>
 
-        <!-- 执行中占位 -->
-        <div v-if="running" class="gis-card p-10 flex flex-col items-center gap-4 text-sm text-dim animate-enter">
+        <!-- 执行中 -->
+        <div v-if="running" class="gis-thinking animate-enter">
           <span class="gis-spinner gis-spinner-lg" />
-          <p class="font-display tracking-wide">引擎正在调用 GIS 工具…</p>
-          <p class="text-xs text-muted">每个工具调用都会被记录并展示在下方轨迹中</p>
+          <span class="text-sm text-dim">引擎正在调用 GIS 工具…</span>
         </div>
-      </section>
+      </div>
     </main>
+
+    <!-- 底部输入区 -->
+    <footer class="gis-composer">
+      <div class="mx-auto max-w-3xl px-6 py-4">
+        <!-- 已上传文件 -->
+        <div v-if="fileName" class="mb-2 flex items-center gap-2">
+          <span class="gis-file-chip">
+            📄 {{ fileName }}
+            <button class="gis-file-chip-x" :disabled="running" @click="clearFile">×</button>
+          </span>
+          <span class="text-[11px] text-muted">该文件将用于本会话</span>
+        </div>
+
+        <!-- 输入行 -->
+        <div class="gis-input-row" :class="{ 'gis-input-row-focus': false }">
+          <label class="gis-attach-btn" title="上传数据文件（CSV / GeoJSON / ZIP）">
+            <input type="file" accept=".csv,.geojson,.json,.zip" class="hidden" :disabled="running" @change="onFileSelected" />
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+          </label>
+          <n-input
+            v-model:value="request"
+            type="textarea"
+            :autosize="{ minRows: 1, maxRows: 6 }"
+            placeholder="输入你的 GIS 需求…（Enter 发送，Shift+Enter 换行）"
+            :disabled="running"
+            @keydown.enter.exact.prevent="onSubmit"
+          />
+          <button class="gis-send-btn" :disabled="!canSubmit" title="发送" @click="onSubmit">
+            <span v-if="!running">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
+            </span>
+            <span v-else class="gis-spinner" />
+          </button>
+        </div>
+
+        <div class="mt-2 flex items-center justify-between text-[11px] text-muted">
+          <span>📎 可上传数据 · 未上传时自动使用演示数据</span>
+          <span class="hidden sm:inline">{{ sessionId ? "多轮对话中 · 图层与产物已保留" : "新会话" }}</span>
+        </div>
+      </div>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-/* ---- 页面骨架 ---- */
+/* ---- 页面骨架：header / chat / composer 三段式 ---- */
 .gis-page {
   position: relative;
   height: 100vh;
   height: 100dvh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: var(--bg);
   color: var(--text);
 }
 
-/* ---- 氛围背景：制图网格 + 顶部光晕 ---- */
+/* ---- 氛围背景 ---- */
 .gis-bg {
   position: fixed;
   inset: 0;
@@ -426,16 +386,15 @@ function download(url: string, name: string) {
 
 /* ---- 头部 ---- */
 .gis-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  position: relative;
+  z-index: 10;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
 }
 .gis-seal {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border-radius: 5px;
@@ -443,30 +402,12 @@ function download(url: string, name: string) {
   color: #faf3ea;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   box-shadow:
     inset 0 0 0 2px rgba(250, 243, 234, 0.28),
     0 4px 14px rgba(196, 52, 58, 0.35);
   transform: rotate(-2deg);
   user-select: none;
-}
-.gis-seal-sm {
-  width: 34px;
-  height: 34px;
-  font-size: 1.05rem;
-  border-radius: 4px;
-}
-.gis-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  background: var(--accent-dim);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .gis-status {
   display: inline-flex;
@@ -517,226 +458,89 @@ function download(url: string, name: string) {
   cursor: not-allowed;
 }
 
-/* ---- 卡片 ---- */
-.gis-card {
+/* ---- 主对话区 ---- */
+.gis-chat {
   position: relative;
   z-index: 1;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
-  backdrop-filter: blur(6px);
-  padding: 1.25rem 1.375rem;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-.gis-card:hover {
-  border-color: var(--border-light);
-  box-shadow: var(--shadow-md);
-}
-.gis-step-no {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
+.gis-chat::-webkit-scrollbar {
+  width: 6px;
 }
 
-/* ---- 用户消息 ---- */
-.gis-user-msg {
-  position: relative;
-  z-index: 1;
+/* ---- 消息行 ---- */
+.gis-msg-row {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+}
+.gis-msg-user {
   justify-content: flex-end;
 }
-.gis-user-tag {
-  order: 2;
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 13px;
-  flex-shrink: 0;
-  box-shadow: var(--accent-glow);
+.gis-msg-assistant {
+  justify-content: flex-start;
 }
 .gis-user-text {
-  order: 1;
-  max-width: 76%;
-  padding: 10px 14px;
+  max-width: 82%;
+  padding: 9px 14px;
   border-radius: 14px 14px 4px 14px;
   background: var(--accent-dim);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--text);
-  font-size: 13.5px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
-
-/* ---- 上传区 ---- */
-.gis-upload {
+.gis-assistant {
+  width: 100%;
+  min-width: 0;
+}
+.gis-answer {
+  padding: 2px 2px 0;
+}
+.gis-thinking {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 24px 18px;
-  border: 1.5px dashed var(--border-light);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  text-align: center;
-  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+  gap: 12px;
+  padding: 14px 2px;
 }
-.gis-upload:hover {
-  border-color: var(--accent);
-  background: var(--bg-hover);
-  box-shadow: var(--accent-glow);
+
+/* ---- 轨迹折叠 ---- */
+.gis-trajectory-wrap {
+  margin-top: 14px;
 }
-.gis-upload-done {
-  border-style: solid;
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
-  background: var(--success-dim);
-}
-.gis-upload-done:hover {
-  border-color: var(--success);
-  box-shadow: 0 0 18px rgba(91, 154, 124, 0.18);
-}
-.gis-upload-icon {
-  font-size: 26px;
-  filter: grayscale(0.2);
-  transition: transform 0.25s ease;
-}
-.gis-upload:hover .gis-upload-icon {
-  transform: translateY(-3px) scale(1.08);
-}
-.gis-file-icon {
-  font-size: 20px;
-}
-.gis-chip {
+.gis-trajectory-toggle {
   display: inline-flex;
   align-items: center;
-  padding: 2px 9px;
+  gap: 7px;
+  padding: 6px 12px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.gis-chip-accent {
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-.gis-chip-ok {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-}
-
-/* ---- 工具分组 ---- */
-.gis-group-label {
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 7px;
-}
-.gis-tool-pill {
-  padding: 4px 10px;
-  border-radius: 7px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-dim);
-  background: var(--bg-input);
   border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
-.gis-tool-pill:hover {
+.gis-trajectory-toggle:hover {
   color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--accent-dim);
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--bg-hover);
+}
+.gis-chevron {
+  transition: transform 0.2s ease;
+}
+.gis-chevron-open {
+  transform: rotate(90deg);
+}
+.gis-trajectory-body {
+  margin-top: 10px;
+  padding-left: 2px;
 }
 
-/* ---- 执行按钮 ---- */
-.gis-run-btn {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 13px 0;
-  border: none;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent-hover), var(--accent) 60%);
-  color: var(--text-on-accent);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: 0.08em;
-  box-shadow: var(--accent-glow);
-  cursor: pointer;
-  transition: filter 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-}
-.gis-run-btn:hover:not(:disabled) {
-  filter: brightness(1.07);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 26px rgba(212, 168, 83, 0.32);
-}
-.gis-run-btn:active:not(:disabled) {
-  transform: scale(0.98);
-}
-.gis-run-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ---- 错误提示 ---- */
-.gis-error {
-  position: relative;
-  z-index: 1;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--danger-dim);
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-/* ---- 空状态 ---- */
-.gis-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 64px 24px;
-}
-.gis-empty-compass {
-  width: 64px;
-  height: 64px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-size: 26px;
-  color: var(--accent);
-  background: var(--accent-dim);
-  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
-  box-shadow: var(--accent-glow);
-  margin-bottom: 18px;
-}
-
-/* ---- 轨迹时间线 ---- */
+/* ---- 时间线 ---- */
 .gis-timeline {
   position: relative;
   margin: 0;
@@ -756,7 +560,7 @@ function download(url: string, name: string) {
 .gis-timeline-item {
   position: relative;
   padding-left: 30px;
-  padding-bottom: 14px;
+  padding-bottom: 12px;
 }
 .gis-timeline-item:last-child {
   padding-bottom: 2px;
@@ -787,7 +591,7 @@ function download(url: string, name: string) {
 .gis-timeline-card {
   display: flex;
   align-items: center;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-md);
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -879,8 +683,156 @@ function download(url: string, name: string) {
   color: var(--accent);
   background: var(--accent-dim);
 }
+.gis-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.gis-chip-accent {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
 
-/* ---- 加载 ---- */
+/* ---- 空状态 ---- */
+.gis-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 56px 24px;
+}
+.gis-empty-compass {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 24px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: var(--accent-glow);
+  margin-bottom: 16px;
+}
+.gis-example-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-light);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.gis-example-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* ---- 底部输入区 ---- */
+.gis-composer {
+  position: relative;
+  z-index: 10;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(12px);
+}
+.gis-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--success);
+  background: var(--success-dim);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+.gis-file-chip-x {
+  border: none;
+  background: transparent;
+  color: var(--success);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.gis-file-chip-x:hover {
+  color: var(--text);
+}
+.gis-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-input);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.gis-input-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+.gis-attach-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.gis-attach-btn:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.gis-send-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent) 60%);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  box-shadow: var(--accent-glow);
+  transition: filter 0.2s ease, transform 0.15s ease;
+}
+.gis-send-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.gis-send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.gis-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- 错误 / 加载 ---- */
+.gis-error {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--danger-dim);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.6;
+}
 .gis-spinner {
   width: 15px;
   height: 15px;
@@ -890,8 +842,8 @@ function download(url: string, name: string) {
   animation: gisSpin 0.8s linear infinite;
 }
 .gis-spinner-lg {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-width: 3px;
   border-color: var(--border-light);
   border-top-color: var(--accent);
