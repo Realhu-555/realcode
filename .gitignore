@@ -23,3 +23,6 @@ docs/上线准备清单.md
 dist/
 build/
 .worktrees/
+
+# 前端构建缓存
+*.tsbuildinfo

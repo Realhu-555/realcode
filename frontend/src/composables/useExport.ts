@@ -1,4 +1,4 @@
-import { useClipboard, useDownload } from "@vueuse/core"
+import { useClipboard } from "@vueuse/core"
 import { ref } from "vue"
 
 export function useExport() {
@@ -7,7 +7,6 @@ export function useExport() {
 
   async function copyContent(text: string) {
     await copy(text)
-    setTimeout(() => copied.value = false, 2000)
   }
 
   function downloadMarkdown(content: string, filename: string) {

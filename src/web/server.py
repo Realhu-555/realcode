@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -51,6 +51,14 @@ GIS_UPLOAD_DIR = Path("data/gis_uploads")
 GIS_EXPORT_DIR = Path("data/gis_exports")
 ALLOWED_GIS_EXTENSIONS = {".csv", ".geojson", ".json", ".zip"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+GIS_TOOLKIT_OUT_DIR = Path("data/gis_toolkit_out")
+_GIS_TOOLKIT_MEDIA = {
+    ".png": "image/png",
+    ".csv": "text/csv; charset=utf-8",
+    ".geojson": "application/geo+json",
+    ".json": "application/json",
+    ".zip": "application/zip",
+}
 
 
 @app.get("/")
@@ -507,6 +515,19 @@ async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get
         req.model_preference,
     )
     return {"project_id": project_id, **result}
+
+
+@app.get("/api/v1/gis-assistant/files/{filename}")
+async def gis_assistant_file(filename: str, user_id: str = Depends(get_user_id)):
+    """访问工具调用版 GIS 助手产物文件（防路径穿越，按扩展名给 MIME）"""
+    safe = Path(filename).name
+    if safe != filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+    path = GIS_TOOLKIT_OUT_DIR / safe
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    media = _GIS_TOOLKIT_MEDIA.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media)
 
 
 # ════════════════════════════════════════════════════════════

@@ -188,3 +188,35 @@ def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
     res = server._run_gis_assistant_sync("请求", None, None)
     assert res["stage"] == "error"
     assert "模型调用失败" in res["error_message"]
+
+
+# ── 产物文件访问端点 ─────────────────────────────────
+
+def test_gis_assistant_file_ok(monkeypatch, tmp_path):
+    (tmp_path / "map.png").write_bytes(b"PNG-content-bytes-123456")
+    monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
+    resp = client.get("/api/v1/gis-assistant/files/map.png", headers=HEADERS)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("image/png")
+    assert len(resp.content) > 0
+
+
+def test_gis_assistant_file_rejects_traversal(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
+    # 含路径分隔符的请求在路由层即被拒绝（Starlette 路径参数不匹配 %2F）
+    resp = client.get("/api/v1/gis-assistant/files/..%2F..%2F.env", headers=HEADERS)
+    assert resp.status_code == 404
+    resp2 = client.get("/api/v1/gis-assistant/files/a%2Fb.png", headers=HEADERS)
+    assert resp2.status_code == 404
+
+
+def test_gis_assistant_file_404(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
+    resp = client.get("/api/v1/gis-assistant/files/nope.png", headers=HEADERS)
+    assert resp.status_code == 404
+
+
+def test_gis_assistant_file_requires_auth(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
+    resp = client.get("/api/v1/gis-assistant/files/map.png")
+    assert resp.status_code == 401

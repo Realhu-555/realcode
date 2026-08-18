@@ -22,6 +22,12 @@ const router = createRouter({
       name: "preview",
       component: () => import("../views/Preview.vue"),
     },
+    {
+      path: "/gis",
+      name: "gis",
+      component: () => import("../views/GisAssistant.vue"),
+      meta: { standalone: true },
+    },
   ],
 })
 

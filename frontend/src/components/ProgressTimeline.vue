@@ -46,7 +46,7 @@ function getStatusClass(agentId: string) {
             type="line"
             :percentage="50"
             :height="5"
-            :indicator-placement="'none'"
+            :show-indicator="false"
             processing
           />
           <n-progress
@@ -54,7 +54,7 @@ function getStatusClass(agentId: string) {
             type="line"
             :percentage="100"
             :height="5"
-            :indicator-placement="'none'"
+            :show-indicator="false"
             :color="'var(--success)'"
           />
           <div v-else class="h-[5px] bg-[var(--border)] rounded-full" />
