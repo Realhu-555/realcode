@@ -1,4 +1,4 @@
-﻿"""GisToolAgent — 工具调用循环（设计文档 6 节）
+"""GisToolAgent — 工具调用循环（设计文档 6 节）
 
 LLM 通过 function calling 操作 GisEngine，每个工具调用的 (工具名, 参数, 返回) 落轨迹。
 终止条件：finish 工具 / 无工具调用 / 步数上限。
@@ -84,28 +84,7 @@ class GisToolAgent:
               "timed_out": 是否达到步数上限,
             }
         """
-        system_content = SYSTEM_PROMPT
-        demo_hint = self._demo_file_hint()
-        if demo_hint:
-            system_content += "\n\n" + demo_hint
-        if ltm_hint:
-            system_content += "\n\n" + ltm_hint
-
-        user_content = user_request
-        if data_file and self.engine._layer is not None:
-            user_content = (
-                f"当前已加载数据文件: {data_file}。"
-                f"可先调用 inspect_data 查看字段与 CRS，再继续后续任务。\n\n用户请求: {user_request}"
-            )
-        elif data_file:
-            user_content = (
-                f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
-            )
-
-        messages: list[dict] = [{"role": "system", "content": system_content}]
-        if session is not None and getattr(session, "messages", None):
-            messages.extend(session.messages)
-        messages.append({"role": "user", "content": user_content})
+        messages = self._prepare_messages(user_request, data_file, session, ltm_hint)
 
         trajectory: list[dict] = []
         last_result: dict = {}
@@ -177,6 +156,169 @@ class GisToolAgent:
             last=last_result,
             timed_out=timed_out,
         )
+
+    def run_stream(
+        self,
+        user_request: str,
+        data_file: str | None = None,
+        session=None,
+        ltm_hint: str = "",
+        on_event=None,
+    ) -> dict:
+        """流式执行一次 GIS 助手会话，事件经 on_event 实时回调
+
+        循环逻辑与 run 一致，差异：
+        - LLM 调用使用 chat_with_tools_stream，文本增量逐 token 推送；
+        - 每个工具调用/结果通过 on_event 推送，前端按到达顺序排版。
+
+        on_event 事件：
+            {"type": "text_delta", "delta": "..."}         LLM 文本增量
+            {"type": "tool_call", "step": N, "tool": "...", "args": {...}}
+            {"type": "tool_result", "step": N, "tool": "...", "result": {...}}
+            {"type": "done", "final": "...", "outputs": [...], "steps": N, "timed_out": bool}
+            {"type": "error", "error": "..."}               执行异常
+        """
+        messages = self._prepare_messages(user_request, data_file, session, ltm_hint)
+
+        trajectory: list[dict] = []
+        last_result: dict = {}
+        final = ""
+        outputs: list[str] = []
+        timed_out = False
+        steps_used = self.max_steps
+        error: str | None = None
+
+        for step in range(1, self.max_steps + 1):
+            steps_used = step
+            try:
+                resp = self.llm.chat_with_tools_stream(
+                    messages,
+                    TOOL_SCHEMAS,
+                    agent_type=self.agent_type,
+                    model_id=self.model_id,
+                    on_text_delta=lambda d: self._emit(
+                        on_event, {"type": "text_delta", "delta": d}
+                    ),
+                )
+            except Exception as exc:
+                error = f"模型调用失败: {exc}"
+                break
+            content = resp.get("content")
+            tool_calls = resp.get("tool_calls") or []
+            if not tool_calls:
+                messages.append({"role": "assistant", "content": content or ""})
+                final = content or ""
+                break
+
+            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+            finished = False
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                name = fn.get("name") or ""
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                    if not isinstance(args, dict):
+                        args = {}
+                except json.JSONDecodeError:
+                    args = {}
+                self._emit(
+                    on_event, {"type": "tool_call", "step": step, "tool": name, "args": args}
+                )
+                try:
+                    result = self._execute(name, args)
+                except GisEngineError as exc:
+                    result = {"status": "error", "error": str(exc)}
+                except Exception as exc:  # 引擎兜底，防止单工具异常中断整个会话
+                    result = {"status": "error", "error": f"工具执行异常: {exc}"}
+                trajectory.append({"step": step, "tool": name, "args": args, "result": result})
+                self._emit(
+                    on_event,
+                    {"type": "tool_result", "step": step, "tool": name, "result": result},
+                )
+                if result.get("status") == "finished":
+                    finished = True
+                    last_result = result
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id") or f"call_{step}_{len(trajectory)}",
+                        "content": json.dumps(result, ensure_ascii=False, default=_jsonable),
+                    }
+                )
+            if finished:
+                final = last_result.get("explanation") or ""
+                outputs = last_result.get("outputs") or []
+                break
+        else:
+            timed_out = True
+
+        if error is not None:
+            self._emit(on_event, {"type": "error", "error": error})
+        else:
+            if session is not None:
+                session.append_round(
+                    messages[1:],
+                    user_request,
+                    final,
+                    {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
+                )
+            self._emit(
+                on_event,
+                {
+                    "type": "done",
+                    "final": final,
+                    "outputs": outputs,
+                    "steps": steps_used,
+                    "timed_out": timed_out,
+                },
+            )
+
+        return self._wrap(
+            trajectory,
+            steps_used,
+            final=final,
+            outputs=outputs,
+            last=last_result,
+            timed_out=timed_out,
+        )
+
+    def _prepare_messages(
+        self,
+        user_request: str,
+        data_file: str | None,
+        session,
+        ltm_hint: str,
+    ) -> list[dict]:
+        """构造本轮 LLM 消息：system（含演示文件/长期记忆）+ 会话历史 + 用户请求"""
+        system_content = SYSTEM_PROMPT
+        demo_hint = self._demo_file_hint()
+        if demo_hint:
+            system_content += "\n\n" + demo_hint
+        if ltm_hint:
+            system_content += "\n\n" + ltm_hint
+
+        user_content = user_request
+        if data_file and self.engine._layer is not None:
+            user_content = (
+                f"当前已加载数据文件: {data_file}。"
+                f"可先调用 inspect_data 查看字段与 CRS，再继续后续任务。\n\n用户请求: {user_request}"
+            )
+        elif data_file:
+            user_content = (
+                f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
+            )
+
+        messages: list[dict] = [{"role": "system", "content": system_content}]
+        if session is not None and getattr(session, "messages", None):
+            messages.extend(session.messages)
+        messages.append({"role": "user", "content": user_content})
+        return messages
+
+    @staticmethod
+    def _emit(on_event, event: dict) -> None:
+        """触发事件回调（为空时静默跳过）"""
+        if on_event:
+            on_event(event)
 
     # ── 内部 ──
     def _execute(self, name: str, args: dict) -> dict:

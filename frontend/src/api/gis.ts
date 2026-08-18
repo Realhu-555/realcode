@@ -1,4 +1,4 @@
-﻿import client from "./client"
+﻿import client, { getApiKey } from "./client"
 
 export interface GisTrajectoryStep {
   step: number
@@ -49,6 +49,65 @@ export async function runGisAssistant(
     session_id: sessionId,
   })
   return data
+}
+
+export type GisStreamEvent =
+  | { type: "session_start"; session_id: string }
+  | { type: "text_delta"; delta: string }
+  | {
+      type: "tool_call"
+      step: number
+      tool: string
+      args: Record<string, unknown>
+    }
+  | {
+      type: "tool_result"
+      step: number
+      tool: string
+      result: Record<string, unknown>
+    }
+  | { type: "done"; final: string; outputs: string[]; steps: number; timed_out: boolean }
+  | { type: "error"; error: string }
+
+/** 流式运行 GIS 助手（SSE）；事件按输出顺序实时回调 */
+export async function streamGisAssistant(
+  userRequest: string,
+  dataFile: string | undefined,
+  sessionId: string | undefined,
+  onEvent: (ev: GisStreamEvent) => void,
+): Promise<void> {
+  const params = new URLSearchParams({ user_request: userRequest })
+  if (dataFile) params.set("data_file", dataFile)
+  if (sessionId) params.set("session_id", sessionId)
+  const resp = await fetch(`/api/v1/gis-assistant/run/stream?${params.toString()}`, {
+    headers: { "X-API-Key": getApiKey(), Accept: "text/event-stream" },
+  })
+  if (!resp.ok || !resp.body) {
+    const detail = await resp.text().catch(() => "")
+    throw new Error(`流式请求失败 (${resp.status})${detail ? `: ${detail}` : ""}`)
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let sep: number
+    while ((sep = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, sep)
+      buffer = buffer.slice(sep + 2)
+      const line = block.split("\n").find((l) => l.startsWith("data:"))
+      if (!line) continue
+      const payload = line.slice(5).trim()
+      if (!payload) continue
+      try {
+        onEvent(JSON.parse(payload) as GisStreamEvent)
+      } catch {
+        // 忽略无法解析的事件
+      }
+    }
+  }
 }
 
 /** 以 blob 获取指定会话的产物文件（携带 X-API-Key） */

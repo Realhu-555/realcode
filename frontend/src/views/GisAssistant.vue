@@ -4,12 +4,12 @@ import { useMessage } from "naive-ui"
 import { useTheme } from "../composables/useTheme"
 import {
   uploadGisFile,
-  runGisAssistant,
+  streamGisAssistant,
   objectUrlFor,
   listGisSessions,
   getGisSessionDetail,
   deleteGisSession,
-  type GisAssistantResult,
+  type GisStreamEvent,
   type GisSessionSummary,
   type GisSessionDetail,
 } from "../api/gis"
@@ -26,28 +26,37 @@ const running = ref(false)
 const error = ref("")
 const sessionId = ref("")
 const chatEl = ref<HTMLElement | null>(null)
-const expandedTrajectories = ref<Record<number, boolean>>({})
 const sessions = ref<GisSessionSummary[]>([])
 const sidebarOpen = ref(true)
 
-interface Artifact {
-  name: string
-  url: string
-}
-interface FileArtifact extends Artifact {
-  ext: string
-}
+type ToolStatus = "running" | "ok" | "error" | "other"
+
+type StreamItem =
+  | { kind: "text"; content: string }
+  | {
+      kind: "tool"
+      step: number
+      tool: string
+      args: Record<string, unknown>
+      result?: Record<string, unknown>
+      status: ToolStatus
+    }
+  | { kind: "artifact"; name: string; url: string; ext?: string }
+
 interface ChatMessage {
   role: "user" | "assistant"
   content: string
-  result?: GisAssistantResult
-  pngArtifacts?: Artifact[]
-  fileArtifacts?: FileArtifact[]
+  items: StreamItem[]
   error?: string
 }
 const messages = ref<ChatMessage[]>([])
 
 const canSubmit = computed(() => request.value.trim().length > 0 && !running.value)
+
+// 流式期间是否有正在执行的工具（有则不显示全局 spinner）
+const hasActiveTool = computed(() =>
+  messages.value.some((m) => m.items.some((it) => it.kind === "tool" && it.status === "running")),
+)
 
 // 消息更新后自动滚动到底部
 watch([messages, running], async () => {
@@ -90,40 +99,35 @@ async function selectSession(s: GisSessionSummary) {
 async function restoreMessages(detail: GisSessionDetail) {
   sessionId.value = detail.session_id
   messages.value = []
-  expandedTrajectories.value = {}
   for (const r of detail.rounds) {
-    messages.value.push({ role: "user", content: r.user })
-    const png: Artifact[] = []
-    const files: FileArtifact[] = []
+    messages.value.push({ role: "user", content: r.user, items: [] })
+    const items: StreamItem[] = [{ kind: "text", content: r.final }]
+    for (const t of r.trajectory) {
+      items.push({
+        kind: "tool",
+        step: t.step,
+        tool: t.tool,
+        args: t.args,
+        result: t.result,
+        status: t.result.status === "ok" ? "ok" : t.result.status === "error" ? "error" : "other",
+      })
+    }
     for (const name of r.outputs) {
       try {
         const url = await objectUrlFor(name, detail.session_id)
-        if (name.toLowerCase().endsWith(".png")) {
-          png.push({ name, url })
-        } else {
-          files.push({ name, url, ext: name.split(".").pop()?.toUpperCase() || "FILE" })
-        }
+        items.push({
+          kind: "artifact",
+          name,
+          url,
+          ext: name.toLowerCase().endsWith(".png")
+            ? undefined
+            : name.split(".").pop()?.toUpperCase() || "FILE",
+        })
       } catch {
         // 产物文件可能已被清理，跳过
       }
     }
-    messages.value.push({
-      role: "assistant",
-      content: r.final,
-      result: {
-        project_id: detail.session_id,
-        session_id: detail.session_id,
-        stage: "done",
-        trajectory: r.trajectory,
-        outputs: r.outputs,
-        final: r.final,
-        steps: r.steps,
-        timed_out: r.timed_out,
-        out_dir: "",
-      },
-      pngArtifacts: png,
-      fileArtifacts: files,
-    })
+    messages.value.push({ role: "assistant", content: r.final, items })
   }
 }
 
@@ -138,10 +142,6 @@ async function removeSession(s: GisSessionSummary, e: Event) {
   } catch {
     message.error("删除失败")
   }
-}
-
-function toggleTrajectory(i: number) {
-  expandedTrajectories.value[i] = !expandedTrajectories.value[i]
 }
 
 async function onFileSelected(e: Event) {
@@ -172,13 +172,6 @@ function clearFile() {
   fileName.value = ""
 }
 
-function toolStatusText(step: { result: Record<string, unknown> }): string {
-  const st = String(step.result.status ?? "?")
-  if (st === "ok") return "成功"
-  if (st === "error") return String(step.result.error ?? "失败")
-  return st
-}
-
 function toolArgsText(args: Record<string, unknown>): string {
   try {
     return JSON.stringify(args)
@@ -187,11 +180,11 @@ function toolArgsText(args: Record<string, unknown>): string {
   }
 }
 
-function stepStatus(step: { result: Record<string, unknown> }): "ok" | "err" | "other" {
-  const st = String(step.result.status ?? "?")
-  if (st === "ok") return "ok"
-  if (st === "error") return "err"
-  return "other"
+function toolItemText(item: Extract<StreamItem, { kind: "tool" }>): string {
+  if (item.status === "running") return "执行中"
+  if (item.status === "ok") return "成功"
+  if (item.status === "error") return String(item.result?.error ?? "失败")
+  return "完成"
 }
 
 async function onSubmit() {
@@ -199,50 +192,83 @@ async function onSubmit() {
   running.value = true
   error.value = ""
   const ask = request.value.trim()
-  messages.value.push({ role: "user", content: ask })
+  messages.value.push({ role: "user", content: ask, items: [] })
   request.value = ""
+  const msg: ChatMessage = { role: "assistant", content: "", items: [] }
+  messages.value.push(msg)
   try {
-    const res = await runGisAssistant(ask, dataFile.value || undefined, sessionId.value || undefined)
-    sessionId.value = res.session_id
-    if (res.stage === "error") {
-      messages.value.push({ role: "assistant", content: "", error: res.error_message || "执行失败" })
-      return
-    }
-    const png: Artifact[] = []
-    const files: FileArtifact[] = []
-    for (const name of res.outputs) {
-      const url = await objectUrlFor(name, res.session_id)
-      if (name.toLowerCase().endsWith(".png")) {
-        png.push({ name, url })
-      } else {
-        const ext = name.split(".").pop()?.toUpperCase() || "FILE"
-        files.push({ name, url, ext })
-      }
-    }
-    messages.value.push({
-      role: "assistant",
-      content: res.final,
-      result: res,
-      pngArtifacts: png,
-      fileArtifacts: files,
-    })
-    message.success(`完成，共 ${res.outputs.length} 个产物`)
+    await streamGisAssistant(
+      ask,
+      dataFile.value || undefined,
+      sessionId.value || undefined,
+      (ev) => handleStreamEvent(msg, ev),
+    )
+    message.success("完成")
   } catch (err) {
-    messages.value.push({
-      role: "assistant",
-      content: "",
-      error: err instanceof Error ? err.message : String(err),
-    })
+    msg.error = err instanceof Error ? err.message : String(err)
   } finally {
     running.value = false
     await loadSessions()
   }
 }
 
+function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
+  switch (ev.type) {
+    case "session_start":
+      sessionId.value = ev.session_id
+      break
+    case "text_delta": {
+      msg.content += ev.delta
+      const last = msg.items[msg.items.length - 1]
+      if (last && last.kind === "text") {
+        last.content += ev.delta
+      } else {
+        msg.items.push({ kind: "text", content: ev.delta })
+      }
+      break
+    }
+    case "tool_call":
+      msg.items.push({ kind: "tool", step: ev.step, tool: ev.tool, args: ev.args, status: "running" })
+      break
+    case "tool_result": {
+      const item = msg.items.find(
+        (x): x is Extract<StreamItem, { kind: "tool" }> =>
+          x.kind === "tool" && x.step === ev.step && x.tool === ev.tool && x.status === "running",
+      )
+      if (item) {
+        item.result = ev.result
+        item.status = ev.result.status === "ok" ? "ok" : ev.result.status === "error" ? "error" : "other"
+      }
+      break
+    }
+    case "done":
+      for (const name of ev.outputs) {
+        void (async () => {
+          try {
+            const url = await objectUrlFor(name, sessionId.value)
+            msg.items.push({
+              kind: "artifact",
+              name,
+              url,
+              ext: name.toLowerCase().endsWith(".png")
+                ? undefined
+                : name.split(".").pop()?.toUpperCase() || "FILE",
+            })
+          } catch {
+            // 产物获取失败忽略
+          }
+        })()
+      }
+      break
+    case "error":
+      msg.error = ev.error
+      break
+  }
+}
+
 function newConversation() {
   sessionId.value = ""
   messages.value = []
-  expandedTrajectories.value = {}
   error.value = ""
   dataFile.value = ""
   fileName.value = ""
@@ -356,73 +382,67 @@ function download(url: string, name: string) {
               <div class="gis-user-text">{{ m.content }}</div>
             </div>
 
-            <!-- 助手回复 -->
+            <!-- 助手回复（按输出顺序流式排版） -->
             <div v-else class="gis-msg-row gis-msg-assistant animate-enter">
               <div v-if="m.error" class="gis-error w-full">{{ m.error }}</div>
 
-              <template v-else>
-                <div v-if="m.content" class="gis-answer">
-                  <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ m.content }}</p>
-                </div>
-
-                <div v-if="m.result && (m.pngArtifacts?.length || m.fileArtifacts?.length)" class="space-y-3">
-                  <div v-if="m.pngArtifacts?.length" class="grid gap-4 sm:grid-cols-2">
-                    <figure v-for="p in m.pngArtifacts" :key="p.name" class="gis-artifact">
-                      <img :src="p.url" :alt="p.name" class="w-full block" />
-                      <figcaption class="flex items-center justify-between gap-2">
-                        <span class="truncate text-xs text-dim font-mono">{{ p.name }}</span>
-                        <a class="gis-download-link shrink-0" @click="download(p.url, p.name)">下载</a>
-                      </figcaption>
-                    </figure>
+              <div v-else class="space-y-3 w-full">
+                <template v-for="(item, k) in m.items" :key="k">
+                  <!-- 文本块 -->
+                  <div v-if="item.kind === 'text' && item.content" class="gis-answer">
+                    <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ item.content }}</p>
                   </div>
-                  <div v-if="m.fileArtifacts?.length" class="space-y-2">
-                    <div v-for="f in m.fileArtifacts" :key="f.name" class="gis-file-row">
-                      <span class="gis-file-ext shrink-0">{{ f.ext }}</span>
-                      <span class="text-sm truncate">{{ f.name }}</span>
-                      <a class="gis-download-link ml-auto shrink-0" @click="download(f.url, f.name)">下载</a>
+
+                  <!-- 工具调用（内联时间线） -->
+                  <div v-else-if="item.kind === 'tool'" class="gis-timeline-item gis-tool-inline animate-enter">
+                    <span class="gis-timeline-node" :class="`gis-node-${item.status === 'running' ? 'other' : item.status}`" />
+                    <div class="gis-timeline-card">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="gis-step-index shrink-0">#{{ item.step }}</span>
+                        <code class="gis-tool-name shrink-0">{{ item.tool }}</code>
+                        <span class="gis-tool-args min-w-0">{{ toolArgsText(item.args) }}</span>
+                        <span
+                          v-if="item.status === 'running'"
+                          class="ml-auto shrink-0 flex items-center gap-1.5 text-muted"
+                        >
+                          <span class="gis-spinner" />
+                          <span class="text-[11px]">执行中</span>
+                        </span>
+                        <span
+                          v-else
+                          class="ml-auto shrink-0"
+                          :class="item.status === 'ok' ? 'text-[var(--success)]' : item.status === 'error' ? 'text-[var(--danger)]' : 'text-muted'"
+                        >
+                          {{ toolItemText(item) }}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div v-if="m.result" class="gis-trajectory-wrap">
-                  <button class="gis-trajectory-toggle" @click="toggleTrajectory(i)">
-                    <svg class="gis-chevron" :class="{ 'gis-chevron-open': expandedTrajectories[i] }" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4" /></svg>
-                    <span>工具调用轨迹</span>
-                    <span class="gis-chip gis-chip-accent">{{ m.result.steps }} 步</span>
-                  </button>
-                  <div v-if="expandedTrajectories[i]" class="gis-trajectory-body">
-                    <ol class="gis-timeline">
-                      <li
-                        v-for="t in m.result.trajectory"
-                        :key="`${m.result!.project_id}-${t.step}-${t.tool}`"
-                        class="gis-timeline-item"
-                      >
-                        <span class="gis-timeline-node" :class="`gis-node-${stepStatus(t)}`" />
-                        <div class="gis-timeline-card">
-                          <div class="flex items-center gap-2.5 min-w-0">
-                            <span class="gis-step-index shrink-0">#{{ t.step }}</span>
-                            <code class="gis-tool-name shrink-0">{{ t.tool }}</code>
-                            <span class="gis-tool-args min-w-0">{{ toolArgsText(t.args) }}</span>
-                            <span
-                              class="ml-auto shrink-0"
-                              :class="stepStatus(t) === 'ok' ? 'text-[var(--success)]' : stepStatus(t) === 'err' ? 'text-[var(--danger)]' : 'text-muted'"
-                            >
-                              {{ toolStatusText(t) }}
-                            </span>
-                          </div>
-                        </div>
-                      </li>
-                    </ol>
+                  <!-- 图片产物 -->
+                  <figure v-else-if="item.kind === 'artifact' && !item.ext" class="gis-artifact">
+                    <img :src="item.url" :alt="item.name" class="w-full block" />
+                    <figcaption class="flex items-center justify-between gap-2">
+                      <span class="truncate text-xs text-dim font-mono">{{ item.name }}</span>
+                      <a class="gis-download-link shrink-0" @click="download(item.url!, item.name!)">下载</a>
+                    </figcaption>
+                  </figure>
+
+                  <!-- 文件产物 -->
+                  <div v-else-if="item.kind === 'artifact'" class="gis-file-row">
+                    <span class="gis-file-ext shrink-0">{{ item.ext }}</span>
+                    <span class="text-sm truncate">{{ item.name }}</span>
+                    <a class="gis-download-link ml-auto shrink-0" @click="download(item.url!, item.name!)">下载</a>
                   </div>
-                </div>
-              </template>
+                </template>
+              </div>
             </div>
           </template>
 
           <!-- 执行中 -->
-          <div v-if="running" class="gis-thinking animate-enter">
+          <div v-if="running && !hasActiveTool" class="gis-thinking animate-enter">
             <span class="gis-spinner gis-spinner-lg" />
-            <span class="text-sm text-dim">引擎正在调用 GIS 工具…</span>
+            <span class="text-sm text-dim">正在生成…</span>
           </div>
         </div>
       </main>
@@ -820,6 +840,21 @@ function download(url: string, name: string) {
 }
 .gis-timeline-item:last-child {
   padding-bottom: 2px;
+}
+
+/* ---- 流式工具调用（内联时间线） ---- */
+.gis-tool-inline::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 32px;
+  bottom: -10px;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, var(--accent) 0%, var(--border) 90%);
+}
+.gis-tool-inline:last-child::before {
+  display: none;
 }
 .gis-timeline-node {
   position: absolute;

@@ -13,7 +13,6 @@ v3 增强（SPEC model-routing）:
     result = provider.chat_with_tools(messages, tools, agent_type="celve")
 """
 
-import os
 import re
 import time
 from pathlib import Path
@@ -151,6 +150,80 @@ class LLMProvider:
             duration_ms=(time.time() - t0) * 1000,
         )
         return content, prompt_tokens, completion_tokens
+
+    def chat_with_tools_stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        agent_type: str = "celve",
+        model_id: str | None = None,
+        on_text_delta=None,
+    ) -> dict:
+        """流式 function calling — 文本增量经 on_text_delta 回调，返回与 chat_with_tools 相同结构
+
+        使用主候选模型（流式不做 failover，失败抛异常由上层兜底）。
+        """
+        chain = self._resolve_chain(model_id, agent_type)
+        cfg = self.registry.get(chain[0])
+        if cfg is None:
+            raise RuntimeError(f"模型不可用: {chain[0]}")
+        client = self._client_for(cfg)
+        t0 = time.time()
+        stream = client.chat.completions.create(
+            model=cfg.model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.7,
+            max_tokens=4096,
+            extra_body={"thinking": {"type": "disabled"}},
+            stream=True,
+        )
+        content_parts: list[str] = []
+        tool_calls_acc: dict[int, dict] = {}
+        usage = None
+        for chunk in stream:
+            if getattr(chunk, "usage", None):
+                usage = chunk.usage
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
+            if delta.content:
+                content_parts.append(delta.content)
+                if on_text_delta:
+                    on_text_delta(delta.content)
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index or 0
+                    acc = tool_calls_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                    if tc.id:
+                        acc["id"] = tc.id
+                    if tc.function:
+                        if tc.function.name:
+                            acc["name"] += tc.function.name
+                        if tc.function.arguments:
+                            acc["arguments"] += tc.function.arguments
+        cost_tracker.record(
+            agent_type=agent_type,
+            model=cfg.id,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            duration_ms=(time.time() - t0) * 1000,
+        )
+        content = _strip_thinking("".join(content_parts))
+        result: dict = {"content": content}
+        if tool_calls_acc:
+            result["tool_calls"] = [
+                {
+                    "id": acc["id"] or f"call_{i}",
+                    "type": "function",
+                    "function": {"name": acc["name"], "arguments": acc["arguments"]},
+                }
+                for i, acc in sorted(tool_calls_acc.items())
+            ]
+        return result
 
     def _call_tools_with_retry(
         self,

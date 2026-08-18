@@ -35,3 +35,7 @@ frontend.log
 
 data/gis_sessions.json
 
+
+# 运行时日志（流式调试）
+backend.*.log
+frontend.dev*.log

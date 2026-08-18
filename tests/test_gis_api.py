@@ -224,3 +224,50 @@ def test_gis_assistant_file_requires_auth(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "GIS_TOOLKIT_OUT_DIR", tmp_path)
     resp = client.get("/api/v1/gis-assistant/files/0123456789ab/map.png")
     assert resp.status_code == 401
+
+
+# ── 流式端点 ─────────────────────────────────────────
+
+def test_gis_assistant_stream_ok(monkeypatch):
+    """SSE 端点按序推送事件：session_start 在前，工具事件居中，done 收尾"""
+
+    class FakeAgent:
+        def __init__(self, engine, max_steps=12, model_id=None):
+            self.engine = engine
+
+        def run_stream(self, user_request, data_file=None, session=None, ltm_hint="", on_event=None):
+            for ev in [
+                {"type": "text_delta", "delta": "开始"},
+                {"type": "tool_call", "step": 1, "tool": "load_data", "args": {}},
+                {"type": "tool_result", "step": 1, "tool": "load_data", "result": {"status": "ok"}},
+                {"type": "done", "final": "完成", "outputs": ["map.png"], "steps": 1, "timed_out": False},
+            ]:
+                if on_event:
+                    on_event(ev)
+            return {"final": "完成", "outputs": ["map.png"], "steps": 1, "timed_out": False}
+
+    monkeypatch.setattr(server, "GisToolAgent", FakeAgent)
+    monkeypatch.setattr(server, "_save_gis_lesson", lambda *a, **k: None)
+    with client.stream(
+        "GET",
+        "/api/v1/gis-assistant/run/stream",
+        params={"user_request": "画图"},
+        headers=HEADERS,
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = "".join(resp.iter_text())
+    for needle in [
+        '"type": "session_start"',
+        '"type": "text_delta"',
+        '"type": "tool_call"',
+        '"type": "tool_result"',
+        '"type": "done"',
+    ]:
+        assert needle in body, needle
+    assert body.find("session_start") < body.find("tool_call") < body.find("done")
+
+
+def test_gis_assistant_stream_requires_auth():
+    resp = client.get("/api/v1/gis-assistant/run/stream", params={"user_request": "画图"})
+    assert resp.status_code == 401

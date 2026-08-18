@@ -6,6 +6,8 @@
 import asyncio
 import copy
 import json
+import queue
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -36,7 +38,7 @@ from src.orchestrator.state import ContentProjectState, ContentStage, GisProject
 from src.storage.project_store import store
 from src.tools.implementations.data_inspect import inspect_file
 from src.gis_toolkit.agent import GisToolAgent
-from src.gis_toolkit.engine import GisEngine
+from src.gis_toolkit.engine import GisEngine, _jsonable
 from src.gis_toolkit.session import GisSessionStore
 from src.orchestrator.long_term_memory import LongTermMemory, Lesson
 from src.utils.trace import TraceTracker
@@ -524,6 +526,62 @@ async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get
     )
     gis_sessions.save(user_id, session)
     return {"project_id": project_id, "session_id": session_id, **result}
+
+
+@app.get("/api/v1/gis-assistant/run/stream")
+async def run_gis_assistant_stream(
+    user_request: str,
+    data_file: str | None = None,
+    session_id: str | None = None,
+    model_preference: str | None = None,
+    user_id: str = Depends(get_user_id),
+):
+    """SSE 流式运行工具调用版 GIS 助手
+
+    事件按输出顺序推送：
+    session_start → text_delta / tool_call / tool_result → done / error。
+    前端用 fetch + ReadableStream 解析（EventSource 无法携带 X-API-Key）。
+    """
+    sid, session = gis_sessions.get_or_create(session_id, user_id)
+    events: queue.Queue = queue.Queue()
+
+    def _runner() -> None:
+        """后台线程：执行 run_stream 并把事件转发到队列，完成后保存会话"""
+        try:
+            agent = GisToolAgent(engine=session.engine, max_steps=12, model_id=model_preference)
+            ltm_hint = _build_ltm_hint(user_request, user_id)
+            result = agent.run_stream(
+                user_request,
+                data_file=data_file,
+                session=session,
+                ltm_hint=ltm_hint,
+                on_event=events.put,
+            )
+            _save_gis_lesson(user_id, session.session_id, user_request, result)
+        except Exception as exc:
+            events.put({"type": "error", "error": f"GIS 助手执行失败: {exc}"})
+        finally:
+            gis_sessions.save(user_id, session)
+            events.put(None)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+    def _sse(payload: dict) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False, default=_jsonable)}\n\n"
+
+    async def _gen():
+        yield _sse({"type": "session_start", "session_id": sid})
+        while True:
+            ev = await asyncio.to_thread(events.get)
+            if ev is None:
+                break
+            yield _sse(ev)
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/v1/gis-assistant/files/{session_id}/{filename}")

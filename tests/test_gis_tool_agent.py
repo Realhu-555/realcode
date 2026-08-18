@@ -14,7 +14,22 @@ class FakeLLM:
         self.calls: list[list[dict]] = []
 
     def chat_with_tools(self, messages, tools, agent_type=None, model_id=None):
-        self.calls.append(list(messages))  # ????????? list
+        self.calls.append(list(messages))
+        return self._next()
+
+    def chat_with_tools_stream(
+        self, messages, tools, agent_type=None, model_id=None, on_text_delta=None
+    ):
+        """流式版：把 content 逐字符作为文本增量回调，返回与 chat_with_tools 相同结构"""
+        self.calls.append(list(messages))
+        resp = self._next()
+        content = resp.get("content") or ""
+        if on_text_delta and content:
+            for ch in content:
+                on_text_delta(ch)
+        return resp
+
+    def _next(self):
         if not self.responses:
             return {"content": "完成", "tool_calls": None}
         return self.responses.pop(0)
@@ -200,3 +215,49 @@ def test_data_file_prompt_has_no_garbled_text(tmp_path):
     user_msg = agent.llm.calls[0][1]["content"]
     assert "数据文件已就绪" in user_msg
     assert "?" not in user_msg
+
+
+def test_run_stream_emits_events_in_order(tmp_path):
+    """流式事件按输出顺序：文本增量穿插在工具调用之间，tool_call 先于 tool_result，最终 done"""
+    csv = _point_csv(tmp_path)
+    agent = _agent(
+        tmp_path,
+        [
+            {"content": "开始处理", "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
+            {"content": "正在绘图", "tool_calls": [_tc("c2", "choropleth", {"column": "gdp", "output": "map.png"})]},
+            {"content": "完成，这是结果", "tool_calls": [_tc("c3", "finish", {"outputs": ["map.png"], "summary": "完成"})]},
+        ],
+    )
+    events: list[dict] = []
+    result = agent.run_stream("画分级设色图", on_event=events.append)
+    assert result["outputs"] == ["map.png"]
+    assert not result["timed_out"]
+    types = [e["type"] for e in events]
+    assert types[0] == "text_delta"
+    assert types[-1] == "done"
+    assert "tool_call" in types and "tool_result" in types
+    # 每个 tool_call 都在其 tool_result 之前
+    calls = [i for i, e in enumerate(events) if e["type"] == "tool_call"]
+    results = [i for i, e in enumerate(events) if e["type"] == "tool_result"]
+    assert len(calls) == len(results) == 3
+    assert all(calls[i] < results[i] for i in range(3))
+    # 文本增量累积后与各轮 content 一致
+    text = "".join(e["delta"] for e in events if e["type"] == "text_delta")
+    assert text == "开始处理正在绘图完成，这是结果"
+    # done 事件携带最终产物
+    done = next(e for e in events if e["type"] == "done")
+    assert done["outputs"] == ["map.png"]
+    assert done["steps"] == 3
+
+
+def test_run_stream_sends_done_without_session(tmp_path):
+    """未传 session 时也发送 done 事件（end-to-end 事件自洽）"""
+    agent = _agent(
+        tmp_path,
+        [{"content": "没有图层，无法操作", "tool_calls": None}],
+    )
+    events: list[dict] = []
+    result = agent.run_stream("你好", on_event=events.append)
+    assert result["final"] == "没有图层，无法操作"
+    assert events[-1]["type"] == "done"
+    assert events[-1]["final"] == "没有图层，无法操作"

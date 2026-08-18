@@ -1,6 +1,6 @@
 import axios from "axios"
 
-function getApiKey(): string {
+export function getApiKey(): string {
   let key = localStorage.getItem("suxuan-api-key") || ""
   if (!key) {
     key = "demo-" + Math.random().toString(36).slice(2, 10)
