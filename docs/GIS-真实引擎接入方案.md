@@ -2,7 +2,7 @@
 
 > 配套文档：`docs/SPEC-GIS智能操作平台.md`（Phase 1 MVP）｜`docs/GIS-引擎选型与分阶段演进.md`（选型结论）｜`docs/GIS-智能助手-工具调用设计.md`（9 个工具定义）
 > 本文档回答一个问题：demo 已验证、内容生成模块已删除之后，**如何把「伪引擎（geopandas 本地模拟）」替换成「真实开源 GIS 系统」**，以及**是否需要去 GitHub 找开源系统**。
-> 版本：v0.2（Gate 1/2 已完成）｜日期：2026-08-18 ｜作者：胡贞虎
+> 版本：v0.3（Gate 1/2/3 已完成）｜日期：2026-08-18 ｜作者：胡贞虎
 
 ---
 
@@ -127,6 +127,17 @@ class QgsEngine:                      # 与 GisEngine 同名方法、同返回�
 - **切换**：`GIS_ENGINE=qgis` 环境变量（`create_gis_engine` 工厂），Agent/schema/前端零改动；
 - **已知差异**：choropleth 分级边界以 QGIS 分类器为准（Jenks/Quantile/EqualInterval 与 mapclassify 略有出入）；buffer 输出统一为 MultiPolygon。
 
+### 3.4 Gate 3 冒烟验收（2026-08-18 通过）
+
+同一句自然语言（加载 `gdp_demo.csv` → 按省份分级设色图 → 按省份汇总 → 导出 GeoJSON）在两种引擎下真实 LLM 走通：
+
+| 项 | geopandas 引擎 | qgis 引擎 |
+|---|---|---|
+| 轨迹 | load_data → inspect_data → 三工具并行 → finish（3 步） | 同（4 步） |
+| 产物 | choropleth.png / summary.csv / points.geojson | 同 |
+| summary 数值 | GDP 总和 1250931.7 | 与 geopandas 完全一致 |
+| choropleth | 省面聚合（3 省无数据） | 省界聚合，NaturalBreaks 5 级，含图例 |
+
 ### 4.3 会话状态与底图
 
 - 当前图层 = 引擎持有的单个 `QgsVectorLayer` 引用；`load_data` 后替换；
@@ -166,7 +177,7 @@ class QgsEngine:                      # 与 GisEngine 同名方法、同返回�
 |---|---|---|---|
 | **Gate 1** ✅ 2026-08-18 | 环境验证：Docker `qgis/qgis-server` 或 OSGeo4W 装 QGIS；跑通最小 PyQGIS 脚本 | 0.5 周 | `china_province.geojson` → PNG + GeoJSON 与 geopandas 输出一致 |
 | **Gate 2** ✅ 2026-08-18 | 实现 `QgsEngine`（9 个工具）+ 单元测试 | 1–1.5 周 | 同一批用例在 `GisEngine` / `QgsEngine` 下产物与摘要 diff 通过（choropleth 分级校准在内） |
-| **Gate 3** | 后端引擎可切换：`GIS_ENGINE=geopandas|qgis` 环境变量，会话级选择；前端不动 | 0.5–1 周 | 冒烟：同一句自然语言在两种引擎下走通，产物可下载 |
+| **Gate 3** ✅ 2026-08-18 | 后端引擎可切换：`GIS_ENGINE=geopandas|qgis` 环境变量，会话级选择；前端不动 | 0.5–1 周 | 冒烟：同一句自然语言在两种引擎下走通，产物可下载 |
 
 **总工期约 2–3 周**。Phase 4（可选）：QGIS 插件面板嵌入、危险操作审批、RAG 空间检索。
 
