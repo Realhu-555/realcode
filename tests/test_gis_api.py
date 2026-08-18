@@ -127,3 +127,64 @@ def test_build_gis_with_data_schema(monkeypatch, tmp_path):
     assert data["stage"] == "done"
     # exec 会把源数据复制进沙箱
     assert "gdp.csv" in str(data["artifacts"])
+
+
+# ── 工具调用版助手端点 ─────────────────────────────────
+
+def test_gis_assistant_run_ok(monkeypatch):
+    def fake_sync(user_request, data_file, model_preference):
+        return {
+            "stage": "done",
+            "trajectory": [{"step": 1, "tool": "choropleth", "args": {}, "result": {"status": "ok"}}],
+            "outputs": ["choropleth.png"],
+            "final": "完成",
+            "steps": 1,
+            "timed_out": False,
+            "out_dir": "data/gis_toolkit_out",
+        }
+
+    monkeypatch.setattr(server, "_run_gis_assistant_sync", fake_sync)
+    resp = client.post(
+        "/api/v1/gis-assistant/run",
+        json={"user_request": "画分级设色图", "data_file": None},
+        headers=HEADERS,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["project_id"]
+    assert data["stage"] == "done"
+    assert data["outputs"] == ["choropleth.png"]
+    assert data["trajectory"][0]["tool"] == "choropleth"
+
+
+def test_gis_assistant_run_requires_auth():
+    resp = client.post("/api/v1/gis-assistant/run", json={"user_request": "画图"})
+    assert resp.status_code == 401
+
+
+def test_gis_assistant_run_error_path(monkeypatch):
+    def fake_sync(user_request, data_file, model_preference):
+        return {"stage": "error", "error_message": "执行失败"}
+
+    monkeypatch.setattr(server, "_run_gis_assistant_sync", fake_sync)
+    resp = client.post(
+        "/api/v1/gis-assistant/run",
+        json={"user_request": "画图"},
+        headers=HEADERS,
+    )
+    assert resp.json()["stage"] == "error"
+
+
+def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
+    """helper 层：GisToolAgent 异常时返回 error，不抛出"""
+    class BoomAgent:
+        def __init__(self, engine, max_steps=12, model_id=None):
+            self.engine = engine
+
+        def run(self, request, data_file=None):
+            raise RuntimeError("模型调用失败")
+
+    monkeypatch.setattr(server, "GisToolAgent", BoomAgent)
+    res = server._run_gis_assistant_sync("请求", None, None)
+    assert res["stage"] == "error"
+    assert "模型调用失败" in res["error_message"]

@@ -210,7 +210,7 @@ return 达到步数上限（轨迹保留，标记超限）
 - [x] **Task B 工具 schema + Agent**：`src/gis_toolkit/schemas.py`（9 个 OpenAI 工具描述）+ `src/gis_toolkit/agent.py`（循环协议）+ 模型路由注册 `gis_assistant`（7 个循环测试全绿）；
 - [x] **Task C CLI 演示 + 真实冒烟**：`python -m src.gis_toolkit.demo`，gdp_demo.csv 分级设色端到端跑通（真实 DeepSeek 工具调用 4 步：load→inspect→choropleth+summarize→finish），轨迹落盘 `data/gis_traces/`；
 - [x] **Task D 基准任务集**：`src/gis_toolkit/bench.py` 首批 4 个任务（choropleth / summarize / buffer / scatter）+ 规则校验，真实 LLM 跑批 **4/4 通过**（报告落 `data/gis_bench_results/`）；
-- [ ] **Task E 接入 API（可选）**：`/api/v1/gis-assistant/run` + WebSocket，复用现有 server 基建。
+- [x] **Task E 接入 API（可选）**：`POST /api/v1/gis-assistant/run` + WebSocket `action=build_gis_assistant`，复用现有 server 基建（4 个 API 测试全绿 + 真实 LLM 冒烟 PASS）。
 
 ---
 

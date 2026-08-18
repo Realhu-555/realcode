@@ -35,6 +35,8 @@ from src.orchestrator.graph import create_gis_graph
 from src.orchestrator.state import ContentProjectState, ContentStage, GisProjectState
 from src.storage.project_store import store
 from src.tools.implementations.data_inspect import inspect_file
+from src.gis_toolkit.agent import GisToolAgent
+from src.gis_toolkit.engine import GisEngine
 from src.utils.trace import TraceTracker
 from src.web.auth import get_user_id
 
@@ -137,6 +139,18 @@ async def ws_endpoint(ws: WebSocket):
                     )
                 )
                 await ws.send_json({"type": "gis_started", "project_id": project_id})
+            elif data.get("action") == "build_gis_assistant":
+                project_id = uuid.uuid4().hex[:12]
+                asyncio.create_task(
+                    _run_gis_assistant_ws(
+                        client_id=cid,
+                        project_id=project_id,
+                        user_request=data.get("user_request", ""),
+                        data_file=data.get("data_file"),
+                        model_preference=data.get("model_preference"),
+                    )
+                )
+                await ws.send_json({"type": "gis_assistant_started", "project_id": project_id})
     except WebSocketDisconnect:
         ws_manager.disconnect(cid)
 
@@ -438,6 +452,13 @@ class GisBuildRequest(BaseModel):
     model_preference: str | None = None
 
 
+class GisAssistantRequest(BaseModel):
+    """工具调用版 GIS 助手请求"""
+    user_request: str
+    data_file: str | None = None
+    model_preference: str | None = None
+
+
 @app.post("/api/v1/gis/upload")
 async def upload_gis_data(file: UploadFile = File(...), user_id: str = Depends(get_user_id)):
     """上传 GIS 数据文件（CSV / GeoJSON / Shapefile zip）"""
@@ -467,6 +488,20 @@ async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
         _thread_pool,
         _run_gis_sync,
         project_id,
+        req.user_request,
+        req.data_file,
+        req.model_preference,
+    )
+    return {"project_id": project_id, **result}
+
+@app.post("/api/v1/gis-assistant/run")
+async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get_user_id)):
+    """????? GIS ???????????????????? Task E?"""
+    project_id = uuid.uuid4().hex[:12]
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        _thread_pool,
+        _run_gis_assistant_sync,
         req.user_request,
         req.data_file,
         req.model_preference,
@@ -515,6 +550,29 @@ class _GisProgressAgent:
     def _push(self, status: str) -> None:
         coro = _push_progress(self.project_id, self.name, status)
         asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+
+def _run_gis_assistant_sync(
+    user_request: str,
+    data_file: str | None,
+    model_preference: str | None,
+) -> dict:
+    """工具调用版 GIS 助手（后台线程执行，REST / WebSocket 复用）"""
+    try:
+        engine = GisEngine(allowed_roots=["data"])
+        agent = GisToolAgent(engine=engine, max_steps=12, model_id=model_preference)
+        result = agent.run(user_request, data_file=data_file)
+        return {
+            "stage": "done",
+            "trajectory": result["trajectory"],
+            "outputs": result["outputs"],
+            "final": result["final"],
+            "steps": result["steps"],
+            "timed_out": result["timed_out"],
+            "out_dir": str(engine.out_dir),
+        }
+    except Exception as exc:
+        return {"stage": "error", "error_message": f"GIS 助手执行失败: {exc}"}
 
 
 def _run_gis_sync(
@@ -575,6 +633,33 @@ def _gis_response(state: dict) -> dict:
         "error_message": state.get("error_message"),
         "rewrite_round": state.get("rewrite_round"),
     }
+
+
+async def _run_gis_assistant_ws(
+    client_id: str,
+    project_id: str,
+    user_request: str,
+    data_file: str | None,
+    model_preference: str | None,
+) -> None:
+    """WebSocket 后台执行工具调用版 GIS 助手，完成后广播结果"""
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            _thread_pool,
+            _run_gis_assistant_sync,
+            user_request,
+            data_file,
+            model_preference,
+        )
+        await ws_manager.broadcast(
+            project_id, {"type": "gis_assistant_result", "project_id": project_id, **result}
+        )
+    except Exception as exc:
+        await ws_manager.broadcast(
+            project_id,
+            {"type": "gis_assistant_error", "project_id": project_id, "error": str(exc)},
+        )
 
 
 async def _run_gis_ws(
