@@ -14,7 +14,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# 支持直接运行 python src/gis_mcp/server.py（此时项目根不在 sys.path）
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mcp.server.fastmcp import FastMCP
 
