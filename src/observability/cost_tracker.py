@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -189,7 +189,7 @@ class CostTracker:
                 (limit,),
             ).fetchall()
             cols = [d[0] for d in conn.execute("SELECT * FROM run_metrics LIMIT 0").description]
-            return [dict(zip(cols, r)) for r in rows]
+            return [dict(zip(cols, r, strict=False)) for r in rows]
         finally:
             conn.close()
 

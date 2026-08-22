@@ -57,6 +57,12 @@ ignore = [
     "E501",  # line too long (handled by formatter)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI 标准写法（File(...) 默认参数）与历史结构豁免
+"src/web/server.py" = ["E402", "SIM105", "B008"]
+# 泛型函数建议（UP047）不影响行为，暂豁免
+"src/recovery/retry.py" = ["UP047"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

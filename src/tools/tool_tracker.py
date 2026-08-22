@@ -9,8 +9,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.tools.registry import tool_registry
 from src.tools.protocol import ToolContext
+from src.tools.registry import tool_registry
 
 
 @dataclass
@@ -104,7 +104,7 @@ async def call_tool(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
 def call_tool_sync(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
     """同步/异步通用——自动检测事件循环状态"""
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()  # 无事件循环时抛异常，走 except 分支
         # 已在事件循环中 → 不能 asyncio.run()
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:

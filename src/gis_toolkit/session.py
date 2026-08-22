@@ -14,6 +14,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from src.gis_toolkit.engine import create_gis_engine
+from src.utils.config import settings
 
 SESSION_TTL_SECONDS = 30 * 60  # 内存中空闲 30 分钟过期（持久化保留）
 SESSIONS_DB = "data/gis_sessions.json"
@@ -26,7 +27,11 @@ class GisSession:
     def __init__(self, session_id: str, out_dir: Path, title: str = "新会话") -> None:
         self.session_id = session_id
         self.out_dir = Path(out_dir)
-        self.engine = create_gis_engine(out_dir=str(self.out_dir), allowed_roots=["data"])
+        self.engine = create_gis_engine(
+            engine=settings.gis_engine,
+            out_dir=str(self.out_dir),
+            allowed_roots=list(settings.gis_allowed_roots) or ["data"],
+        )
         self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
         self.summary: str = ""  # 滚动摘要（超出上下文阈值时由 agent 生成）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）

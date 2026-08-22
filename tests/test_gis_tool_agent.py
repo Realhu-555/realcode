@@ -1,6 +1,7 @@
 ﻿"""GisToolAgent 工具调用循环测试 — fake LLM 驱动各场景"""
 
 import json
+from pathlib import Path
 
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import GisEngine
@@ -232,6 +233,33 @@ def test_execute_subtask_with_injected_impl(tmp_path):
     res = agent.execute_subtask("统计各省 GDP")
     assert res["status"] == "ok"
     assert "统计各省 GDP" in res["result"]
+
+
+# ── T11 轨迹落盘 ─────────────────────────────────────
+
+def test_save_trace_writes_json(tmp_path):
+    """轨迹落盘：_save_trace 写入可解析的 JSON 到 data/gis_traces/"""
+    import json as _json
+
+    trace_dir = Path("data/gis_traces")
+    before = set(trace_dir.glob("*.json")) if trace_dir.is_dir() else set()
+    agent = _agent(tmp_path, [])
+    agent._save_trace(
+        "用户请求",
+        "最终回答",
+        ["choropleth.png"],
+        [{"step": 1, "tool": "load_data", "args": {}, "result": {"status": "ok"}}],
+    )
+    after = set(trace_dir.glob("*.json"))
+    new_files = after - before
+    assert new_files, "应生成新的轨迹文件"
+    trace = _json.loads(next(iter(new_files)).read_text(encoding="utf-8"))
+    assert trace["user_request"] == "用户请求"
+    assert "choropleth.png" in trace["outputs"]
+    assert trace["trajectory"][0]["tool"] == "load_data"
+    # 清理测试生成的轨迹
+    for f in new_files:
+        f.unlink()
 
 
 def test_full_flow(tmp_path):

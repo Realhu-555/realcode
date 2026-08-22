@@ -22,11 +22,15 @@ from mcp.server.fastmcp import FastMCP
 
 from src.gis_toolkit.engine import GisEngine, create_gis_engine
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
+from src.utils.config import settings
 
 # 项目根 = <project>/src/gis_mcp/tools.py 的 3 级父目录
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ALLOWED_ROOTS = [str(_PROJECT_ROOT / "data")]
-DEFAULT_OUT_ROOT = str(_PROJECT_ROOT / "data" / "gis_toolkit_out")
+# 默认产物目录 / 输入白名单从 settings 读取（.env 可覆盖，见 src/utils/config.py）
+DEFAULT_OUT_ROOT = settings.gis_out_root
+DEFAULT_ALLOWED_ROOTS = list(settings.gis_allowed_roots) or [
+    str(_PROJECT_ROOT / "data")
+]
 
 
 def resolve_out_root(out_root: str | None = None) -> str:

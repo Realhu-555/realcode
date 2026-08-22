@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     debug: bool = False
 
+    # ── GIS / MCP 配置 ────────────────────────────────
+    gis_engine: Literal["geopandas", "qgis"] = "geopandas"
+    gis_out_root: str = "data/gis_toolkit_out"
+    gis_allowed_roots: list[str] = ["data"]
+    mcp_tool_timeout_ms: int = 120000
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "case_sensitive": False}
 
 

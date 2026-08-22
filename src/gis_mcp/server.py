@@ -24,18 +24,20 @@ if __package__ in (None, ""):
 from mcp.server.fastmcp import FastMCP
 
 from src.gis_mcp import tools
+from src.utils.config import settings
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def default_allowed_roots() -> list[str]:
-    """默认输入白名单：项目 data/ 目录（绝对路径）"""
-    return [str(_PROJECT_ROOT / "data")]
+    """默认输入白名单：settings.gis_allowed_roots（.env 可覆盖）"""
+    roots = list(settings.gis_allowed_roots)
+    return roots or [str(_PROJECT_ROOT / "data")]
 
 
 def default_out_root() -> str:
-    """默认产物输出目录：项目 data/gis_toolkit_out"""
-    return str(_PROJECT_ROOT / "data" / "gis_toolkit_out")
+    """默认产物输出目录：settings.gis_out_root（.env 可覆盖）"""
+    return settings.gis_out_root
 
 
 def build_server(out_root: str | None = None, allowed_roots: list[str] | None = None) -> FastMCP:

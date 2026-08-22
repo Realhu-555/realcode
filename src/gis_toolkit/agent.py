@@ -7,12 +7,15 @@ LLM 通过 function calling 操作 GisEngine，每个工具调用的 (工具名,
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from src.gis_toolkit.checker import check_outputs
 from src.gis_toolkit.engine import GisEngine, GisEngineError, _jsonable
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 from src.llm.provider import LLMProvider
+from src.utils.logger import agent_logger
 
 PRODUCT_TOOLS = {"choropleth", "scatter_plot", "render_map", "summarize", "export_geojson"}
 COMPACT_THRESHOLD_TOKENS = 24000  # 会话历史估算 token 超过该值触发滚动摘要
@@ -53,6 +56,7 @@ class GisToolAgent:
         self.sub_agent = None  # T9：子任务执行器预留（默认 None，实现后注入）
         self.agent_type = agent_type
         self.model_id = model_id
+        self.logger = agent_logger
 
     @staticmethod
     def _demo_file_hint() -> str:
@@ -131,6 +135,15 @@ class GisToolAgent:
                     result = {"status": "error", "error": str(exc)}
                 except Exception as exc:  # 引擎兜底，防止单工具异常中断整个会话
                     result = {"status": "error", "error": f"工具执行异常: {exc}"}
+                self.logger.info(
+                    "tool_call",
+                    extra={
+                        "step": step,
+                        "tool": name,
+                        "status": result.get("status"),
+                        "rows": (result.get("layer") or {}).get("rows"),
+                    },
+                )
                 trajectory.append({"step": step, "tool": name, "args": args, "result": result})
                 if result.get("status") == "finished":
                     finished = True
@@ -157,6 +170,7 @@ class GisToolAgent:
                 {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
             )
             self._maybe_roll_summary(session)
+        self._save_trace(user_request, final, outputs, trajectory)
 
         return self._wrap(
             trajectory,
@@ -278,6 +292,7 @@ class GisToolAgent:
                     {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
                 )
                 self._maybe_roll_summary(session)
+            self._save_trace(user_request, final, outputs, trajectory)
             self._emit(
                 on_event,
                 {
@@ -297,6 +312,36 @@ class GisToolAgent:
             last=last_result,
             timed_out=timed_out,
         )
+
+    def _save_trace(
+        self,
+        user_request: str,
+        final: str,
+        outputs: list[str],
+        trajectory: list[dict],
+    ) -> None:
+        """T11：轨迹落盘到 data/gis_traces/（.gitignore 已忽略），失败不阻断"""
+        try:
+            trace_dir = Path("data/gis_traces")
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            path = trace_dir / (
+                f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}.json"
+            )
+            path.write_text(
+                json.dumps(
+                    {
+                        "user_request": user_request,
+                        "final": final,
+                        "outputs": outputs,
+                        "trajectory": trajectory,
+                    },
+                    ensure_ascii=False,
+                    default=_jsonable,
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     def _prepare_messages(
         self,
