@@ -154,8 +154,13 @@ class GisEngine:
         if self._layer is not None:
             data["layer"] = self._summary(self._layer)
         data["outputs"] = list(self.outputs)
+        data["output_paths"] = self._output_paths()
         data.update(extra)
         return data
+
+    def _output_paths(self) -> list[str]:
+        """产物绝对路径（文件名 → out_dir 下的完整路径），供 LLM/用户直接定位"""
+        return [str((self.out_dir / o).resolve()) for o in self.outputs]
 
     def _load_any(self, path: str) -> gpd.GeoDataFrame:
         """加载任意文件为 GeoDataFrame（CSV 按经纬度列转点）"""
@@ -388,6 +393,196 @@ class GisEngine:
         self.outputs.append(output)
         return self._result(f"已导出 {output}", size_bytes=out.stat().st_size)
 
+    def join_by_location(self, other_path: str, predicate: str = "intersects") -> dict:
+        """把另一图层按空间关系并入当前图层（结果成为新的当前图层）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if predicate not in {"intersects", "within", "contains"}:
+            raise GisEngineError(
+                f"predicate 必须是 intersects/within/contains，收到: {predicate}"
+            )
+        other = self._load_any(other_path)
+        if self._layer.crs != other.crs:
+            raise GisEngineError(
+                f"两个图层 CRS 不一致（{self._layer.crs} vs {other.crs}），先统一坐标系"
+            )
+        result = gpd.sjoin(self._layer, other, how="inner", predicate=predicate)
+        self._layer = result
+        return self._result(
+            f"空间连接完成（predicate={predicate}），结果 {len(result)} 行"
+        )
+
+    def voronoi(self) -> dict:
+        """对当前点图层生成泰森多边形（结果成为新的当前图层）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        layer = self._layer
+        if not len(layer) or not layer.geometry.geom_type.eq("Point").all():
+            raise GisEngineError("voronoi 只支持点图层（当前不是纯点数据）")
+        try:
+            import shapely
+            from shapely.ops import voronoi_diagram
+
+            pts = layer.geometry.union_all()
+            minx, miny, maxx, maxy = layer.total_bounds
+            envelope = shapely.geometry.box(minx, miny, maxx, maxy)
+            polys = voronoi_diagram(pts, envelope=envelope)
+            result = gpd.GeoDataFrame(
+                geometry=list(polys.geoms), crs=layer.crs
+            )
+        except Exception as exc:
+            raise GisEngineError(f"生成泰森多边形失败: {exc}") from exc
+        self._layer = result
+        return self._result(f"已生成 {len(result)} 个泰森多边形")
+
+    def get_crs(self) -> dict:
+        """查看当前图层坐标系"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        crs = self._layer.crs
+        return {
+            "status": "ok",
+            "crs": crs.to_string() if crs else None,
+            "epsg": crs.to_epsg() if crs else None,
+            "description": crs.name if crs else None,
+        }
+
+    def set_crs(self, crs: str) -> dict:
+        """重设当前图层坐标系（只改声明，不重投影）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        try:
+            import pyproj
+
+            new_crs = pyproj.CRS.from_user_input(crs)
+        except Exception as exc:
+            raise GisEngineError(
+                f"无效坐标系: {crs!r}（示例 EPSG:4326 / EPSG:3857）"
+            ) from exc
+        self._layer = self._layer.set_crs(new_crs, allow_override=True)
+        return self._result(f"已设置坐标系为 {new_crs}")
+
+    def list_layers(self) -> dict:
+        """查看当前会话状态快照"""
+        return {
+            "status": "ok",
+            "has_layer": self._layer is not None,
+            "layer": self._summary(self._layer) if self._layer is not None else None,
+            "outputs": list(self.outputs),
+            "output_paths": self._output_paths(),
+            "out_dir": str(self.out_dir.resolve()),
+        }
+
+    def field_statistics(self, column: str) -> dict:
+        """对数值列做字段统计"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if column not in self._layer.columns:
+            raise GisEngineError(f"列不存在: {column}（可用列: {list(self._layer.columns)}）")
+        col = pd.to_numeric(self._layer[column], errors="coerce")
+        if col.dropna().empty:
+            raise GisEngineError(f"列 {column} 没有可统计的数值（检查是否为数值列）")
+        desc = col.describe()
+        return {
+            "status": "ok",
+            "column": column,
+            "count": int(desc["count"]),
+            "mean": _jsonable(desc["mean"]),
+            "std": _jsonable(desc["std"]),
+            "min": _jsonable(desc["min"]),
+            "max": _jsonable(desc["max"]),
+            "missing": int(col.isna().sum()),
+        }
+
+    def unique_values(self, column: str) -> dict:
+        """查看某列唯一取值（最多 50 个）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if column not in self._layer.columns:
+            raise GisEngineError(f"列不存在: {column}（可用列: {list(self._layer.columns)}）")
+        values = [str(v) for v in self._layer[column].dropna().unique().tolist()]
+        truncated = len(values) > 50
+        return {
+            "status": "ok",
+            "column": column,
+            "count": len(values),
+            "values": values[:50],
+            "truncated": truncated,
+        }
+
+    def transform_coords(self, target_crs: str) -> dict:
+        """把当前图层重投影到目标坐标系"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        try:
+            import pyproj
+
+            new_crs = pyproj.CRS.from_user_input(target_crs)
+        except Exception as exc:
+            raise GisEngineError(
+                f"无效坐标系: {target_crs!r}（示例 EPSG:3857 / EPSG:32650）"
+            ) from exc
+        try:
+            self._layer = self._layer.to_crs(new_crs)
+        except Exception as exc:
+            raise GisEngineError(f"重投影失败: {exc}") from exc
+        return self._result(f"已重投影到 {new_crs}")
+
+    def render_map(self, output: str = "map.png") -> dict:
+        """把当前图层渲染成 PNG（面淡色填充、点/线着色）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        out = self.out_dir / _sanitize_filename(output)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        layer = self._layer
+        geom_type = layer.geometry.geom_type.mode().iloc[0] if len(layer) else ""
+        try:
+            if geom_type.startswith("Point"):
+                layer.plot(ax=ax, color="#e6550d", markersize=18, alpha=0.8)
+            elif geom_type.startswith("Line"):
+                layer.plot(ax=ax, color="#3182bd", linewidth=1.2)
+            else:
+                layer.plot(ax=ax, color="#c6dbef", edgecolor="#3182bd", linewidth=0.5)
+        except Exception as exc:
+            plt.close(fig)
+            raise GisEngineError(f"渲染地图失败: {exc}") from exc
+        ax.set_title("当前图层")
+        ax.set_axis_off()
+        fig.tight_layout()
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        self.outputs.append(output)
+        return self._result(f"已保存地图 {output}", size_bytes=out.stat().st_size)
+
+    def run_algorithm(self, algorithm: str, params: dict | None = None) -> dict:
+        """运行白名单空间算法（结果成为新的当前图层）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        params = params or {}
+        layer = self._layer
+        if algorithm == "dissolve":
+            field = params.get("field")
+            if not field or field not in layer.columns:
+                raise GisEngineError(
+                    f"dissolve 需要有效的 field 参数（可用列: {list(layer.columns)}）"
+                )
+            result = layer.dissolve(by=field)
+            message = f"dissolve（按 {field}）完成，结果 {len(result)} 行"
+        elif algorithm == "centroids":
+            result = layer.copy()
+            result.geometry = layer.geometry.centroid
+            message = f"已生成 {len(result)} 个要素质心"
+        elif algorithm == "convexhull":
+            result = layer.copy()
+            result.geometry = layer.geometry.convex_hull
+            message = f"已生成 {len(result)} 个要素凸包"
+        else:
+            raise GisEngineError(
+                f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）"
+            )
+        self._layer = result
+        return self._result(message)
+
     def save_layer_snapshot(self, path: str) -> None:
         """???????? GeoJSON????????????????"""
         if self._layer is None:
@@ -397,10 +592,12 @@ class GisEngine:
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（以该工具结束对话）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]
+        final_outputs = declared or list(self.outputs)
         return {
             "status": "finished",
             "message": "任务完成",
-            "outputs": declared or list(self.outputs),
+            "outputs": final_outputs,
+            "output_paths": [str((self.out_dir / o).resolve()) for o in final_outputs],
             "explanation": summary,
         }
 

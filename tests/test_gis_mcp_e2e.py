@@ -61,15 +61,15 @@ def _error_text(result) -> str:
     return "".join(c.text for c in result.content if hasattr(c, "text"))
 
 
-def test_list_tools_has_nine(tmp_path):
-    """stdio 客户端 list_tools 返回 9 个 gis_* 工具"""
+def test_list_tools_has_nineteen(tmp_path):
+    """stdio 客户端 list_tools 返回 19 个 gis_* 工具"""
 
     async def _run(sess):
         tools = await sess.list_tools()
         return sorted(t.name for t in tools.tools)
 
     names = _with_session(_run, tmp_path / "out")
-    assert len(names) == 9
+    assert len(names) == 19
     assert all(n.startswith("gis_") for n in names)
 
 
@@ -100,6 +100,8 @@ def test_full_chain_load_to_geojson(tmp_path):
         payload = _payload(r)
         assert payload["status"] == "ok"
         assert (out_root / "gdp_choropleth.png").is_file()
+        assert any(p.endswith("gdp_choropleth.png") for p in payload["output_paths"])
+        assert all(Path(p).is_file() for p in payload["output_paths"])
 
         # 4. summarize
         r = await sess.call_tool(
@@ -132,6 +134,8 @@ def test_full_chain_load_to_geojson(tmp_path):
         payload = _payload(r)
         assert payload["status"] == "finished"
         assert "fake.png" not in payload["outputs"]
+        assert "fake.png" not in "|".join(payload["output_paths"])
+        assert all(Path(p).is_file() for p in payload["output_paths"])
 
     _with_session(_run, out_root)
 

@@ -210,6 +210,207 @@ def test_finish_declares_only_real_outputs(point_csv, tmp_path):
     assert res["outputs"] == ["real.png"]  # 谎报的 fake.png 被剔除
 
 
+# ── P0 新工具：join_by_location / voronoi / crs / list_layers ──────────
+
+def test_join_by_location_point_in_poly(tmp_path):
+    """空间连接：点归属面（within），另一图层属性并入"""
+    inner = tmp_path / "inner_points.csv"
+    inner.write_text("name,lon,lat\np1,2,2\np2,8,8\n", encoding="utf-8")
+    poly = tmp_path / "poly_a.geojson"
+    gpd.GeoDataFrame(
+        {"region": ["A"]},
+        geometry=[box(0, 0, 10, 10)],
+        crs="EPSG:4326",
+    ).to_file(poly, driver="GeoJSON")
+
+    eng = _engine(tmp_path)
+    eng.load_data(str(inner))
+    res = eng.join_by_location(str(poly), predicate="within")
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == 2
+    assert "region" in res["layer"]["columns"]
+
+
+def test_join_by_location_crs_mismatch(tmp_path):
+    """CRS 不一致时报错"""
+    inner = tmp_path / "pts.csv"
+    inner.write_text("name,lon,lat\np1,2,2\n", encoding="utf-8")
+    other = tmp_path / "poly_3857.geojson"
+    gpd.GeoDataFrame(
+        {"name": ["X"]},
+        geometry=[box(0, 0, 10, 10)],
+        crs="EPSG:3857",
+    ).to_file(other, driver="GeoJSON")
+
+    eng = _engine(tmp_path)
+    eng.load_data(str(inner))
+    with pytest.raises(GisEngineError, match="CRS"):
+        eng.join_by_location(str(other))
+
+
+def test_voronoi_from_points(tmp_path):
+    """泰森多边形：点图层 → 面图层"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,0,0\n2,10,0\n3,5,10\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.voronoi()
+    assert res["status"] == "ok"
+    assert res["layer"]["geometry_type"] in ("Polygon", "MultiPolygon")
+    assert res["layer"]["rows"] >= 3
+
+
+def test_voronoi_requires_points(tmp_path):
+    """非点图层 voronoi 报错"""
+    poly = tmp_path / "poly.geojson"
+    gpd.GeoDataFrame(
+        {"name": ["A"]},
+        geometry=[box(0, 0, 10, 10)],
+        crs="EPSG:4326",
+    ).to_file(poly, driver="GeoJSON")
+    eng = _engine(tmp_path)
+    eng.load_data(str(poly))
+    with pytest.raises(GisEngineError, match="点图层"):
+        eng.voronoi()
+
+
+def test_get_crs_and_set_crs(tmp_path):
+    """get_crs 返回坐标系；set_crs 重设声明；非法 CRS 报错"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+
+    info = eng.get_crs()
+    assert info["status"] == "ok"
+    assert info["epsg"] == 4326
+
+    res = eng.set_crs("EPSG:3857")
+    assert res["status"] == "ok"
+    assert eng.get_crs()["crs"] == "EPSG:3857"
+
+    with pytest.raises(GisEngineError, match="无效坐标系"):
+        eng.set_crs("NOT_A_CRS")
+
+
+def test_list_layers_snapshot(tmp_path):
+    """list_layers 返回会话状态快照"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    snap = eng.list_layers()
+    assert snap["status"] == "ok"
+    assert snap["has_layer"] is False
+
+    eng.load_data(str(pts))
+    eng.summarize("id", agg="count", output="s.csv")
+    snap = eng.list_layers()
+    assert snap["has_layer"] is True
+    assert snap["layer"]["rows"] == 1
+    assert "s.csv" in snap["outputs"]
+    assert snap["output_paths"]
+    assert snap["out_dir"]
+
+
+# ── P1 新工具：field_statistics / unique_values / transform_coords / render_map ──
+
+def test_field_statistics(tmp_path):
+    """字段统计：数值列返回 count/mean/min/max/missing"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,val,lon,lat\n1,10,116,39\n2,20,117,40\n3,,118,41\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.field_statistics("val")
+    assert res["status"] == "ok"
+    assert res["count"] == 2
+    assert res["mean"] == 15.0
+    assert res["min"] == 10
+    assert res["max"] == 20
+    assert res["missing"] == 1
+
+
+def test_field_statistics_missing_column(tmp_path):
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="列不存在"):
+        eng.field_statistics("nope")
+
+
+def test_unique_values(tmp_path):
+    """唯一取值：分类列去重"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("cat,lon,lat\nA,116,39\nB,117,40\nA,118,41\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.unique_values("cat")
+    assert res["status"] == "ok"
+    assert res["count"] == 2
+    assert set(res["values"]) == {"A", "B"}
+    assert res["truncated"] is False
+
+
+def test_transform_coords(tmp_path):
+    """重投影：EPSG:4326 → EPSG:3857，坐标值变化"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.transform_coords("EPSG:3857")
+    assert res["status"] == "ok"
+    assert eng.get_crs()["crs"] == "EPSG:3857"
+    with pytest.raises(GisEngineError, match="无效坐标系"):
+        eng.transform_coords("NOT_A_CRS")
+
+
+def test_render_map(tmp_path):
+    """渲染地图：输出 PNG"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n2,117,40\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.render_map(output="map.png")
+    assert res["status"] == "ok"
+    assert res["size_bytes"] > 0
+    assert (tmp_path / "out" / "map.png").is_file()
+
+
+def test_run_algorithm_dissolve(tmp_path):
+    """dissolve：按字段融合要素"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("cat,lon,lat\nA,116,39\nA,117,40\nB,118,41\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.run_algorithm("dissolve", {"field": "cat"})
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == 2
+
+
+def test_run_algorithm_centroids(tmp_path):
+    """centroids：要素质心"""
+    poly = tmp_path / "poly.geojson"
+    gpd.GeoDataFrame(
+        {"name": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
+    ).to_file(poly, driver="GeoJSON")
+    eng = _engine(tmp_path)
+    eng.load_data(str(poly))
+    res = eng.run_algorithm("centroids")
+    assert res["status"] == "ok"
+    assert res["layer"]["geometry_type"] == "Point"
+    assert res["layer"]["rows"] == 1
+
+
+def test_run_algorithm_unknown(tmp_path):
+    """未知算法报错（白名单边界）"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("id,lon,lat\n1,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="未知算法"):
+        eng.run_algorithm("evil_script")
+
+
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):

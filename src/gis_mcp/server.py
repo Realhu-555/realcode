@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--out-root",
-        default=default_out_root(),
-        help="产物输出目录（默认 <项目根>/data/gis_toolkit_out）",
+        default=None,
+        help="产物输出目录（默认 <项目根>/data/gis_toolkit_out/run-<时间戳>）",
     )
     parser.add_argument(
         "--allowed-roots",
@@ -65,6 +65,8 @@ def main(argv: list[str] | None = None) -> None:
         help="输入路径白名单（可多个，默认 <项目根>/data）",
     )
     args = parser.parse_args(argv)
+    if args.out_root is None:
+        args.out_root = tools.resolve_out_root()
     mcp = build_server(out_root=args.out_root, allowed_roots=args.allowed_roots)
     mcp.run(transport="stdio")
 

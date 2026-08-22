@@ -170,4 +170,183 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "join_by_location",
+            "description": (
+                "把当前图层与另一图层做空间连接：按空间关系（intersects/within/contains）"
+                "把另一图层的属性并入当前图层，结果成为新的当前图层。"
+                "常用于把 POI 归属到行政区、统计设施影响范围。两个图层 CRS 必须一致。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "other_path": {
+                        "type": "string",
+                        "description": "第二个数据文件路径（CSV / GeoJSON / zip），须在 data 白名单内",
+                    },
+                    "predicate": {
+                        "type": "string",
+                        "enum": ["intersects", "within", "contains"],
+                        "description": "空间关系：intersects 相交 / within 要素在另一图层要素内 / contains 包含另一图层要素",
+                    },
+                },
+                "required": ["other_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "voronoi",
+            "description": (
+                "对当前点图层生成泰森多边形（Voronoi），结果成为新的当前图层。"
+                "用于服务范围 / 商圈 / 站点覆盖划分。只支持点图层。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_crs",
+            "description": (
+                "查看当前图层的坐标系（CRS）：返回 authid（如 EPSG:4326）与描述。"
+                "空间叠加/连接前建议确认坐标系一致。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_crs",
+            "description": (
+                "重设当前图层坐标系（只改声明、不改坐标值，重投影另见工具）。"
+                "两个图层 CRS 不一致时，先统一坐标系再做叠加 / 连接。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "crs": {
+                        "type": "string",
+                        "description": "坐标系，如 EPSG:4326（WGS84 经纬度）或 EPSG:3857（Web 墨卡托）",
+                    }
+                },
+                "required": ["crs"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_layers",
+            "description": (
+                "查看当前会话状态：是否有图层、图层摘要（行数/字段/CRS/几何类型）、"
+                "已生成产物、产物路径、输出目录。任务开始时建议先确认状态。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "field_statistics",
+            "description": (
+                "对当前图层的数值列做字段统计：行数、均值、标准差、最小/最大值、缺失值数。"
+                "用于了解数据分布，决定是否适合分级/聚合。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "column": {"type": "string", "description": "数值列名"}
+                },
+                "required": ["column"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unique_values",
+            "description": (
+                "查看某列的唯一取值（最多返回 50 个）。用于了解分类列/枚举列的取值，"
+                "或确认某列是否适合作为分组列。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "column": {"type": "string", "description": "列名"}
+                },
+                "required": ["column"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "transform_coords",
+            "description": (
+                "把当前图层重投影到目标坐标系（变换坐标值，如 EPSG:4326 经纬度 → EPSG:3857 米制）。"
+                "结果成为新的当前图层。需要与其他图层做叠加/连接但 CRS 不一致时使用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_crs": {
+                        "type": "string",
+                        "description": "目标坐标系，如 EPSG:3857 / EPSG:32650",
+                    }
+                },
+                "required": ["target_crs"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_map",
+            "description": (
+                "把当前图层渲染成一张地图 PNG（默认样式：面淡色填充、点/线着色），"
+                "保存到输出目录。用于快速查看当前图层全貌。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "output": {"type": "string", "description": "产物文件名，如 map.png"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_algorithm",
+            "description": (
+                "运行白名单内的 Processing 空间算法，结果成为新的当前图层。"
+                "当前支持：dissolve（按字段融合要素）、centroids（生成要素质心点）、"
+                "convexhull（每要素凸包）。只开放白名单算法，不执行任意脚本。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "algorithm": {
+                        "type": "string",
+                        "enum": ["dissolve", "centroids", "convexhull"],
+                        "description": "算法名",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "算法参数：dissolve 传 {\"field\": \"字段名\"}；centroids/convexhull 可省略",
+                        "properties": {
+                            "field": {"type": "string", "description": "dissolve 的分组字段名"}
+                        },
+                    },
+                },
+                "required": ["algorithm"],
+            },
+        },
+    },
 ]

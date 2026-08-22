@@ -508,6 +508,189 @@ def tool_save_layer(path: str) -> dict:
     return {"ok": True}
 
 
+def tool_join_by_location(other_path: str, predicate: str = "intersects") -> dict:
+    layer = _require_layer()
+    other = _load_layer(other_path)
+    # native:joinattributesbylocation 的 PREDICATE 数字定义（QGIS 3.40 实测）
+    # 0 intersect / 1 contain / 2 equal / 3 touch / 4 overlap / 5 are within / 6 cross
+    pred_map = {"intersects": 0, "within": 5, "contains": 1}
+    if predicate not in pred_map:
+        raise RuntimeError(f"predicate 必须是 intersects/within/contains，收到: {predicate}")
+    result = processing.run(
+        "native:joinattributesbylocation",
+        {
+            "INPUT": layer,
+            "JOIN": other,
+            "PREDICATE": [pred_map[predicate]],
+            "METHOD": 0,
+            "DISCARD_NONMATCHING": True,
+            "OUTPUT": "memory:",
+        },
+    )["OUTPUT"]
+    if not result.isValid():
+        raise RuntimeError("空间连接失败：结果图层无效")
+    STATE["layer"] = result
+    return _result(
+        f"空间连接完成（predicate={predicate}），结果 {result.featureCount()} 行"
+    )
+
+
+def tool_voronoi() -> dict:
+    layer = _require_layer()
+    result = processing.run(
+        "native:voronoipolygons",
+        {"INPUT": layer, "BUFFER": 0.0, "OUTPUT": "memory:"},
+    )["OUTPUT"]
+    if not result.isValid():
+        raise RuntimeError("泰森多边形生成失败：结果图层无效")
+    STATE["layer"] = result
+    return _result(f"已生成 {result.featureCount()} 个泰森多边形")
+
+
+def tool_get_crs() -> dict:
+    layer = _require_layer()
+    crs = layer.crs()
+    return {
+        "status": "ok",
+        "crs": crs.authid() or crs.toWkt(),
+        "epsg": crs.postgisSrid() if crs.isValid() else None,
+        "description": crs.description() if crs.isValid() else None,
+    }
+
+
+def tool_set_crs(crs: str) -> dict:
+    layer = _require_layer()
+    new_crs = QgsCoordinateReferenceSystem(crs)
+    if not new_crs.isValid():
+        raise RuntimeError(f"无效坐标系: {crs!r}（示例 EPSG:4326 / EPSG:3857）")
+    layer.setCrs(new_crs)
+    return _result(f"已设置坐标系为 {new_crs.authid() or new_crs.toWkt()}")
+
+
+def tool_list_layers() -> dict:
+    layer = STATE.get("layer")
+    return {
+        "status": "ok",
+        "has_layer": layer is not None,
+        "layer": _summary(layer) if layer is not None else None,
+        "out_dir": STATE.get("out_dir"),
+    }
+
+
+def tool_field_statistics(column: str) -> dict:
+    layer = _require_layer()
+    if column not in _field_names(layer):
+        raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
+    nums: list[float] = []
+    missing = 0
+    for feat in layer.getFeatures():
+        v = feat[column]
+        if v is None:
+            missing += 1
+            continue
+        try:
+            nums.append(float(v))
+        except (TypeError, ValueError):
+            missing += 1
+    if not nums:
+        raise RuntimeError(f"列 {column} 没有可统计的数值")
+    n = len(nums)
+    mean = sum(nums) / n
+    var = sum((x - mean) ** 2 for x in nums) / n
+    return {
+        "status": "ok",
+        "column": column,
+        "count": n,
+        "mean": round(mean, 6),
+        "std": round(var**0.5, 6),
+        "min": min(nums),
+        "max": max(nums),
+        "missing": missing,
+    }
+
+
+def tool_unique_values(column: str) -> dict:
+    layer = _require_layer()
+    if column not in _field_names(layer):
+        raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
+    values = sorted(
+        {str(f[column]) for f in layer.getFeatures() if f[column] is not None}
+    )
+    truncated = len(values) > 50
+    return {
+        "status": "ok",
+        "column": column,
+        "count": len(values),
+        "values": values[:50],
+        "truncated": truncated,
+    }
+
+
+def tool_transform_coords(target_crs: str) -> dict:
+    layer = _require_layer()
+    new_crs = QgsCoordinateReferenceSystem(target_crs)
+    if not new_crs.isValid():
+        raise RuntimeError(
+            f"无效坐标系: {target_crs!r}（示例 EPSG:3857 / EPSG:32650）"
+        )
+    result = processing.run(
+        "native:reprojectlayer",
+        {"INPUT": layer, "TARGET_CRS": new_crs, "OUTPUT": "memory:"},
+    )["OUTPUT"]
+    if not result.isValid():
+        raise RuntimeError("重投影失败：结果图层无效")
+    STATE["layer"] = result
+    return _result(f"已重投影到 {new_crs.authid() or new_crs.toWkt()}")
+
+
+def tool_render_map(output: str = "map.png") -> dict:
+    layer = _require_layer()
+    out_path = os.path.join(STATE["out_dir"], output)
+    settings = QgsMapSettings()
+    settings.setLayers([layer])
+    settings.setExtent(layer.extent())
+    settings.setOutputSize(QSize(1000, 800))
+    settings.setBackgroundColor(QColor(255, 255, 255))
+    job = QgsMapRendererParallelJob(settings)
+    job.start()
+    job.waitForFinished()
+    image = job.renderedImage()
+    if not image.save(out_path, "PNG"):
+        raise RuntimeError(f"渲染保存失败: {out_path}")
+    return _result(
+        f"已保存地图 {output}", size_bytes=os.path.getsize(out_path)
+    )
+
+
+def tool_run_algorithm(algorithm: str, params: dict | None = None) -> dict:
+    layer = _require_layer()
+    params = params or {}
+    alg_map = {
+        "dissolve": ("native:dissolve", "dissolve"),
+        "centroids": ("native:centroids", "centroids"),
+        "convexhull": ("native:convexhull", "convexhull"),
+    }
+    if algorithm not in alg_map:
+        raise RuntimeError(
+            f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）"
+        )
+    alg_id, label = alg_map[algorithm]
+    if algorithm == "dissolve":
+        field = params.get("field")
+        if not field or field not in _field_names(layer):
+            raise RuntimeError(
+                f"dissolve 需要有效的 field 参数（可用列: {_field_names(layer)}）"
+            )
+        alg_params = {"INPUT": layer, "FIELD": [field], "OUTPUT": "memory:"}
+    else:
+        alg_params = {"INPUT": layer, "OUTPUT": "memory:"}
+    result = processing.run(alg_id, alg_params)["OUTPUT"]
+    if not result.isValid():
+        raise RuntimeError(f"{label} 失败：结果图层无效")
+    STATE["layer"] = result
+    return _result(f"{label} 完成，结果 {result.featureCount()} 行")
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -518,6 +701,16 @@ HANDLERS = {
     "summarize": tool_summarize,
     "export_geojson": tool_export_geojson,
     "save_layer": tool_save_layer,
+    "join_by_location": tool_join_by_location,
+    "voronoi": tool_voronoi,
+    "get_crs": tool_get_crs,
+    "set_crs": tool_set_crs,
+    "list_layers": tool_list_layers,
+    "field_statistics": tool_field_statistics,
+    "unique_values": tool_unique_values,
+    "transform_coords": tool_transform_coords,
+    "render_map": tool_render_map,
+    "run_algorithm": tool_run_algorithm,
 }
 
 

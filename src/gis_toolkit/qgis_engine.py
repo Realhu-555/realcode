@@ -127,6 +127,9 @@ class QgsEngine:
         if result.get("layer") is not None:
             self._layer = result["layer"]
         result["outputs"] = list(self.outputs)
+        result["output_paths"] = [
+            str((self.out_dir / o).resolve()) for o in self.outputs
+        ]
         return result
 
     # ── 工具实现（签名与 GisEngine 完全一致）──
@@ -202,13 +205,76 @@ class QgsEngine:
         self.outputs.append(name)
         return self._merge(result)
 
+    def join_by_location(self, other_path: str, predicate: str = "intersects") -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        resolved = _check_input_path(other_path, self._roots)
+        return self._merge(
+            self._call(
+                "join_by_location",
+                {"other_path": str(resolved), "predicate": predicate},
+            )
+        )
+
+    def voronoi(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("voronoi"))
+
+    def get_crs(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._call("get_crs")
+
+    def set_crs(self, crs: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("set_crs", {"crs": crs}))
+
+    def list_layers(self) -> dict:
+        return self._merge(self._call("list_layers"))
+
+    def field_statistics(self, column: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._call("field_statistics", {"column": column})
+
+    def unique_values(self, column: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._call("unique_values", {"column": column})
+
+    def transform_coords(self, target_crs: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call("transform_coords", {"target_crs": target_crs})
+        )
+
+    def render_map(self, output: str = "map.png") -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(output)
+        result = self._call("render_map", {"output": name})
+        self.outputs.append(name)
+        return self._merge(result)
+
+    def run_algorithm(self, algorithm: str, params: dict | None = None) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call("run_algorithm", {"algorithm": algorithm, "params": params or {}})
+        )
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]
+        final_outputs = declared or list(self.outputs)
         return {
             "status": "finished",
             "message": "任务完成",
-            "outputs": declared or list(self.outputs),
+            "outputs": final_outputs,
+            "output_paths": [str((self.out_dir / o).resolve()) for o in final_outputs],
             "explanation": summary,
         }
 

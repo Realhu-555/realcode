@@ -169,3 +169,130 @@ def test_whitelist_rejects_outside(tmp_path, point_csv, qgis_engine):
     (tmp_path / "allowed").mkdir(exist_ok=True)
     with pytest.raises(GisEngineError, match="白名单"):
         qgis_engine.load_data(point_csv)
+
+
+# ── P0 新工具：join_by_location / voronoi / crs / list_layers ──────────
+
+def test_join_by_location_matches_geopandas(tmp_path, qgis_engine):
+    """空间连接（within）与 geopandas 对照：行数与并入属性一致"""
+    inner = tmp_path / "inner_points.csv"
+    inner.write_text("name,lon,lat\np1,2,2\np2,8,8\np3,50,50\n", encoding="utf-8")
+    poly = tmp_path / "poly_a.geojson"
+    gpd.GeoDataFrame(
+        {"region": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
+    ).to_file(poly, driver="GeoJSON")
+
+    # geopandas 对照（CSV 读出来是 DataFrame，显式构造点）
+    gpd_pts = gpd.GeoDataFrame(
+        {"name": ["p1", "p2", "p3"]},
+        geometry=gpd.points_from_xy([2, 8, 50], [2, 8, 50]),
+        crs="EPSG:4326",
+    )
+    gpd_poly = gpd.read_file(poly)
+    g = gpd.sjoin(gpd_pts, gpd_poly, how="inner", predicate="within")
+
+    qgis_engine.load_data(str(inner))
+    res = qgis_engine.join_by_location(str(poly), predicate="within")
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == len(g)
+    assert "region" in res["layer"]["columns"]
+
+
+def test_voronoi(point_csv, qgis_engine):
+    """泰森多边形：点图层 → 面图层"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.voronoi()
+    assert res["status"] == "ok"
+    assert res["layer"]["geometry_type"] == "Polygon"
+    assert res["layer"]["rows"] >= 3
+
+
+def test_get_crs_and_set_crs(point_csv, qgis_engine):
+    """get_crs / set_crs"""
+    qgis_engine.load_data(point_csv)
+    info = qgis_engine.get_crs()
+    assert info["epsg"] == 4326
+    res = qgis_engine.set_crs("EPSG:3857")
+    assert res["status"] == "ok"
+    assert qgis_engine.get_crs()["crs"] == "EPSG:3857"
+    with pytest.raises(GisEngineError, match="无效坐标系"):
+        qgis_engine.set_crs("NOT_A_CRS")
+
+
+def test_list_layers(point_csv, qgis_engine):
+    """list_layers 状态快照"""
+    snap = qgis_engine.list_layers()
+    assert snap["status"] == "ok"
+    assert snap["has_layer"] is False
+    qgis_engine.load_data(point_csv)
+    snap = qgis_engine.list_layers()
+    assert snap["has_layer"] is True
+    assert snap["layer"]["rows"] == 3
+    assert snap["out_dir"]
+
+
+# ── P1 新工具：field_statistics / unique_values / transform_coords / render_map ──
+
+def test_field_statistics_matches_geopandas(point_csv, qgis_engine):
+    """字段统计与 geopandas 对照（count/mean/min/max）"""
+    df = pd.read_csv(point_csv)
+    expected = {
+        "count": int(df["gdp"].count()),
+        "mean": float(df["gdp"].mean()),
+        "min": float(df["gdp"].min()),
+        "max": float(df["gdp"].max()),
+    }
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.field_statistics("gdp")
+    assert res["status"] == "ok"
+    assert res["count"] == expected["count"]
+    assert abs(res["mean"] - expected["mean"]) < 1e-6
+    assert abs(res["min"] - expected["min"]) < 1e-6
+    assert abs(res["max"] - expected["max"]) < 1e-6
+
+
+def test_unique_values(point_csv, qgis_engine):
+    """唯一取值"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.unique_values("province")
+    assert res["status"] == "ok"
+    assert res["count"] == 3
+    assert len(res["values"]) == 3
+
+
+def test_transform_coords(point_csv, qgis_engine):
+    """重投影：CRS 变为目标"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.transform_coords("EPSG:3857")
+    assert res["status"] == "ok"
+    assert qgis_engine.get_crs()["crs"] == "EPSG:3857"
+    with pytest.raises(GisEngineError, match="无效坐标系"):
+        qgis_engine.transform_coords("NOT_A_CRS")
+
+
+def test_render_map(point_csv, qgis_engine):
+    """渲染地图输出 PNG"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.render_map(output="map.png")
+    assert res["status"] == "ok"
+    assert res["size_bytes"] > 0
+    assert (qgis_engine.out_dir / "map.png").is_file()
+
+
+def test_run_algorithm_matches_geopandas(point_csv, qgis_engine):
+    """dissolve 与 geopandas 对照：行数一致"""
+    df = pd.read_csv(point_csv)
+    expected = df.groupby("province").ngroups
+
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.run_algorithm("dissolve", {"field": "province"})
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == expected
+
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.run_algorithm("centroids")
+    assert res["status"] == "ok"
+    assert res["layer"]["geometry_type"] in ("Point", "MultiPoint")
+
+    with pytest.raises(GisEngineError, match="未知算法"):
+        qgis_engine.run_algorithm("evil_script")

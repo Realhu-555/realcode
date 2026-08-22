@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +27,36 @@ from src.gis_toolkit.schemas import TOOL_SCHEMAS
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ALLOWED_ROOTS = [str(_PROJECT_ROOT / "data")]
 DEFAULT_OUT_ROOT = str(_PROJECT_ROOT / "data" / "gis_toolkit_out")
+
+
+def resolve_out_root(out_root: str | None = None) -> str:
+    """产物根目录：显式传入则原样使用；默认生成 run-<时间戳> 子目录隔离各次运行。
+
+    每次 MCP Server 启动（对应一次 dsh 连接）写入独立子目录，
+    避免多次运行的产物在共享根目录互相覆盖。
+    """
+    if out_root:
+        return out_root
+    base = Path(DEFAULT_OUT_ROOT)
+    run_dir = base / f"run-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return str(run_dir)
+
+
+def _warmup_matplotlib() -> None:
+    """预热 matplotlib 渲染栈，避免首个 choropleth/scatter 因字体/渲染初始化超时。"""
+    try:
+        import io
+
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(2, 2))
+        ax.plot([0, 1], [0, 1])
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png")
+        plt.close(fig)
+    except Exception:
+        pass
 
 
 class EngineManager:
@@ -44,10 +75,12 @@ class EngineManager:
     def get(self) -> GisEngine:
         """首次调用时创建引擎（懒加载），后续复用同一实例（Gate 1 单引擎）"""
         if self._engine is None:
-            self._engine = create_gis_engine(
+            engine = create_gis_engine(
                 out_dir=self._out_root,
                 allowed_roots=self._allowed_roots,
             )
+            _warmup_matplotlib()
+            self._engine = engine
         return self._engine
 
 
@@ -162,6 +195,96 @@ def _export_geojson(output: str) -> dict:
     return _get_manager().get().export_geojson(output=output)
 
 
+def _join_by_location(
+    other_path: str,
+    predicate: Literal["intersects", "within", "contains"] = "intersects",
+) -> dict:
+    """把另一图层按空间关系并入当前图层。
+
+    Args:
+        other_path: 第二个数据文件路径（CSV / GeoJSON / zip）。
+        predicate: 空间关系（intersects/within/contains）。
+    """
+    return _get_manager().get().join_by_location(
+        other_path=other_path, predicate=predicate
+    )
+
+
+def _voronoi() -> dict:
+    """对当前点图层生成泰森多边形。"""
+    return _get_manager().get().voronoi()
+
+
+def _get_crs() -> dict:
+    """查看当前图层坐标系。"""
+    return _get_manager().get().get_crs()
+
+
+def _set_crs(crs: str) -> dict:
+    """重设当前图层坐标系（不重投影）。
+
+    Args:
+        crs: 坐标系，如 EPSG:4326 或 EPSG:3857。
+    """
+    return _get_manager().get().set_crs(crs=crs)
+
+
+def _list_layers() -> dict:
+    """查看当前会话状态快照。"""
+    return _get_manager().get().list_layers()
+
+
+def _field_statistics(column: str) -> dict:
+    """对数值列做字段统计。
+
+    Args:
+        column: 数值列名。
+    """
+    return _get_manager().get().field_statistics(column=column)
+
+
+def _unique_values(column: str) -> dict:
+    """查看某列唯一取值（最多 50 个）。
+
+    Args:
+        column: 列名。
+    """
+    return _get_manager().get().unique_values(column=column)
+
+
+def _transform_coords(target_crs: str) -> dict:
+    """把当前图层重投影到目标坐标系。
+
+    Args:
+        target_crs: 目标坐标系，如 EPSG:3857。
+    """
+    return _get_manager().get().transform_coords(target_crs=target_crs)
+
+
+def _render_map(output: str = "map.png") -> dict:
+    """把当前图层渲染成 PNG 地图。
+
+    Args:
+        output: 产物文件名，如 map.png。
+    """
+    return _get_manager().get().render_map(output=output)
+
+
+def _run_algorithm(
+    algorithm: Literal["dissolve", "centroids", "convexhull"],
+    params: dict | None = None,
+) -> dict:
+    """运行白名单 Processing 空间算法。
+
+    Args:
+        algorithm: 算法名（dissolve/centroids/convexhull）。
+        params: 算法参数，如 {"field": "省份"}。
+    """
+    return _get_manager().get().run_algorithm(
+        algorithm=algorithm, params=params or {}
+    )
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -182,6 +305,16 @@ _HANDLERS = {
     "scatter_plot": _scatter_plot,
     "summarize": _summarize,
     "export_geojson": _export_geojson,
+    "join_by_location": _join_by_location,
+    "voronoi": _voronoi,
+    "get_crs": _get_crs,
+    "set_crs": _set_crs,
+    "list_layers": _list_layers,
+    "field_statistics": _field_statistics,
+    "unique_values": _unique_values,
+    "transform_coords": _transform_coords,
+    "render_map": _render_map,
+    "run_algorithm": _run_algorithm,
     "finish": _finish,
 }
 

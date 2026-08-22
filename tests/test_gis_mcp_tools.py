@@ -1,12 +1,14 @@
 """Gate 1: gis_mcp 工具注册与安全边界（FastMCP 实例级验证，无需 stdio 子进程）"""
 
+from pathlib import Path
+
 import pytest
 from mcp.server.fastmcp import FastMCP
 from src.gis_mcp import tools
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 
 EXPECTED_TOOL_NAMES = [f"gis_{s['function']['name']}" for s in TOOL_SCHEMAS]
-EXPECTED_TOOL_COUNT = 9
+EXPECTED_TOOL_COUNT = 19
 
 
 @pytest.fixture()
@@ -90,3 +92,12 @@ async def test_engine_init_with_defaults(tmp_path):
     assert mgr._allowed_roots  # 默认 data 白名单非空
     assert mgr._out_root
     assert mgr.get() is not None
+
+
+def test_resolve_out_root_run_dir(tmp_path, monkeypatch):
+    """默认产物目录生成 run-<时间戳> 子目录（隔离各次运行）；显式路径原样使用"""
+    monkeypatch.setattr(tools, "DEFAULT_OUT_ROOT", str(tmp_path / "base"))
+    run_dir = tools.resolve_out_root()
+    assert Path(run_dir).name.startswith("run-")
+    assert Path(run_dir).is_dir()
+    assert tools.resolve_out_root(str(tmp_path / "custom")) == str(tmp_path / "custom")
