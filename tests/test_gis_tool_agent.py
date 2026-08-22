@@ -193,6 +193,52 @@ def test_prepare_messages_injects_summary_and_window(tmp_path):
     assert msgs[-1]["role"] == "user"
 
 
+def _round_trip_messages(n_rounds: int) -> list[dict]:
+    """构造 n 轮 user → assistant(tool_calls) → tool 的消息序列"""
+    msgs: list[dict] = []
+    for i in range(n_rounds):
+        msgs.append({"role": "user", "content": f"u{i}"})
+        msgs.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": f"c{i}", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+                ],
+            }
+        )
+        msgs.append({"role": "tool", "tool_call_id": f"c{i}", "content": "ok"})
+    return msgs
+
+
+def _assert_no_orphan_tool(messages: list[dict]) -> None:
+    """每个 role=tool 消息前一条必须是 assistant（无孤立 tool）"""
+    for j, m in enumerate(messages):
+        if m.get("role") == "tool":
+            assert j > 0 and messages[j - 1].get("role") == "assistant", (
+                f"孤立 tool 消息 @{j}"
+            )
+
+
+def test_history_window_aligned_no_orphan_tool(tmp_path):
+    """历史窗口起点落在 tool 消息时，向前对齐（修复 400 错误）"""
+    msgs = _round_trip_messages(15)  # 45 条，窗口 40 条起点落在第 2 轮 tool 上
+    assert len(msgs) == 45
+    agent = _agent(tmp_path, [])
+    window = agent._history_window(msgs)
+    assert window[0]["role"] != "tool"
+    _assert_no_orphan_tool(window)
+
+
+def test_prepare_messages_no_orphan_tool(tmp_path):
+    """构造消息时历史窗口无孤立 tool（复现真实会话场景）"""
+    sess = _session_with_history(tmp_path, 0)
+    sess.messages = _round_trip_messages(15)
+    agent = _agent(tmp_path, [])
+    out = agent._prepare_messages("继续", None, sess, "")
+    _assert_no_orphan_tool(out)
+
+
 # ── T8 思考展示 / T9 subagent 预留 ────────────────────
 
 def test_run_stream_emits_tool_reason(tmp_path):

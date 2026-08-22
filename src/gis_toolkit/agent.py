@@ -375,7 +375,7 @@ class GisToolAgent:
 
         messages: list[dict] = [{"role": "system", "content": system_content}]
         if session is not None and getattr(session, "messages", None):
-            messages.extend(session.messages[-HISTORY_WINDOW_MESSAGES:])
+            messages.extend(self._history_window(session.messages))
         messages.append({"role": "user", "content": user_content})
         return messages
 
@@ -392,7 +392,7 @@ class GisToolAgent:
                 session.summary = new_summary
         except Exception:
             return  # 摘要失败不阻断会话，下次再试
-        session.messages = session.messages[-HISTORY_WINDOW_MESSAGES:]
+        session.messages = self._history_window(session.messages)
 
     def _roll_summary(self, old_summary: str, recent: list[dict]) -> str:
         """把旧摘要与最近对话合并为新的简洁摘要"""
@@ -415,6 +415,19 @@ class GisToolAgent:
         ]
         resp = self.llm.chat(prompt, agent_type="summary", model_id=self.model_id)
         return (resp.get("content") or "").strip()
+
+    def _history_window(self, messages: list[dict]) -> list[dict]:
+        """取最近 N 条历史消息，起点对齐到非 tool 消息。
+
+        tool 消息必须紧跟带 tool_calls 的 assistant 消息；若窗口从中间切断
+        落在 tool 消息上，会造成 role=tool 无前导的 400 错误，这里向前扩展对齐。
+        """
+        if not messages:
+            return []
+        start = max(0, len(messages) - HISTORY_WINDOW_MESSAGES)
+        while start > 0 and messages[start].get("role") == "tool":
+            start -= 1
+        return messages[start:]
 
     def execute_subtask(self, task: str, context: dict | None = None) -> dict:
         """T9：子任务执行器接口预留。
