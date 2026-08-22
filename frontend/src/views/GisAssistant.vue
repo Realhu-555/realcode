@@ -129,6 +129,9 @@ async function restoreMessages(detail: GisSessionDetail) {
     }
     messages.value.push({ role: "assistant", content: r.final, items })
   }
+  // 恢复完成后定位到最新一条对话（DOM 更新后再滚动）
+  await nextTick()
+  if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
 }
 
 async function removeSession(s: GisSessionSummary, e: Event) {
