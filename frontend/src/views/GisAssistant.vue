@@ -199,12 +199,14 @@ async function onSubmit() {
   request.value = ""
   const msg: ChatMessage = { role: "assistant", content: "", items: [] }
   messages.value.push(msg)
+  // 必须持有 reactive 代理引用：直接改 msg 原始对象不会触发 Vue 渲染
+  const liveMsg = messages.value[messages.value.length - 1]
   try {
     await streamGisAssistant(
       ask,
       dataFile.value || undefined,
       sessionId.value || undefined,
-      (ev) => handleStreamEvent(msg, ev),
+      (ev) => handleStreamEvent(liveMsg, ev),
     )
     message.success("完成")
   } catch (err) {
