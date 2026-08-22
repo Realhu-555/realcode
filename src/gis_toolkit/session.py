@@ -17,6 +17,7 @@ from src.gis_toolkit.engine import create_gis_engine
 
 SESSION_TTL_SECONDS = 30 * 60  # 内存中空闲 30 分钟过期（持久化保留）
 SESSIONS_DB = "data/gis_sessions.json"
+SESSION_MESSAGE_CAP = 200  # 持久化历史上限（超出丢弃最旧轮次，防止 JSON 无限膨胀）
 
 
 class GisSession:
@@ -27,6 +28,7 @@ class GisSession:
         self.out_dir = Path(out_dir)
         self.engine = create_gis_engine(out_dir=str(self.out_dir), allowed_roots=["data"])
         self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
+        self.summary: str = ""  # 滚动摘要（超出上下文阈值时由 agent 生成）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）
         self.rounds: list[dict] = []  # 每轮展示数据（前端恢复用）
         self.title = title
@@ -39,10 +41,14 @@ class GisSession:
         self.last_active = time.time()
 
     def append_round(self, messages: list[dict], user_request: str, final: str, result: dict) -> None:
-        """本轮结束后追加历史：messages 截断，rounds 记录展示数据，图层快照"""
+        """本轮结束后追加历史：rounds 记录展示数据，图层快照。
+
+        对话原文全量保留（上限 SESSION_MESSAGE_CAP），是否压缩由 agent 的
+        滚动摘要策略决定（_prepare_messages 只取最近窗口）。
+        """
         self.messages.extend(messages)
-        if len(self.messages) > 40:
-            self.messages = self.messages[-30:]
+        if len(self.messages) > SESSION_MESSAGE_CAP:
+            self.messages = self.messages[-SESSION_MESSAGE_CAP:]
         self.history.append({"user_request": user_request, "final": final})
         if not self.title or self.title == "新会话":
             self.title = user_request[:24]
@@ -90,6 +96,7 @@ class GisSession:
             "created_at": self.created_at,
             "updated_at": self.last_active,
             "messages": self.messages,
+            "summary": self.summary,
             "history": self.history,
             "rounds": self.rounds,
             "has_layer": self.has_layer,
@@ -104,6 +111,7 @@ class GisSession:
         sess.created_at = data.get("created_at", time.time())
         sess.last_active = data.get("updated_at", time.time())
         sess.messages = data.get("messages", [])
+        sess.summary = data.get("summary", "")
         sess.history = data.get("history", [])
         sess.rounds = data.get("rounds", [])
         sess.has_layer = data.get("has_layer", False)

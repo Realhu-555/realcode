@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     minimax_api_key: str = ""
     openai_api_key: str = ""
+    tavily_api_key: str = ""
 
     # ── 沙箱配置 ──────────────────────────────────────
     sandbox_timeout: int = 60

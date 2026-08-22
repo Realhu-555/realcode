@@ -8,8 +8,8 @@ from src.utils.config import Settings
 
 def test_settings_default_values():
     """默认配置值正确"""
-    with patch.dict(os.environ, {}, clear=False):
-        settings = Settings()
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(_env_file=None)  # 排除 .env，只测代码默认值
         assert settings.sandbox_timeout == 60
         assert settings.sandbox_max_memory == "512m"
         assert settings.log_level == "INFO"

@@ -9,9 +9,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.gis_toolkit.checker import check_outputs
 from src.gis_toolkit.engine import GisEngine, GisEngineError, _jsonable
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 from src.llm.provider import LLMProvider
+
+PRODUCT_TOOLS = {"choropleth", "scatter_plot", "render_map", "summarize", "export_geojson"}
+COMPACT_THRESHOLD_TOKENS = 24000  # 会话历史估算 token 超过该值触发滚动摘要
+HISTORY_WINDOW_MESSAGES = 40  # 发给 LLM 的最近消息条数（≈ 最近 5~10 轮）
 
 SYSTEM_PROMPT = """你是 GIS 智能助手，通过工具调用操作 GIS 引擎，完成用户的 GIS 分析任务。
 
@@ -36,12 +41,16 @@ class GisToolAgent:
         self,
         engine: GisEngine | None = None,
         max_steps: int = 12,
+        max_check_retries: int = 3,
         agent_type: str = "gis_assistant",
         model_id: str | None = None,
     ) -> None:
         self.engine = engine or GisEngine()
         self.llm = LLMProvider()
         self.max_steps = max_steps
+        self.max_check_retries = max_check_retries
+        self._check_failures: dict[str, int] = {}
+        self.sub_agent = None  # T9：子任务执行器预留（默认 None，实现后注入）
         self.agent_type = agent_type
         self.model_id = model_id
 
@@ -117,7 +126,7 @@ class GisToolAgent:
                 except json.JSONDecodeError:
                     args = {}
                 try:
-                    result = self._execute(name, args)
+                    result = self._execute_with_check(name, args)
                 except GisEngineError as exc:
                     result = {"status": "error", "error": str(exc)}
                 except Exception as exc:  # 引擎兜底，防止单工具异常中断整个会话
@@ -147,6 +156,7 @@ class GisToolAgent:
                 final,
                 {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
             )
+            self._maybe_roll_summary(session)
 
         return self._wrap(
             trajectory,
@@ -211,6 +221,11 @@ class GisToolAgent:
                 break
 
             messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+            if content and content.strip():
+                self._emit(
+                    on_event,
+                    {"type": "tool_reason", "step": step, "reason": content.strip()},
+                )
             finished = False
             for tc in tool_calls:
                 fn = tc.get("function") or {}
@@ -225,7 +240,7 @@ class GisToolAgent:
                     on_event, {"type": "tool_call", "step": step, "tool": name, "args": args}
                 )
                 try:
-                    result = self._execute(name, args)
+                    result = self._execute_with_check(name, args)
                 except GisEngineError as exc:
                     result = {"status": "error", "error": str(exc)}
                 except Exception as exc:  # 引擎兜底，防止单工具异常中断整个会话
@@ -262,6 +277,7 @@ class GisToolAgent:
                     final,
                     {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
                 )
+                self._maybe_roll_summary(session)
             self._emit(
                 on_event,
                 {
@@ -294,6 +310,8 @@ class GisToolAgent:
         demo_hint = self._demo_file_hint()
         if demo_hint:
             system_content += "\n\n" + demo_hint
+        if session is not None and getattr(session, "summary", ""):
+            system_content += f"\n\n## 历史会话摘要\n{session.summary}"
         if ltm_hint:
             system_content += "\n\n" + ltm_hint
 
@@ -310,9 +328,59 @@ class GisToolAgent:
 
         messages: list[dict] = [{"role": "system", "content": system_content}]
         if session is not None and getattr(session, "messages", None):
-            messages.extend(session.messages)
+            messages.extend(session.messages[-HISTORY_WINDOW_MESSAGES:])
         messages.append({"role": "user", "content": user_content})
         return messages
+
+    def _maybe_roll_summary(self, session) -> None:
+        """会话历史超出 token 阈值时，用 LLM 生成滚动摘要并裁剪历史窗口"""
+        est_tokens = (
+            sum(len(str(m.get("content") or "")) for m in session.messages) // 3
+        )
+        if est_tokens <= COMPACT_THRESHOLD_TOKENS:
+            return
+        try:
+            new_summary = self._roll_summary(session.summary, session.messages[-6:])
+            if new_summary:
+                session.summary = new_summary
+        except Exception:
+            return  # 摘要失败不阻断会话，下次再试
+        session.messages = session.messages[-HISTORY_WINDOW_MESSAGES:]
+
+    def _roll_summary(self, old_summary: str, recent: list[dict]) -> str:
+        """把旧摘要与最近对话合并为新的简洁摘要"""
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "你是 GIS 助手的会话摘要器。把旧摘要与最近对话合并为新的简洁摘要，"
+                    "必须保留：已完成的产物文件名、当前图层状态、关键数值结论、用户偏好。"
+                    "不超过 300 字，直接输出摘要。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"旧摘要:\n{old_summary or '（无）'}\n\n"
+                    f"最近对话:\n{json.dumps(recent, ensure_ascii=False, default=str)[:6000]}"
+                ),
+            },
+        ]
+        resp = self.llm.chat(prompt, agent_type="summary", model_id=self.model_id)
+        return (resp.get("content") or "").strip()
+
+    def execute_subtask(self, task: str, context: dict | None = None) -> dict:
+        """T9：子任务执行器接口预留。
+
+        当任务复杂、需要隔离/并行/权限边界时，注入实现（如独立 checker agent、
+        大数据量分析 worker）。当前默认返回 unsupported，不影响主循环。
+        """
+        if self.sub_agent is not None:
+            return self.sub_agent(task=task, context=context or {})
+        return {
+            "status": "unsupported",
+            "error": "子任务执行器未配置（sub_agent 为 None）",
+        }
 
     @staticmethod
     def _emit(on_event, event: dict) -> None:
@@ -327,6 +395,38 @@ class GisToolAgent:
         if impl is None:
             raise GisEngineError(f"未知工具: {name}")
         return impl(**args)
+
+    def _execute_with_check(self, name: str, args: dict) -> dict:
+        """执行工具 + 产物校验回环。
+
+        产生产物的工具（choropleth/scatter/render/summarize/export）执行后自动校验：
+        - 校验失败 → 返回 status=error（附校验原因），让 LLM 修正参数重试；
+        - 同一工具累计失败 ≥ max_check_retries 次 → 强制终止该工具，防止死循环。
+        """
+        result = self._execute(name, args)
+        if result.get("status") != "ok" or name not in PRODUCT_TOOLS:
+            return result
+        errors = check_outputs(result)
+        if not errors:
+            self._check_failures.pop(name, None)
+            return result
+
+        self._check_failures[name] = self._check_failures.get(name, 0) + 1
+        if self._check_failures[name] >= self.max_check_retries:
+            self._check_failures.pop(name, None)
+            return {
+                "status": "error",
+                "error": (
+                    f"产物校验连续失败 {self.max_check_retries} 次，请停止该工具，"
+                    f"检查参数或改用其他方法。校验错误: {'；'.join(errors)}"
+                ),
+                "check_failed": errors,
+            }
+        return {
+            "status": "error",
+            "error": f"产物校验失败，请修正参数后重试: {'；'.join(errors)}",
+            "check_failed": errors,
+        }
 
     @staticmethod
     def _wrap(

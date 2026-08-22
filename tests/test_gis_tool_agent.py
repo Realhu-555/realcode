@@ -4,6 +4,7 @@ import json
 
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import GisEngine
+from src.gis_toolkit.session import GisSession
 
 
 class FakeLLM:
@@ -28,6 +29,13 @@ class FakeLLM:
             for ch in content:
                 on_text_delta(ch)
         return resp
+
+    def chat(self, messages, agent_type=None, model_id=None):
+        """纯对话调用（滚动摘要等场景）"""
+        self.calls.append(list(messages))
+        if self.responses:
+            return self.responses.pop(0)
+        return {"content": "会话摘要", "tool_calls": None}
 
     def _next(self):
         if not self.responses:
@@ -54,6 +62,176 @@ def _point_csv(tmp_path):
     p = tmp_path / "points.csv"
     p.write_text("province,gdp,lon,lat\n北京,100,116.4,39.9\n上海,200,121.5,31.2\n", encoding="utf-8")
     return str(p)
+
+
+# ── T6 checker 校验回环 ──────────────────────────────
+
+def _empty_png(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir(exist_ok=True)
+    p = out / "map.png"
+    p.write_bytes(b"")  # 空 PNG，校验必失败
+    return p
+
+
+def test_check_failure_returns_error_and_escalates(tmp_path):
+    """产物校验失败 → error 回给 LLM；连续失败超限 → 强制提示停止"""
+    agent = _agent(tmp_path, [])
+    bad = _empty_png(tmp_path)
+    agent.engine.render_map = lambda output="map.png": {
+        "status": "ok",
+        "message": "ok",
+        "outputs": ["map.png"],
+        "output_paths": [str(bad)],
+    }
+    r1 = agent._execute_with_check("render_map", {"output": "map.png"})
+    assert r1["status"] == "error"
+    assert "请修正参数后重试" in r1["error"]
+    assert r1["check_failed"]
+
+    agent._execute_with_check("render_map", {"output": "map.png"})
+    r3 = agent._execute_with_check("render_map", {"output": "map.png"})
+    assert "连续失败" in r3["error"]
+
+    # 产物恢复正常后，校验通过并重置计数
+    good = tmp_path / "out" / "map.png"
+    good.write_bytes(b"\x89PNG" + b"\x00" * 100)
+    agent.engine.render_map = lambda output="map.png": {
+        "status": "ok",
+        "message": "ok",
+        "outputs": ["map.png"],
+        "output_paths": [str(good)],
+    }
+    assert agent._execute_with_check("render_map", {"output": "map.png"})["status"] == "ok"
+    assert agent._check_failures == {}
+
+
+def test_run_recover_after_check_failure(tmp_path):
+    """完整流：LLM 第一次出图失败（空文件），看到 error 后第二次成功"""
+    csv = _point_csv(tmp_path)
+    bad = _empty_png(tmp_path)
+
+    def fake_render(output="map.png"):
+        if fake_render.n == 0:
+            fake_render.n += 1
+            return {
+                "status": "ok",
+                "message": "ok",
+                "outputs": ["map.png"],
+                "output_paths": [str(bad)],
+            }
+        good = tmp_path / "out" / "map.png"
+        good.write_bytes(b"\x89PNG" + b"\x00" * 200)
+        return {
+            "status": "ok",
+            "message": "ok",
+            "outputs": ["map.png"],
+            "output_paths": [str(good)],
+        }
+
+    fake_render.n = 0
+    agent = _agent(
+        tmp_path,
+        [
+            {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
+            {"content": None, "tool_calls": [_tc("c2", "render_map", {"output": "map.png"})]},
+            {"content": None, "tool_calls": [_tc("c3", "render_map", {"output": "map.png"})]},
+            {"content": None, "tool_calls": [_tc("c4", "finish", {"outputs": ["map.png"], "summary": "完成"})]},
+        ],
+    )
+    agent.engine.render_map = fake_render
+    res = agent.run(csv)
+    assert res["status"] if isinstance(res, dict) and "status" in res else True
+    # 第二次 render_map 成功，finish 正常
+    tools_called = [t["tool"] for t in res["trajectory"]]
+    assert tools_called.count("render_map") == 2
+    assert tools_called[-1] == "finish"
+
+
+# ── T7 滚动摘要（短期记忆压缩）────────────────────────
+
+def _session_with_history(tmp_path, n_messages: int):
+    out_dir = tmp_path / "sess_out"
+    out_dir.mkdir(exist_ok=True)
+    sess = GisSession("test-sess", out_dir)
+    sess.messages = [
+        {"role": "user", "content": f"第 {i} 轮问题：加载数据并做分析" + "长文本" * 500}
+        for i in range(n_messages)
+    ]
+    return sess
+
+
+def test_roll_summary_when_over_threshold(tmp_path):
+    """历史超阈值时生成滚动摘要并裁剪到窗口"""
+    sess = _session_with_history(tmp_path, 60)
+    agent = _agent(tmp_path, [])
+    agent._maybe_roll_summary(sess)
+    assert sess.summary  # 摘要已生成
+    assert len(sess.messages) <= 40  # 已裁剪
+
+
+def test_roll_summary_skips_below_threshold(tmp_path):
+    """历史未超阈值时不触发压缩"""
+    sess = _session_with_history(tmp_path, 3)
+    agent = _agent(tmp_path, [])
+    agent._maybe_roll_summary(sess)
+    assert sess.summary == ""
+    assert len(sess.messages) == 3
+
+
+def test_prepare_messages_injects_summary_and_window(tmp_path):
+    """构造消息：system 注入摘要，历史只取最近窗口"""
+    sess = _session_with_history(tmp_path, 60)
+    sess.summary = "已完成 gdp_demo 分级设色，产物 choropleth.png"
+    agent = _agent(tmp_path, [])
+    msgs = agent._prepare_messages("继续分析", None, sess, "")
+    assert "历史会话摘要" in msgs[0]["content"]
+    assert "choropleth.png" in msgs[0]["content"]
+    # system + 窗口历史 + user
+    assert len(msgs) == 1 + 40 + 1
+    assert msgs[-1]["role"] == "user"
+
+
+# ── T8 思考展示 / T9 subagent 预留 ────────────────────
+
+def test_run_stream_emits_tool_reason(tmp_path):
+    """工具调用前输出理由（tool_reason 事件）"""
+    csv = _point_csv(tmp_path)
+    agent = _agent(
+        tmp_path,
+        [
+            {
+                "content": "我需要先加载数据文件。",
+                "tool_calls": [_tc("c1", "load_data", {"path": csv})],
+            },
+            {"content": "完成", "tool_calls": None},
+        ],
+    )
+    events: list[dict] = []
+    agent.run_stream(csv, on_event=lambda e: events.append(e))
+    reasons = [e for e in events if e["type"] == "tool_reason"]
+    assert reasons, "应发出 tool_reason 事件"
+    assert "加载数据" in reasons[0]["reason"]
+    assert reasons[0]["step"] == 1
+
+
+def test_execute_subtask_default_unsupported(tmp_path):
+    """subagent 未配置时返回 unsupported，不影响主流程"""
+    agent = _agent(tmp_path, [])
+    res = agent.execute_subtask("做复杂分析")
+    assert res["status"] == "unsupported"
+
+
+def test_execute_subtask_with_injected_impl(tmp_path):
+    """注入 sub_agent 实现后生效"""
+    agent = _agent(tmp_path, [])
+    agent.sub_agent = lambda task, context: {
+        "status": "ok",
+        "result": f"子任务完成: {task}",
+    }
+    res = agent.execute_subtask("统计各省 GDP")
+    assert res["status"] == "ok"
+    assert "统计各省 GDP" in res["result"]
 
 
 def test_full_flow(tmp_path):
