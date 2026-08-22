@@ -1,4 +1,4 @@
-"""素宣 Suxuan — 营销内容多 Agent 平台 Web 服务
+"""GIS 智能操作助手 Web 服务
 
 数据持久化 + 多租户 + 真实并行 + WebSocket 推送 + 轨迹录制
 """
@@ -33,7 +33,7 @@ from src.gis_toolkit.session import GisSessionStore
 from src.orchestrator.long_term_memory import LongTermMemory, Lesson
 from src.web.auth import get_user_id
 
-app = FastAPI(title="素宣 Suxuan — GIS 智能操作助手", version="1.1.0")
+app = FastAPI(title="GIS 智能操作助手", version="1.1.0")
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
@@ -61,7 +61,7 @@ async def index():
     index_path = static_dir / "index.html"
     if index_path.exists():
         return HTMLResponse(index_path.read_text(encoding="utf-8"))
-    return {"service": "素宣 Suxuan", "version": "1.0.0"}
+    return {"service": "GIS 智能操作助手", "version": "1.0.0"}
 
 
 # ════════════════════════════════════════════════════════════
@@ -580,7 +580,7 @@ async def spa_fallback(full_path: str):
     index_path = static_dir / "index.html"
     if index_path.exists():
         return HTMLResponse(index_path.read_text(encoding="utf-8"))
-    return {"service": "素宣 Suxuan", "version": "1.1.0"}
+    return {"service": "GIS 智能操作助手", "version": "1.1.0"}
 
 
 def start():
