@@ -13,7 +13,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -24,13 +32,13 @@ from src.agents.gis_checker import CheckerAgent
 from src.agents.gis_codegen import CodegenAgent
 from src.agents.gis_design import DesignAgent
 from src.agents.gis_plan import PlanAgent
-from src.orchestrator.graph import create_gis_graph
-from src.orchestrator.state import GisProjectState
-from src.tools.implementations.data_inspect import inspect_file
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import _jsonable, create_gis_engine
 from src.gis_toolkit.session import GisSessionStore
-from src.orchestrator.long_term_memory import LongTermMemory, Lesson
+from src.orchestrator.graph import create_gis_graph
+from src.orchestrator.long_term_memory import Lesson, LongTermMemory
+from src.orchestrator.state import GisProjectState
+from src.tools.implementations.data_inspect import inspect_file
 from src.web.auth import get_user_id
 
 app = FastAPI(title="GIS 智能操作助手", version="1.1.0")

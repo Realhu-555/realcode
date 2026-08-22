@@ -1,8 +1,6 @@
 """工具系统单元测试 — protocol.py + registry.py"""
 
-import pytest
-from src.tools.protocol import Tool, ToolContext, ToolDescription, ToolKind, ToolResult
-
+from src.tools.protocol import ToolContext, ToolDescription, ToolKind, ToolResult
 
 # ========================================================================
 # ToolDescription

@@ -8,10 +8,8 @@
 """
 
 import pytest
-
-from src.llm.models import ModelRegistry, load_registry
+from src.llm.models import load_registry
 from src.llm.provider import LLMProvider
-
 
 # ── 注册表（AC1）──
 

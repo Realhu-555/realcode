@@ -1,9 +1,9 @@
 """健康检查模块单元测试"""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from src.utils.health import HealthStatus, HealthCheck, check_health
+import pytest
+from src.utils.health import HealthCheck, HealthStatus, check_health
 
 
 def test_health_status_enum():

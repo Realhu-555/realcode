@@ -92,8 +92,8 @@ async def describe_images(
 
     # MiMo V2.5 视觉理解
     prompt = (
-        f"请从营销角度分析以下图片。重点关注：产品名称、功能卖点、使用场景、"
-        f"品牌调性、与竞品的差异化元素。提取图片中的所有文字。"
+        "请从营销角度分析以下图片。重点关注：产品名称、功能卖点、使用场景、"
+        "品牌调性、与竞品的差异化元素。提取图片中的所有文字。"
     )
     if product_name:
         prompt += f"\n\n产品名称：{product_name}"
@@ -128,6 +128,7 @@ async def _ocr_easyocr(image_data_urls: list[str], product_name: str) -> str:
     """EasyOCR 本地文字提取（无需 API Key）"""
     import io
     import warnings
+
     import easyocr
 
     warnings.filterwarnings("ignore")

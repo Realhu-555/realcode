@@ -1,6 +1,5 @@
 """LLMProvider 单元测试"""
 
-import os
 from unittest.mock import MagicMock, patch
 
 from src.llm.provider import LLMProvider
@@ -105,7 +104,7 @@ def test_strip_thinking_blocks():
 
 def test_vision_module_imports():
     """视觉模块独立存在"""
+
     from src.vision import describe_images
-    import asyncio
     assert callable(describe_images)
     # describe_images(image_data_urls, product_name) -> str

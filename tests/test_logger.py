@@ -1,7 +1,7 @@
 """日志模块单元测试"""
 
 import logging
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.utils.logger import setup_logger
 
