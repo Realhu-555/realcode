@@ -349,4 +349,24 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_raster",
+            "description": (
+                "加载栅格文件（TIFF / GeoTIFF / IMG）为当前栅格图层，返回元数据"
+                "（宽高、波段数、数据类型、CRS、范围）。地形 / 影像分析前先加载。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "栅格文件路径（TIFF / GeoTIFF），须在 data 白名单内",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]

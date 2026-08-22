@@ -99,6 +99,7 @@ class GisEngine:
         self._roots = [Path(r).resolve() for r in (allowed_roots or ["data"])]
         self.outputs: list[str] = []
         self._layer: gpd.GeoDataFrame | None = None
+        self._raster: str | None = None  # 当前栅格文件路径（栅格状态与矢量状态并存）
         self._base_map: gpd.GeoDataFrame | None = self._load_base_map()
         if data_file:
             self.load_data(data_file)
@@ -582,6 +583,37 @@ class GisEngine:
             )
         self._layer = result
         return self._result(message)
+
+    def load_raster(self, path: str) -> dict:
+        """加载栅格文件（TIFF / GeoTIFF）为当前栅格，返回元数据"""
+        resolved = self._check_input(path)
+        try:
+            import rasterio
+
+            with rasterio.open(resolved) as src:
+                self._raster = str(resolved.resolve())
+                return {
+                    "status": "ok",
+                    "message": f"已加载栅格 {Path(path).name}",
+                    "raster": {
+                        "width": int(src.width),
+                        "height": int(src.height),
+                        "bands": int(src.count),
+                        "dtype": src.dtypes[0],
+                        "crs": str(src.crs) if src.crs else None,
+                        "bounds": [
+                            src.bounds.left,
+                            src.bounds.bottom,
+                            src.bounds.right,
+                            src.bounds.top,
+                        ],
+                        "path": str(resolved.resolve()),
+                    },
+                }
+        except GisEngineError:
+            raise
+        except Exception as exc:
+            raise GisEngineError(f"加载栅格失败（需 TIFF/GeoTIFF）: {exc}") from exc
 
     def save_layer_snapshot(self, path: str) -> None:
         """???????? GeoJSON????????????????"""

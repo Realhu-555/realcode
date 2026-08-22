@@ -266,6 +266,10 @@ class QgsEngine:
             self._call("run_algorithm", {"algorithm": algorithm, "params": params or {}})
         )
 
+    def load_raster(self, path: str) -> dict:
+        resolved = _check_input_path(path, self._roots)
+        return self._call("load_raster", {"path": str(resolved)})
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]

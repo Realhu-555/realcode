@@ -411,6 +411,44 @@ def test_run_algorithm_unknown(tmp_path):
         eng.run_algorithm("evil_script")
 
 
+def test_load_raster_metadata(tmp_path):
+    """load_raster：返回栅格元数据（宽高/波段/CRS/范围）"""
+    import numpy as np
+    import rasterio
+
+    tif = tmp_path / "dem.tif"
+    with rasterio.open(
+        tif,
+        "w",
+        driver="GTiff",
+        width=4,
+        height=3,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=rasterio.transform.from_bounds(116, 39, 117, 40, 4, 3),
+    ) as dst:
+        dst.write(np.ones((1, 3, 4), dtype="float32"))
+
+    eng = _engine(tmp_path)
+    res = eng.load_raster(str(tif))
+    assert res["status"] == "ok"
+    assert res["raster"]["width"] == 4
+    assert res["raster"]["height"] == 3
+    assert res["raster"]["bands"] == 1
+    assert res["raster"]["crs"] == "EPSG:4326"
+    assert len(res["raster"]["bounds"]) == 4
+
+
+def test_load_raster_rejects_non_raster(tmp_path):
+    """非栅格文件报错"""
+    bad = tmp_path / "not_raster.tif"
+    bad.write_text("not a tiff", encoding="utf-8")
+    eng = _engine(tmp_path)
+    with pytest.raises(GisEngineError, match="加载栅格失败"):
+        eng.load_raster(str(bad))
+
+
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):

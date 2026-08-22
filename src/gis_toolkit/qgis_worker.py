@@ -40,6 +40,7 @@ from qgis.core import (
     QgsGraduatedSymbolRenderer,
     QgsMapRendererParallelJob,
     QgsMapSettings,
+    QgsRasterLayer,
     QgsVectorFileWriter,
     QgsVectorLayer,
     QgsWkbTypes,
@@ -691,6 +692,32 @@ def tool_run_algorithm(algorithm: str, params: dict | None = None) -> dict:
     return _result(f"{label} 完成，结果 {result.featureCount()} 行")
 
 
+def tool_load_raster(path: str) -> dict:
+    layer = QgsRasterLayer(path, os.path.basename(path), "gdal")
+    if not layer.isValid():
+        raise RuntimeError(f"无法加载栅格 {path}（需 TIFF/GeoTIFF）")
+    STATE["raster"] = layer
+    crs = layer.crs()
+    ext = layer.extent()
+    return {
+        "status": "ok",
+        "message": f"已加载栅格 {os.path.basename(path)}",
+        "raster": {
+            "width": int(layer.width()),
+            "height": int(layer.height()),
+            "bands": int(layer.bandCount()),
+            "crs": crs.authid() or crs.toWkt(),
+            "bounds": [
+                ext.xMinimum(),
+                ext.yMinimum(),
+                ext.xMaximum(),
+                ext.yMaximum(),
+            ],
+            "path": os.path.abspath(path),
+        },
+    }
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -711,6 +738,7 @@ HANDLERS = {
     "transform_coords": tool_transform_coords,
     "render_map": tool_render_map,
     "run_algorithm": tool_run_algorithm,
+    "load_raster": tool_load_raster,
 }
 
 

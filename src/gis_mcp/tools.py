@@ -285,6 +285,15 @@ def _run_algorithm(
     )
 
 
+def _load_raster(path: str) -> dict:
+    """加载栅格文件（TIFF / GeoTIFF）。
+
+    Args:
+        path: 栅格文件路径。
+    """
+    return _get_manager().get().load_raster(path=path)
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -315,6 +324,7 @@ _HANDLERS = {
     "transform_coords": _transform_coords,
     "render_map": _render_map,
     "run_algorithm": _run_algorithm,
+    "load_raster": _load_raster,
     "finish": _finish,
 }
 

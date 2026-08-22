@@ -296,3 +296,30 @@ def test_run_algorithm_matches_geopandas(point_csv, qgis_engine):
 
     with pytest.raises(GisEngineError, match="未知算法"):
         qgis_engine.run_algorithm("evil_script")
+
+
+def test_load_raster(point_csv, qgis_engine, tmp_path):
+    """load_raster：QGIS 加载 GeoTIFF 返回元数据"""
+    import numpy as np
+    import rasterio
+
+    tif = tmp_path / "dem.tif"
+    with rasterio.open(
+        tif,
+        "w",
+        driver="GTiff",
+        width=4,
+        height=3,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=rasterio.transform.from_bounds(116, 39, 117, 40, 4, 3),
+    ) as dst:
+        dst.write(np.ones((1, 3, 4), dtype="float32"))
+
+    res = qgis_engine.load_raster(str(tif))
+    assert res["status"] == "ok"
+    assert res["raster"]["width"] == 4
+    assert res["raster"]["height"] == 3
+    assert res["raster"]["bands"] == 1
+    assert res["raster"]["crs"] == "EPSG:4326"
