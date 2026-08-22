@@ -74,7 +74,7 @@ export async function streamGisAssistant(
   userRequest: string,
   dataFile: string | undefined,
   sessionId: string | undefined,
-  onEvent: (ev: GisStreamEvent) => void,
+  onEvent: (ev: GisStreamEvent) => void | Promise<void>,
 ): Promise<void> {
   const params = new URLSearchParams({ user_request: userRequest })
   if (dataFile) params.set("data_file", dataFile)
@@ -102,7 +102,7 @@ export async function streamGisAssistant(
       const payload = line.slice(5).trim()
       if (!payload) continue
       try {
-        onEvent(JSON.parse(payload) as GisStreamEvent)
+        await onEvent(JSON.parse(payload) as GisStreamEvent)
       } catch {
         // 忽略无法解析的事件
       }

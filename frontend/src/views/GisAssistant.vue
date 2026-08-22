@@ -212,7 +212,7 @@ async function onSubmit() {
   }
 }
 
-function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
+async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
   switch (ev.type) {
     case "session_start":
       sessionId.value = ev.session_id
@@ -225,6 +225,7 @@ function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
       } else {
         msg.items.push({ kind: "text", content: ev.delta })
       }
+      await nextTick() // 让出渲染帧，保证逐字流式显示
       break
     }
     case "tool_call":
