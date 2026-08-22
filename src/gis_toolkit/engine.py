@@ -363,8 +363,10 @@ class GisEngine:
         groupby: str | None = None,
         agg: str = "sum",
         output: str = "summary.csv",
+        sort_by: str | None = None,
+        desc: bool = False,
     ) -> dict:
-        """对数值列聚合统计（可选按 groupby 列分组），导出 CSV（utf-8-sig 便于 Excel）"""
+        """对数值列聚合统计（可选按 groupby 列分组），导出 CSV；可按结果列排序"""
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         if column not in self._layer.columns:
@@ -378,6 +380,9 @@ class GisEngine:
             out_df = df.groupby(groupby)[column].agg(agg).reset_index()
         else:
             out_df = pd.DataFrame({column: [getattr(df[column], agg)()]})
+        sort_col = sort_by or groupby or column
+        if sort_col in out_df.columns:
+            out_df = out_df.sort_values(sort_col, ascending=not desc)
         out = self.out_dir / _sanitize_filename(output)
         out_df.to_csv(out, index=False, encoding="utf-8-sig")
         self.outputs.append(output)

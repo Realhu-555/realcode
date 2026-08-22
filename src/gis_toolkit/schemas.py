@@ -117,21 +117,32 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "summarize",
-            "description": "对当前图层数值列做聚合统计（可选按分组列分组），结果导出 CSV（utf-8-sig）。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "column": {"type": "string", "description": "被统计的数值列名"},
-                    "groupby": {"type": "string", "description": "分组列名（可选）"},
+              "description": (
+                  "对当前图层数值列做聚合统计（可选按分组列分组），结果导出 CSV（utf-8-sig）。"
+                  "可按结果列排序（sort_by + desc），便于产出 Top 名单。"
+              ),
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "column": {"type": "string", "description": "被统计的数值列名"},
+                      "groupby": {"type": "string", "description": "分组列名（可选）"},
                     "agg": {
                         "type": "string",
                         "enum": ["sum", "mean", "count", "min", "max"],
                         "description": "聚合方式",
-                    },
-                    "output": {"type": "string", "description": "产物文件名，如 summary.csv"},
-                },
-                "required": ["column"],
-            },
+                      },
+                      "output": {"type": "string", "description": "产物文件名，如 summary.csv"},
+                      "sort_by": {
+                          "type": "string",
+                          "description": "排序依据列（默认分组列或统计列）",
+                      },
+                      "desc": {
+                          "type": "boolean",
+                          "description": "降序排序（默认 false 升序；取 Top 名单时传 true）",
+                      },
+                  },
+                  "required": ["column"],
+              },
         },
     },
     {

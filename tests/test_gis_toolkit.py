@@ -192,6 +192,27 @@ def test_summarize_rejects_bad_agg(point_csv, tmp_path):
         eng.summarize(column="gdp", agg="median", output="s.csv")
 
 
+def test_summarize_sorted_desc(tmp_path):
+    """summarize 按结果列降序排序（Top 名单）"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text(
+        "province,gdp,lon,lat\nA,10,116,39\nB,30,117,40\nC,20,118,41\n",
+        encoding="utf-8",
+    )
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.summarize(
+        "gdp",
+        groupby="province",
+        agg="sum",
+        output="rank.csv",
+        sort_by="gdp",
+        desc=True,
+    )
+    df = pd.read_csv(tmp_path / "out" / "rank.csv")
+    assert list(df["province"]) == ["B", "C", "A"]  # 30, 20, 10 降序
+
+
 # ── export_geojson / finish ───────────────────────────
 
 def test_export_geojson(point_csv, tmp_path):

@@ -456,6 +456,8 @@ def tool_summarize(
     groupby: str | None = None,
     agg: str = "sum",
     output: str = "summary.csv",
+    sort_by: str | None = None,
+    desc: bool = False,
 ) -> dict:
     layer = _require_layer()
     if column not in _field_names(layer):
@@ -473,6 +475,9 @@ def tool_summarize(
         out_df = df.groupby(groupby)[column].agg(agg).reset_index()
     else:
         out_df = pd.DataFrame({column: [getattr(df[column], agg)()]})
+    sort_col = sort_by or groupby or column
+    if sort_col in out_df.columns:
+        out_df = out_df.sort_values(sort_col, ascending=not desc)
     out_path = os.path.join(STATE["out_dir"], output)
     out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
     return _result(

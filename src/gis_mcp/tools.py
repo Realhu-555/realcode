@@ -178,6 +178,8 @@ def _summarize(
     groupby: str | None = None,
     agg: Literal["sum", "mean", "count", "min", "max"] = "sum",
     output: str = "summary.csv",
+    sort_by: str | None = None,
+    desc: bool = False,
 ) -> dict:
     """对数值列聚合统计（可选按分组列分组），导出 CSV。
 
@@ -186,8 +188,17 @@ def _summarize(
         groupby: 分组列名（可选）。
         agg: 聚合方式（sum/mean/count/min/max）。
         output: 产物文件名，如 summary.csv。
+        sort_by: 排序依据列（默认分组列或统计列）。
+        desc: 降序排序（取 Top 名单时传 true）。
     """
-    return _get_manager().get().summarize(column=column, groupby=groupby, agg=agg, output=output)
+    return _get_manager().get().summarize(
+        column=column,
+        groupby=groupby,
+        agg=agg,
+        output=output,
+        sort_by=sort_by,
+        desc=desc,
+    )
 
 
 def _export_geojson(output: str) -> dict:

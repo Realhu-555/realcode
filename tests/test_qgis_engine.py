@@ -323,3 +323,18 @@ def test_load_raster(point_csv, qgis_engine, tmp_path):
     assert res["raster"]["height"] == 3
     assert res["raster"]["bands"] == 1
     assert res["raster"]["crs"] == "EPSG:4326"
+
+
+def test_summarize_sorted_desc(point_csv, qgis_engine):
+    """summarize 按结果列降序排序（Top 名单）"""
+    qgis_engine.load_data(point_csv)
+    qgis_engine.summarize(
+        "gdp",
+        groupby="province",
+        agg="sum",
+        output="rank.csv",
+        sort_by="gdp",
+        desc=True,
+    )
+    df = pd.read_csv(qgis_engine.out_dir / "rank.csv")
+    assert list(df["province"]) == ["上海", "广东", "北京"]  # 200, 150, 100 降序

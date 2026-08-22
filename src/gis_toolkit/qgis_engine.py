@@ -186,13 +186,22 @@ class QgsEngine:
         groupby: str | None = None,
         agg: str = "sum",
         output: str = "summary.csv",
+        sort_by: str | None = None,
+        desc: bool = False,
     ) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         name = _sanitize_filename(output)
         result = self._call(
             "summarize",
-            {"column": column, "groupby": groupby, "agg": agg, "output": name},
+            {
+                "column": column,
+                "groupby": groupby,
+                "agg": agg,
+                "output": name,
+                "sort_by": sort_by,
+                "desc": desc,
+            },
         )
         self.outputs.append(name)
         return self._merge(result)
