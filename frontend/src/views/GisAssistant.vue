@@ -225,7 +225,8 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
       } else {
         msg.items.push({ kind: "text", content: ev.delta })
       }
-      await nextTick() // 让出渲染帧，保证逐字流式显示
+      // 用宏任务让出渲染帧（nextTick 是微任务，浏览器无法在微任务间插帧渲染）
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
       break
     }
     case "tool_call":
