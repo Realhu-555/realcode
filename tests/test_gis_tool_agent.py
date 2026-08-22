@@ -1,9 +1,12 @@
 ﻿"""GisToolAgent 工具调用循环测试 — fake LLM 驱动各场景"""
 
 import json
+import threading
+import time
 from pathlib import Path
 
 from src.gis_toolkit.agent import GisToolAgent
+from src.gis_toolkit.approval import ApprovalGate
 from src.gis_toolkit.engine import GisEngine
 from src.gis_toolkit.session import GisSession
 
@@ -306,6 +309,70 @@ def test_save_trace_writes_json(tmp_path):
     # 清理测试生成的轨迹
     for f in new_files:
         f.unlink()
+
+
+# ── HITL 审批（agent 集成）───────────────────────────
+
+def test_agent_hitl_approve_then_execute(tmp_path):
+    """危险操作 ask 模式下挂起，审批通过后执行"""
+    agent = _agent(tmp_path, [])
+    agent.approval_gate = ApprovalGate("ask", ttl=15)
+    agent.engine.delete_features = lambda ids: {"status": "ok", "deleted": len(ids)}
+
+    holder: dict = {}
+
+    def run():
+        holder["result"] = agent._execute_with_check(
+            "delete_features", {"ids": [1, 2]}
+        )
+
+    t = threading.Thread(target=run)
+    t.start()
+    time.sleep(0.5)
+    aid = list(agent.approval_gate._requests.keys())[0]
+    agent.approval_gate.resolve(aid, "approve")
+    t.join(timeout=10)
+    assert holder["result"]["deleted"] == 2
+
+
+def test_agent_hitl_reject_returns_error(tmp_path):
+    """审批拒绝时返回 error，不执行危险操作"""
+    agent = _agent(tmp_path, [])
+    agent.approval_gate = ApprovalGate("ask", ttl=15)
+    called = {"n": 0}
+
+    def fake_delete(ids):
+        called["n"] += 1
+        return {"status": "ok"}
+
+    agent.engine.delete_features = fake_delete
+    holder: dict = {}
+
+    def run():
+        holder["result"] = agent._execute_with_check("delete_features", {"ids": [1]})
+
+    t = threading.Thread(target=run)
+    t.start()
+    time.sleep(0.5)
+    aid = list(agent.approval_gate._requests.keys())[0]
+    agent.approval_gate.resolve(aid, "reject")
+    t.join(timeout=10)
+    assert holder["result"]["status"] == "error"
+    assert "未获人工审批" in holder["result"]["error"]
+    assert called["n"] == 0  # 危险操作未执行
+
+
+def test_agent_hitl_readonly_rejects(tmp_path):
+    """readonly 模式直接拒绝，不产生审批请求"""
+    agent = _agent(tmp_path, [])
+    agent.approval_gate = ApprovalGate("readonly")
+    called = {"n": 0}
+    agent.engine.delete_features = lambda ids: called.__setitem__("n", 1)
+    res = agent._execute_with_check("delete_features", {"ids": [1]})
+    assert res["status"] == "error"
+    assert "只读模式" in res["error"]
+    assert called["n"] == 0
+    assert agent.approval_gate._requests == {}
 
 
 def test_full_flow(tmp_path):

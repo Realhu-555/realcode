@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from src.gis_toolkit.approval import ApprovalGate
 from src.gis_toolkit.checker import check_outputs
 from src.gis_toolkit.engine import GisEngine, GisEngineError, _jsonable
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
@@ -56,6 +57,8 @@ class GisToolAgent:
         self.max_check_retries = max_check_retries
         self._check_failures: dict[str, int] = {}
         self.sub_agent = None  # T9：子任务执行器预留（默认 None，实现后注入）
+        self.approval_gate: ApprovalGate | None = None  # HITL：危险操作审批门
+        self.on_event_callback = None  # run_stream 设置，供审批事件推送
         self.agent_type = agent_type
         self.model_id = model_id
         self.logger = agent_logger
@@ -201,9 +204,11 @@ class GisToolAgent:
             {"type": "text_delta", "delta": "..."}         LLM 文本增量
             {"type": "tool_call", "step": N, "tool": "...", "args": {...}}
             {"type": "tool_result", "step": N, "tool": "...", "result": {...}}
+            {"type": "approval_request", ...}               危险操作审批请求（HITL）
             {"type": "done", "final": "...", "outputs": [...], "steps": N, "timed_out": bool}
             {"type": "error", "error": "..."}               执行异常
         """
+        self.on_event_callback = on_event
         messages = self._prepare_messages(user_request, data_file, session, ltm_hint)
 
         trajectory: list[dict] = []
@@ -457,12 +462,32 @@ class GisToolAgent:
         return impl(**args)
 
     def _execute_with_check(self, name: str, args: dict) -> dict:
-        """执行工具 + 产物校验回环。
+        """HITL 审批 → 执行工具 → 产物校验回环。
 
         产生产物的工具（choropleth/scatter/render/summarize/export）执行后自动校验：
         - 校验失败 → 返回 status=error（附校验原因），让 LLM 修正参数重试；
         - 同一工具累计失败 ≥ max_check_retries 次 → 强制终止该工具，防止死循环。
+        危险操作（编辑/删除等）执行前走审批门：pending 时阻塞等待人工审批。
         """
+        gate = self.approval_gate
+        if gate is not None:
+            check = gate.check(name, args)
+            if check is not None:
+                if check.get("status") == "pending_approval":
+                    self._emit_event({"type": "approval_request", **check})
+                    verdict = gate.wait_for_approval(check["approval_id"])
+                    if verdict != "approved":
+                        return {
+                            "status": "error",
+                            "error": f"危险操作未获人工审批（{verdict}）",
+                            "approval_id": check["approval_id"],
+                        }
+                else:  # rejected
+                    return {
+                        "status": "error",
+                        "error": check.get("error", "操作被权限模式拒绝"),
+                        "approval_id": check.get("approval_id"),
+                    }
         result = self._execute(name, args)
         if result.get("status") != "ok" or name not in PRODUCT_TOOLS:
             return result
@@ -487,6 +512,11 @@ class GisToolAgent:
             "error": f"产物校验失败，请修正参数后重试: {'；'.join(errors)}",
             "check_failed": errors,
         }
+
+    def _emit_event(self, event: dict) -> None:
+        """推送事件（run_stream 的 on_event）；无回调时静默"""
+        if self.on_event_callback is not None:
+            self.on_event_callback(event)
 
     @staticmethod
     def _wrap(

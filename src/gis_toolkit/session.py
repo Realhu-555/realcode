@@ -13,6 +13,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from src.gis_toolkit.approval import ApprovalGate
 from src.gis_toolkit.engine import create_gis_engine
 from src.utils.config import settings
 
@@ -32,6 +33,7 @@ class GisSession:
             out_dir=str(self.out_dir),
             allowed_roots=list(settings.gis_allowed_roots) or ["data"],
         )
+        self.approval_gate = ApprovalGate()  # HITL：危险操作审批门（默认 ask）
         self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
         self.summary: str = ""  # 滚动摘要（超出上下文阈值时由 agent 生成）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）

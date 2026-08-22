@@ -270,7 +270,12 @@ async def run_gis_assistant_stream(
     def _runner() -> None:
         """后台线程：执行 run_stream 并把事件转发到队列，完成后保存会话"""
         try:
-            agent = GisToolAgent(engine=session.engine, max_steps=12, model_id=model_preference)
+            agent = GisToolAgent(
+                engine=session.engine,
+                max_steps=12,
+                model_id=model_preference,
+                approval_gate=session.approval_gate,
+            )
             ltm_hint = _build_ltm_hint(user_request, user_id)
             result = agent.run_stream(
                 user_request,
@@ -347,6 +352,42 @@ async def gis_session_delete(session_id: str, user_id: str = Depends(get_user_id
     if not ok:
         raise HTTPException(status_code=404, detail="会话不存在")
     return {"success": True}
+
+
+@app.post("/api/v1/gis-assistant/sessions/{session_id}/approvals/{approval_id}")
+async def gis_approval(
+    session_id: str,
+    approval_id: str,
+    action: str,
+    user_id: str = Depends(get_user_id),
+):
+    """HITL 审批：approve / reject 危险操作"""
+    if len(session_id) != 12 or not all(c in "0123456789abcdef" for c in session_id):
+        raise HTTPException(status_code=400, detail="非法会话 ID")
+    if len(approval_id) != 12 or not all(c in "0123456789abcdef" for c in approval_id):
+        raise HTTPException(status_code=400, detail="非法审批 ID")
+    _, session = gis_sessions.get_or_create(session_id, user_id)
+    result = session.approval_gate.resolve(approval_id, action)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "审批失败"))
+    return result
+
+
+@app.post("/api/v1/gis-assistant/sessions/{session_id}/permission")
+async def gis_permission(
+    session_id: str,
+    mode: str,
+    user_id: str = Depends(get_user_id),
+):
+    """切换会话权限模式：readonly / auto / ask"""
+    if len(session_id) != 12 or not all(c in "0123456789abcdef" for c in session_id):
+        raise HTTPException(status_code=400, detail="非法会话 ID")
+    _, session = gis_sessions.get_or_create(session_id, user_id)
+    try:
+        session.approval_gate.set_mode(mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "mode": mode}
 
 
 # ════════════════════════════════════════════════════════════
@@ -439,7 +480,12 @@ def _run_gis_assistant_sync(
     """
     try:
         engine = session.engine if session is not None else create_gis_engine(allowed_roots=["data"])
-        agent = GisToolAgent(engine=engine, max_steps=12, model_id=model_preference)
+        agent = GisToolAgent(
+            engine=engine,
+            max_steps=12,
+            model_id=model_preference,
+            approval_gate=session.approval_gate if session is not None else None,
+        )
         ltm_hint = _build_ltm_hint(user_request, user_id)
         result = agent.run(
             user_request,
