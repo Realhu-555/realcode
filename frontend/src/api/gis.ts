@@ -66,6 +66,13 @@ export type GisStreamEvent =
       tool: string
       result: Record<string, unknown>
     }
+  | {
+      type: "approval_request"
+      approval_id: string
+      tool: string
+      args: Record<string, unknown>
+      message?: string
+    }
   | { type: "done"; final: string; outputs: string[]; steps: number; timed_out: boolean }
   | { type: "error"; error: string }
 
@@ -166,4 +173,31 @@ export async function getGisSessionDetail(sessionId: string): Promise<GisSession
 /** 删除会话 */
 export async function deleteGisSession(sessionId: string): Promise<void> {
   await client.delete(`/gis-assistant/sessions/${sessionId}`)
+}
+
+/** HITL 审批：允许 / 拒绝危险操作 */
+export async function approveGisApproval(
+  sessionId: string,
+  approvalId: string,
+  action: "approve" | "reject",
+): Promise<{ ok: boolean; status?: string }> {
+  const { data } = await client.post(
+    `/gis-assistant/sessions/${sessionId}/approvals/${approvalId}`,
+    null,
+    { params: { action } },
+  )
+  return data as { ok: boolean; status?: string }
+}
+
+/** 切换会话权限模式：readonly / auto / ask */
+export async function setGisPermission(
+  sessionId: string,
+  mode: "readonly" | "auto" | "ask",
+): Promise<{ ok: boolean; mode: string }> {
+  const { data } = await client.post(
+    `/gis-assistant/sessions/${sessionId}/permission`,
+    null,
+    { params: { mode } },
+  )
+  return data as { ok: boolean; mode: string }
 }

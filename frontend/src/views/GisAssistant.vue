@@ -9,6 +9,8 @@ import {
   listGisSessions,
   getGisSessionDetail,
   deleteGisSession,
+  approveGisApproval,
+  setGisPermission,
   type GisStreamEvent,
   type GisSessionSummary,
   type GisSessionDetail,
@@ -28,8 +30,10 @@ const sessionId = ref("")
 const chatEl = ref<HTMLElement | null>(null)
 const sessions = ref<GisSessionSummary[]>([])
 const sidebarOpen = ref(true)
+const permissionMode = ref<"readonly" | "auto" | "ask">("ask")
 
 type ToolStatus = "running" | "ok" | "error" | "other"
+type ApprovalStatus = "pending" | "approved" | "rejected"
 
 type StreamItem =
   | { kind: "text"; content: string }
@@ -40,6 +44,13 @@ type StreamItem =
       args: Record<string, unknown>
       result?: Record<string, unknown>
       status: ToolStatus
+    }
+  | {
+      kind: "approval"
+      approvalId: string
+      tool: string
+      args: Record<string, unknown>
+      status: ApprovalStatus
     }
   | { kind: "artifact"; name: string; url: string; ext?: string }
 
@@ -237,6 +248,15 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
     case "tool_call":
       msg.items.push({ kind: "tool", step: ev.step, tool: ev.tool, args: ev.args, status: "running" })
       break
+    case "approval_request":
+      msg.items.push({
+        kind: "approval",
+        approvalId: ev.approval_id,
+        tool: ev.tool,
+        args: ev.args ?? {},
+        status: "pending",
+      })
+      break
     case "tool_result": {
       const item = msg.items.find(
         (x): x is Extract<StreamItem, { kind: "tool" }> =>
@@ -270,6 +290,33 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
     case "error":
       msg.error = ev.error
       break
+  }
+}
+
+async function handleApproval(
+  item: Extract<StreamItem, { kind: "approval" }>,
+  action: "approve" | "reject",
+) {
+  if (item.status !== "pending" || !sessionId.value) return
+  try {
+    await approveGisApproval(sessionId.value, item.approvalId, action)
+    item.status = action === "approve" ? "approved" : "rejected"
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function changePermission(mode: "readonly" | "auto" | "ask") {
+  if (!sessionId.value) {
+    permissionMode.value = mode
+    return
+  }
+  try {
+    await setGisPermission(sessionId.value, mode)
+    permissionMode.value = mode
+    message.success(`权限模式：${mode}`)
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
   }
 }
 
@@ -349,6 +396,15 @@ function download(url: string, name: string) {
             </div>
           </div>
           <div class="flex items-center gap-2.5 shrink-0">
+            <select
+              :value="permissionMode"
+              class="gis-permission-select"
+              @change="changePermission(($event.target as HTMLSelectElement).value as any)"
+            >
+              <option value="ask">询问审批</option>
+              <option value="auto">自动执行</option>
+              <option value="readonly">只读模式</option>
+            </select>
             <button class="gis-new-btn" :disabled="running" @click="newConversation">↺ 新对话</button>
             <span class="gis-status">
               <span class="gis-status-dot" />
@@ -394,14 +450,35 @@ function download(url: string, name: string) {
               <div v-if="m.error" class="gis-error w-full">{{ m.error }}</div>
 
               <div v-else class="space-y-3 w-full">
-                <template v-for="(item, k) in m.items" :key="k">
-                  <!-- 文本块 -->
-                  <div v-if="item.kind === 'text' && item.content" class="gis-answer">
-                    <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ item.content }}</p>
-                  </div>
+                  <template v-for="(item, k) in m.items" :key="k">
+                    <!-- 文本块 -->
+                    <div v-if="item.kind === 'text' && item.content" class="gis-answer">
+                      <p class="whitespace-pre-wrap leading-relaxed text-[14.5px]">{{ item.content }}</p>
+                    </div>
 
-                  <!-- 工具调用（内联时间线） -->
-                  <div v-else-if="item.kind === 'tool'" class="gis-timeline-item gis-tool-inline animate-enter">
+                    <!-- HITL 审批卡片 -->
+                    <div v-else-if="item.kind === 'approval'" class="gis-approval-card animate-enter">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="gis-approval-icon">⚠</span>
+                        <code class="gis-tool-name shrink-0">{{ item.tool }}</code>
+                        <span class="gis-tool-args min-w-0">{{ toolArgsText(item.args) }}</span>
+                      </div>
+                      <div v-if="item.status === 'pending'" class="mt-2.5 flex items-center gap-2">
+                        <button class="gis-approve-btn" @click="handleApproval(item, 'approve')">允许</button>
+                        <button class="gis-reject-btn" @click="handleApproval(item, 'reject')">拒绝</button>
+                        <span class="text-xs text-muted">危险操作需人工确认</span>
+                      </div>
+                      <div
+                        v-else
+                        class="mt-1.5 text-xs font-medium"
+                        :class="item.status === 'approved' ? 'text-emerald-600' : 'text-rose-600'"
+                      >
+                        {{ item.status === "approved" ? "已允许" : "已拒绝" }}
+                      </div>
+                    </div>
+
+                    <!-- 工具调用（内联时间线） -->
+                    <div v-else-if="item.kind === 'tool'" class="gis-timeline-item gis-tool-inline animate-enter">
                     <span class="gis-timeline-node" :class="`gis-node-${item.status === 'running' ? 'other' : item.status}`" />
                     <div class="gis-timeline-card">
                       <div class="flex items-center gap-2.5 min-w-0">
@@ -1121,14 +1198,59 @@ function download(url: string, name: string) {
 
 /* ---- 错误 / 加载 ---- */
 .gis-error {
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--danger-dim);
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.6;
-}
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--danger-dim);
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* ---- HITL 审批 ---- */
+  .gis-approval-card {
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--warning, #d97706) 8%, var(--surface, #fff));
+    border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, transparent);
+  }
+  .gis-approval-icon {
+    color: var(--warning, #d97706);
+    font-size: 14px;
+  }
+  .gis-approve-btn,
+  .gis-reject-btn {
+    padding: 4px 14px;
+    border-radius: var(--radius-sm, 8px);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .gis-approve-btn {
+    background: #059669;
+    color: #fff;
+  }
+  .gis-approve-btn:hover {
+    background: #047857;
+  }
+  .gis-reject-btn {
+    background: transparent;
+    color: var(--danger, #dc2626);
+    border-color: color-mix(in srgb, var(--danger, #dc2626) 40%, transparent);
+  }
+  .gis-reject-btn:hover {
+    background: color-mix(in srgb, var(--danger, #dc2626) 10%, transparent);
+  }
+  .gis-permission-select {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid color-mix(in srgb, var(--muted, #999) 30%, transparent);
+    background: transparent;
+    color: var(--text, inherit);
+    font-size: 12px;
+    cursor: pointer;
+  }
 .gis-spinner {
   width: 15px;
   height: 15px;
