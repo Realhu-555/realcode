@@ -380,4 +380,116 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_editing",
+            "description": (
+                "开始编辑会话：复制当前图层到编辑缓冲区。之后的增/改/删操作只在缓冲区内，"
+                "commit_edits 提交生效、rollback_edits 回滚。所有编辑必须在会话内进行。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_features",
+            "description": (
+                "在当前编辑会话中新增要素。geometry 为 WKT（如 POINT(116 39) / LINESTRING(...) / "
+                "POLYGON((...))）；attributes 为可选属性键值。危险操作，需人工审批。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "geometry": {"type": "string", "description": "新要素几何（WKT 格式）"},
+                    "attributes": {
+                        "type": "object",
+                        "description": "属性键值（可选），如 {\"name\": \"站点A\"}",
+                    },
+                },
+                "required": ["geometry"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_features",
+            "description": (
+                "在编辑会话中按条件更新要素属性。where 为条件表达式，如 id == 1 或 "
+                "province == '北京'。危险操作，需人工审批。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "where": {"type": "string", "description": "筛选条件表达式"},
+                    "attributes": {
+                        "type": "object",
+                        "description": "要更新的属性键值，如 {\"gdp\": 50000}",
+                    },
+                },
+                "required": ["where", "attributes"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_geometry",
+            "description": "在编辑会话中修改指定要素的几何。feature_id 为要素行号（0 起）。危险操作，需人工审批。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "feature_id": {"type": "integer", "description": "要素行号（0 起）"},
+                    "geometry": {"type": "string", "description": "新几何（WKT 格式）"},
+                },
+                "required": ["feature_id", "geometry"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_features",
+            "description": (
+                "在编辑会话中按要素行号列表删除要素（如 [0, 3]）。危险操作，需人工审批。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "要删除的要素行号列表",
+                    }
+                },
+                "required": ["ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "commit_edits",
+            "description": "提交编辑会话：缓冲区改动生效为当前图层，结束编辑。危险操作，需人工审批。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rollback_edits",
+            "description": "回滚编辑会话：丢弃缓冲区所有未提交修改，结束编辑。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "duplicate_layer",
+            "description": "复制当前图层为新的当前图层（编辑/修改前的安全备份）。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]

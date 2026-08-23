@@ -309,6 +309,69 @@ def _load_raster(path: str) -> dict:
     return _get_manager().get().load_raster(path=path)
 
 
+def _start_editing() -> dict:
+    """开始编辑会话。"""
+    return _get_manager().get().start_editing()
+
+
+def _add_features(geometry: str, attributes: dict | None = None) -> dict:
+    """新增要素（WKT 几何 + 可选属性）。
+
+    Args:
+        geometry: 新要素几何（WKT）。
+        attributes: 可选属性键值。
+    """
+    return _get_manager().get().add_features(
+        geometry=geometry, attributes=attributes or {}
+    )
+
+
+def _update_features(where: str, attributes: dict) -> dict:
+    """按条件更新要素属性。
+
+    Args:
+        where: 筛选条件表达式。
+        attributes: 要更新的属性键值。
+    """
+    return _get_manager().get().update_features(where=where, attributes=attributes)
+
+
+def _update_geometry(feature_id: int, geometry: str) -> dict:
+    """修改指定要素几何。
+
+    Args:
+        feature_id: 要素行号（0 起）。
+        geometry: 新几何（WKT）。
+    """
+    return _get_manager().get().update_geometry(
+        feature_id=feature_id, geometry=geometry
+    )
+
+
+def _delete_features(ids: list[int]) -> dict:
+    """按要素行号删除。
+
+    Args:
+        ids: 要删除的要素行号列表。
+    """
+    return _get_manager().get().delete_features(ids=ids)
+
+
+def _commit_edits() -> dict:
+    """提交编辑会话。"""
+    return _get_manager().get().commit_edits()
+
+
+def _rollback_edits() -> dict:
+    """回滚编辑会话。"""
+    return _get_manager().get().rollback_edits()
+
+
+def _duplicate_layer() -> dict:
+    """复制当前图层。"""
+    return _get_manager().get().duplicate_layer()
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -340,6 +403,14 @@ _HANDLERS = {
     "render_map": _render_map,
     "run_algorithm": _run_algorithm,
     "load_raster": _load_raster,
+    "start_editing": _start_editing,
+    "add_features": _add_features,
+    "update_features": _update_features,
+    "update_geometry": _update_geometry,
+    "delete_features": _delete_features,
+    "commit_edits": _commit_edits,
+    "rollback_edits": _rollback_edits,
+    "duplicate_layer": _duplicate_layer,
     "finish": _finish,
 }
 

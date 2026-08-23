@@ -34,15 +34,20 @@ from qgis.core import (
     QgsClassificationQuantile,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransformContext,
+    QgsExpression,
+    QgsExpressionContext,
+    QgsExpressionContextUtils,
     QgsFeature,
     QgsField,
     QgsFields,
+    QgsGeometry,
     QgsGraduatedSymbolRenderer,
     QgsMapRendererParallelJob,
     QgsMapSettings,
     QgsRasterLayer,
     QgsVectorFileWriter,
     QgsVectorLayer,
+    QgsVectorLayerUtils,
     QgsWkbTypes,
 )
 
@@ -723,6 +728,112 @@ def tool_load_raster(path: str) -> dict:
     }
 
 
+# ── 编辑会话（Gate 6：HITL 审批联动）───────────────
+
+def _require_editing() -> QgsVectorLayer:
+    layer = _require_layer()
+    if not layer.isEditable():
+        raise RuntimeError("未开始编辑，请先 start_editing")
+    return layer
+
+
+def tool_start_editing() -> dict:
+    layer = _require_layer()
+    if layer.isEditable():
+        raise RuntimeError("已在编辑会话中，先 commit_edits 或 rollback_edits")
+    if not layer.startEditing():
+        raise RuntimeError("开始编辑失败")
+    return _result("已开始编辑会话（修改在 commit 前不生效）")
+
+
+def tool_add_features(geometry: str, attributes: dict | None = None) -> dict:
+    layer = _require_editing()
+    g = QgsGeometry.fromWkt(geometry)
+    if g.isNull():
+        raise RuntimeError(f"无效 WKT 几何: {geometry}")
+    feat = QgsFeature(layer.fields())
+    feat.setGeometry(g)
+    for key, value in (attributes or {}).items():
+        idx = layer.fields().indexOf(key)
+        if idx >= 0:
+            feat.setAttribute(idx, value)
+    if not layer.addFeature(feat):
+        raise RuntimeError("新增要素失败")
+    return _result("已新增 1 个要素（待 commit）")
+
+
+def tool_update_features(where: str, attributes: dict) -> dict:
+    layer = _require_editing()
+    expr = QgsExpression(where)
+    if expr.hasParserError():
+        raise RuntimeError(f"条件表达式无效: {expr.parserErrorString()}")
+    ctx = QgsExpressionContext()
+    ctx.appendScope(QgsExpressionContextUtils.layerScope(layer))
+    n = 0
+    for feat in layer.getFeatures():
+        ctx.setFeature(feat)
+        if not expr.evaluate(ctx):
+            continue
+        for key, value in (attributes or {}).items():
+            idx = layer.fields().indexOf(key)
+            if idx < 0:
+                raise RuntimeError(f"列不存在: {key}（可用列: {_field_names(layer)}）")
+            layer.changeAttributeValue(feat.id(), idx, value)
+        n += 1
+    return _result(f"已更新 {n} 个要素（待 commit）")
+
+
+def tool_update_geometry(feature_id: int, geometry: str) -> dict:
+    layer = _require_editing()
+    g = QgsGeometry.fromWkt(geometry)
+    if g.isNull():
+        raise RuntimeError(f"无效 WKT 几何: {geometry}")
+    fids = [f.id() for f in layer.getFeatures()]
+    if feature_id < 0 or feature_id >= len(fids):
+        raise RuntimeError(f"要素行号越界: {feature_id}（共 {len(fids)} 行）")
+    if not layer.changeGeometry(fids[feature_id], g):
+        raise RuntimeError("修改几何失败")
+    return _result(f"已更新要素 #{feature_id} 几何（待 commit）")
+
+
+def tool_delete_features(ids: list) -> dict:
+    layer = _require_editing()
+    fids = [f.id() for f in layer.getFeatures()]
+    drop = [fids[int(i)] for i in ids if 0 <= int(i) < len(fids)]
+    if not drop:
+        raise RuntimeError("所有行号越界或 ids 为空")
+    if not layer.deleteFeatures(drop):
+        raise RuntimeError("删除要素失败")
+    return _result(f"已删除 {len(drop)} 个要素（待 commit）")
+
+
+def tool_commit_edits() -> dict:
+    layer = _require_layer()
+    if not layer.isEditable():
+        raise RuntimeError("未开始编辑，请先 start_editing")
+    if not layer.commitChanges():
+        layer.rollBack()
+        raise RuntimeError("提交失败，已回滚")
+    return _result("已提交编辑，修改已生效")
+
+
+def tool_rollback_edits() -> dict:
+    layer = _require_layer()
+    if not layer.isEditable():
+        raise RuntimeError("未开始编辑，请先 start_editing")
+    layer.rollBack()
+    return _result("已回滚编辑，修改已丢弃")
+
+
+def tool_duplicate_layer() -> dict:
+    layer = _require_layer()
+    new_layer = QgsVectorLayerUtils.duplicateLayer(layer, layer.name() + "_copy")
+    if not new_layer or not new_layer.isValid():
+        raise RuntimeError("复制图层失败")
+    STATE["layer"] = new_layer
+    return _result("已复制当前图层")
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -744,6 +855,14 @@ HANDLERS = {
     "render_map": tool_render_map,
     "run_algorithm": tool_run_algorithm,
     "load_raster": tool_load_raster,
+    "start_editing": tool_start_editing,
+    "add_features": tool_add_features,
+    "update_features": tool_update_features,
+    "update_geometry": tool_update_geometry,
+    "delete_features": tool_delete_features,
+    "commit_edits": tool_commit_edits,
+    "rollback_edits": tool_rollback_edits,
+    "duplicate_layer": tool_duplicate_layer,
 }
 
 

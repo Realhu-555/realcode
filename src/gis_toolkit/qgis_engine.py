@@ -279,6 +279,61 @@ class QgsEngine:
         resolved = _check_input_path(path, self._roots)
         return self._call("load_raster", {"path": str(resolved)})
 
+    def start_editing(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("start_editing"))
+
+    def add_features(self, geometry: str, attributes: dict | None = None) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call(
+                "add_features",
+                {"geometry": geometry, "attributes": attributes or {}},
+            )
+        )
+
+    def update_features(self, where: str, attributes: dict) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call(
+                "update_features",
+                {"where": where, "attributes": attributes},
+            )
+        )
+
+    def update_geometry(self, feature_id: int, geometry: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call(
+                "update_geometry",
+                {"feature_id": int(feature_id), "geometry": geometry},
+            )
+        )
+
+    def delete_features(self, ids: list[int]) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("delete_features", {"ids": list(ids)}))
+
+    def commit_edits(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("commit_edits"))
+
+    def rollback_edits(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("rollback_edits"))
+
+    def duplicate_layer(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("duplicate_layer"))
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]

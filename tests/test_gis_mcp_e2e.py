@@ -61,15 +61,15 @@ def _error_text(result) -> str:
     return "".join(c.text for c in result.content if hasattr(c, "text"))
 
 
-def test_list_tools_has_twenty(tmp_path):
-    """stdio 客户端 list_tools 返回 20 个 gis_* 工具"""
+def test_list_tools_has_twenty_eight(tmp_path):
+    """stdio 客户端 list_tools 返回 28 个 gis_* 工具"""
 
     async def _run(sess):
         tools = await sess.list_tools()
         return sorted(t.name for t in tools.tools)
 
     names = _with_session(_run, tmp_path / "out")
-    assert len(names) == 20
+    assert len(names) == 28
     assert all(n.startswith("gis_") for n in names)
 
 

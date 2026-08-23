@@ -470,6 +470,72 @@ def test_load_raster_rejects_non_raster(tmp_path):
         eng.load_raster(str(bad))
 
 
+# ── Gate 6 编辑会话（HITL 审批联动）─────────────────
+
+def test_edit_session_add_commit(tmp_path):
+    """编辑会话：start → add → commit 生效"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\nB,117,40\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    assert eng.start_editing()["status"] == "ok"
+    res = eng.add_features("POINT(118 41)", {"name": "C"})
+    assert res["status"] == "ok"
+    # commit 前当前图层仍是 2 行（未生效）
+    assert eng.list_layers()["layer"]["rows"] == 2
+    eng.commit_edits()
+    assert eng.list_layers()["layer"]["rows"] == 3
+
+
+def test_edit_session_rollback(tmp_path):
+    """编辑会话：rollback 丢弃修改"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\nB,117,40\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.start_editing()
+    eng.delete_features([0])
+    eng.rollback_edits()
+    assert eng.list_layers()["layer"]["rows"] == 2  # 回滚恢复
+
+
+def test_edit_requires_start(tmp_path):
+    """未 start_editing 时编辑报错"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="未开始编辑"):
+        eng.add_features("POINT(118 41)")
+
+
+def test_edit_update_and_delete(tmp_path):
+    """编辑会话：update 属性 + delete 要素"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,val,lon,lat\nA,1,116,39\nB,2,117,40\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.start_editing()
+    res = eng.update_features("name == 'A'", {"val": 99})
+    assert res["status"] == "ok" and "1 个" in res["message"]
+    eng.delete_features([1])
+    eng.commit_edits()
+    layer = eng.list_layers()["layer"]
+    assert layer["rows"] == 1
+    sample = eng.inspect_data()["sample_rows"]
+    assert sample[0]["val"] == 99
+
+
+def test_duplicate_layer(tmp_path):
+    """复制图层为新的当前图层（编辑前备份）"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    assert eng.duplicate_layer()["status"] == "ok"
+    assert eng.list_layers()["layer"]["rows"] == 1
+
+
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):

@@ -99,6 +99,7 @@ class GisEngine:
         self._roots = [Path(r).resolve() for r in (allowed_roots or ["data"])]
         self.outputs: list[str] = []
         self._layer: gpd.GeoDataFrame | None = None
+        self._editing: gpd.GeoDataFrame | None = None  # 编辑会话缓冲区
         self._raster: str | None = None  # 当前栅格文件路径（栅格状态与矢量状态并存）
         self._base_map: gpd.GeoDataFrame | None = self._load_base_map()
         if data_file:
@@ -619,6 +620,98 @@ class GisEngine:
             raise
         except Exception as exc:
             raise GisEngineError(f"加载栅格失败（需 TIFF/GeoTIFF）: {exc}") from exc
+
+    # ── 编辑会话（Gate 6：HITL 审批联动）──────────────
+    def start_editing(self) -> dict:
+        """开始编辑会话：复制当前图层到缓冲区"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if self._editing is not None:
+            raise GisEngineError("已在编辑会话中，先 commit_edits 或 rollback_edits")
+        self._editing = self._layer.copy()
+        return self._result("已开始编辑会话（修改在 commit 前不生效）")
+
+    def _require_editing(self) -> gpd.GeoDataFrame:
+        if self._editing is None:
+            raise GisEngineError("未开始编辑，请先 start_editing")
+        return self._editing
+
+    def add_features(self, geometry: str, attributes: dict | None = None) -> dict:
+        """编辑会话中新增要素（WKT 几何 + 可选属性）"""
+        editing = self._require_editing()
+        try:
+            from shapely import wkt as shapely_wkt
+
+            geom = shapely_wkt.loads(geometry)
+        except Exception as exc:
+            raise GisEngineError(f"无效 WKT 几何: {exc}") from exc
+        attrs = dict(attributes or {})
+        new_row = gpd.GeoDataFrame([attrs], geometry=[geom], crs=editing.crs)
+        self._editing = pd.concat([editing, new_row], ignore_index=True)
+        return self._result("已新增 1 个要素（待 commit）")
+
+    def update_features(self, where: str, attributes: dict) -> dict:
+        """编辑会话中按条件更新属性"""
+        editing = self._require_editing()
+        try:
+            mask = editing.eval(where)
+        except Exception as exc:
+            raise GisEngineError(f"条件表达式无效: {exc}") from exc
+        n = int(mask.sum())
+        if n == 0:
+            return self._result("没有要素满足条件，未做修改")
+        for key, value in (attributes or {}).items():
+            if key not in editing.columns:
+                raise GisEngineError(f"列不存在: {key}（可用列: {list(editing.columns)}）")
+            editing.loc[mask, key] = value
+        return self._result(f"已更新 {n} 个要素（待 commit）")
+
+    def update_geometry(self, feature_id: int, geometry: str) -> dict:
+        """编辑会话中修改指定要素几何"""
+        editing = self._require_editing()
+        try:
+            from shapely import wkt as shapely_wkt
+
+            geom = shapely_wkt.loads(geometry)
+        except Exception as exc:
+            raise GisEngineError(f"无效 WKT 几何: {exc}") from exc
+        if feature_id < 0 or feature_id >= len(editing):
+            raise GisEngineError(f"要素行号越界: {feature_id}（共 {len(editing)} 行）")
+        editing.loc[feature_id, editing.geometry.name] = geom
+        return self._result(f"已更新要素 #{feature_id} 几何（待 commit）")
+
+    def delete_features(self, ids: list[int]) -> dict:
+        """编辑会话中按行号删除要素"""
+        editing = self._require_editing()
+        drop = sorted({int(i) for i in ids})
+        if not drop:
+            raise GisEngineError("ids 不能为空")
+        valid = [i for i in drop if 0 <= i < len(editing)]
+        if not valid:
+            raise GisEngineError("所有行号越界")
+        self._editing = editing.drop(index=valid).reset_index(drop=True)
+        return self._result(f"已删除 {len(valid)} 个要素（待 commit）")
+
+    def commit_edits(self) -> dict:
+        """提交编辑：缓冲区生效为当前图层"""
+        editing = self._require_editing()
+        self._layer = editing
+        self._editing = None
+        return self._result("已提交编辑，修改已生效")
+
+    def rollback_edits(self) -> dict:
+        """回滚编辑：丢弃所有未提交修改"""
+        if self._editing is None:
+            raise GisEngineError("当前没有未提交的编辑会话")
+        self._editing = None
+        return self._result("已回滚编辑，修改已丢弃")
+
+    def duplicate_layer(self) -> dict:
+        """复制当前图层为新的当前图层（编辑前备份）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        self._layer = self._layer.copy()
+        return self._result("已复制当前图层")
 
     def save_layer_snapshot(self, path: str) -> None:
         """???????? GeoJSON????????????????"""

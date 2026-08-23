@@ -338,3 +338,51 @@ def test_summarize_sorted_desc(point_csv, qgis_engine):
     )
     df = pd.read_csv(qgis_engine.out_dir / "rank.csv")
     assert list(df["province"]) == ["上海", "广东", "北京"]  # 200, 150, 100 降序
+
+
+def _writable_points(tmp_path):
+    """可编辑的 GeoJSON 点图层（CSV/delimitedtext 只读，不能编辑）"""
+    gdf = gpd.GeoDataFrame(
+        {"name": ["A", "B"], "val": [1, 2]},
+        geometry=gpd.points_from_xy([116, 117], [39, 40]),
+        crs="EPSG:4326",
+    )
+    p = tmp_path / "pts.geojson"
+    gdf.to_file(p, driver="GeoJSON")
+    return str(p)
+
+
+def test_edit_session_add_commit(tmp_path, qgis_engine):
+    """编辑会话：start → add → commit（QGIS EditBuffer）"""
+    qgis_engine.load_data(_writable_points(tmp_path))
+    assert qgis_engine.start_editing()["status"] == "ok"
+    assert qgis_engine.add_features("POINT(119 32)", {"name": "C"})["status"] == "ok"
+    qgis_engine.commit_edits()
+    assert qgis_engine.list_layers()["layer"]["rows"] == 3
+
+
+def test_edit_session_rollback(tmp_path, qgis_engine):
+    """编辑会话：rollback 丢弃修改"""
+    qgis_engine.load_data(_writable_points(tmp_path))
+    qgis_engine.start_editing()
+    qgis_engine.delete_features([0])
+    qgis_engine.rollback_edits()
+    assert qgis_engine.list_layers()["layer"]["rows"] == 2
+
+
+def test_edit_update_and_delete(tmp_path, qgis_engine):
+    """编辑会话：update 属性 + delete 要素"""
+    qgis_engine.load_data(_writable_points(tmp_path))
+    qgis_engine.start_editing()
+    res = qgis_engine.update_features("name = 'A'", {"val": 99})
+    assert res["status"] == "ok" and "1 个" in res["message"]
+    qgis_engine.delete_features([1])
+    qgis_engine.commit_edits()
+    assert qgis_engine.list_layers()["layer"]["rows"] == 1
+
+
+def test_edit_requires_start(tmp_path, qgis_engine):
+    """未 start_editing 时编辑报错"""
+    qgis_engine.load_data(_writable_points(tmp_path))
+    with pytest.raises(GisEngineError, match="未开始编辑"):
+        qgis_engine.add_features("POINT(119 32)")
