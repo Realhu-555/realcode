@@ -86,9 +86,15 @@ export async function streamGisAssistant(
   const params = new URLSearchParams({ user_request: userRequest })
   if (dataFile) params.set("data_file", dataFile)
   if (sessionId) params.set("session_id", sessionId)
-  const resp = await fetch(`/api/v1/gis-assistant/run/stream?${params.toString()}`, {
-    headers: { "X-API-Key": getApiKey(), Accept: "text/event-stream" },
-  })
+  let resp: Response
+  try {
+    resp = await fetch(`/api/v1/gis-assistant/run/stream?${params.toString()}`, {
+      headers: { "X-API-Key": getApiKey(), Accept: "text/event-stream" },
+    })
+  } catch (err) {
+    // 网络层失败（后端未启动/连接中断），给出可理解提示
+    throw new Error("无法连接后端服务，请确认后端已启动（python start.bat）")
+  }
   if (!resp.ok || !resp.body) {
     const detail = await resp.text().catch(() => "")
     throw new Error(`流式请求失败 (${resp.status})${detail ? `: ${detail}` : ""}`)
@@ -96,24 +102,29 @@ export async function streamGisAssistant(
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let sep: number
-    while ((sep = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, sep)
-      buffer = buffer.slice(sep + 2)
-      const line = block.split("\n").find((l) => l.startsWith("data:"))
-      if (!line) continue
-      const payload = line.slice(5).trim()
-      if (!payload) continue
-      try {
-        await onEvent(JSON.parse(payload) as GisStreamEvent)
-      } catch {
-        // 忽略无法解析的事件
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let sep: number
+      while ((sep = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        const line = block.split("\n").find((l) => l.startsWith("data:"))
+        if (!line) continue
+        const payload = line.slice(5).trim()
+        if (!payload) continue
+        try {
+          await onEvent(JSON.parse(payload) as GisStreamEvent)
+        } catch {
+          // 忽略无法解析的事件
+        }
       }
     }
+  } catch {
+    // 流式读取中途断连（后端重启/崩溃），给出可理解提示
+    throw new Error("连接中断：后端服务异常退出，请检查后端日志后重试")
   }
 }
 
