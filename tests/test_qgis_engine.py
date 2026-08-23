@@ -407,3 +407,20 @@ def test_set_labeling(point_csv, qgis_engine):
     assert "关闭" in res["message"]
     with pytest.raises(GisEngineError, match="列不存在"):
         qgis_engine.set_labeling("nope")
+
+
+def test_get_project_info(point_csv, qgis_engine):
+    """get_project_info：返回 QGIS 工程状态"""
+    qgis_engine.load_data(point_csv)
+    info = qgis_engine.get_project_info()
+    assert info["status"] == "ok"
+    assert info["engine"] == "qgis"
+    assert info["layer"]["rows"] == 3
+
+
+def test_save_project(point_csv, qgis_engine):
+    """save_project：保存 .qgz 工程文件"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.save_project("test.qgz")
+    assert res["status"] == "ok"
+    assert (qgis_engine.out_dir / "test.qgz").is_file()

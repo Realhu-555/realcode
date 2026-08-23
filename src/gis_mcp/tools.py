@@ -394,6 +394,20 @@ def _set_labeling(label_field: str, enabled: bool = True) -> dict:
     )
 
 
+def _get_project_info() -> dict:
+    """获取当前工程信息。"""
+    return _get_manager().get().get_project_info()
+
+
+def _save_project(path: str = "gis_project.qgz") -> dict:
+    """把当前会话保存为 QGIS 工程文件（.qgz）。
+
+    Args:
+        path: 工程文件名（默认 gis_project.qgz）。
+    """
+    return _get_manager().get().save_project(path=path)
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -435,6 +449,8 @@ _HANDLERS = {
     "duplicate_layer": _duplicate_layer,
     "categorized": _categorized,
     "set_labeling": _set_labeling,
+    "get_project_info": _get_project_info,
+    "save_project": _save_project,
     "finish": _finish,
 }
 

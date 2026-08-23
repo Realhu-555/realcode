@@ -534,4 +534,35 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_project_info",
+            "description": (
+                "获取当前工程信息：引擎类型、当前图层摘要（行数/字段/CRS/几何）、"
+                "栅格、产物清单、输出目录。任务开始前建议先确认状态。"
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_project",
+            "description": (
+                "把当前会话保存为 QGIS 工程文件（.qgz，含当前图层与栅格）。"
+                "仅 QGIS 引擎支持；geopandas 引擎请改用 export_geojson。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "工程文件名（默认 gis_project.qgz，保存到输出目录）",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
 ]

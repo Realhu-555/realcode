@@ -349,6 +349,18 @@ class QgsEngine:
             self._call("set_labeling", {"label_field": label_field, "enabled": enabled})
         )
 
+    def get_project_info(self) -> dict:
+        return self._call("get_project_info")
+
+    def save_project(self, path: str = "gis_project.qgz") -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(path)
+        out_path = self.out_dir / name
+        result = self._call("save_project", {"path": str(out_path.resolve())})
+        self.outputs.append(name)
+        return self._merge(result)
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]

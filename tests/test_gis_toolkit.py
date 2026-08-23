@@ -582,6 +582,32 @@ def test_set_labeling_missing_column(tmp_path):
         eng.set_labeling("nope")
 
 
+def test_get_project_info(tmp_path):
+    """get_project_info：返回引擎状态摘要"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    info = eng.get_project_info()
+    assert info["status"] == "ok"
+    assert info["engine"] == "geopandas"
+    assert info["layer"] is None
+
+    eng.load_data(str(pts))
+    info = eng.get_project_info()
+    assert info["layer"]["rows"] == 1
+    assert info["out_dir"]
+
+
+def test_save_project_geopandas_unsupported(tmp_path):
+    """geopandas 引擎 save_project 报错提示用 QGIS 引擎"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="QGIS 工程"):
+        eng.save_project()
+
+
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):

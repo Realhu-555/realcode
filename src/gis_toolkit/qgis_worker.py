@@ -47,6 +47,7 @@ from qgis.core import (
     QgsMapRendererParallelJob,
     QgsMapSettings,
     QgsPalLayerSettings,
+    QgsProject,
     QgsRasterLayer,
     QgsRendererCategory,
     QgsTextFormat,
@@ -896,6 +897,49 @@ def tool_set_labeling(label_field: str, enabled: bool = True) -> dict:
     return _result(f"已{'启用' if enabled else '关闭'}标注（字段 {label_field}）")
 
 
+def tool_get_project_info() -> dict:
+    layer = STATE.get("layer")
+    layer_info = _summary(layer) if layer is not None else None
+    raster = STATE.get("raster")
+    raster_info = None
+    if raster is not None:
+        ext = raster.extent()
+        crs = raster.crs()
+        raster_info = {
+            "width": int(raster.width()),
+            "height": int(raster.height()),
+            "bands": int(raster.bandCount()),
+            "crs": crs.authid() or crs.toWkt(),
+            "bounds": [
+                ext.xMinimum(),
+                ext.yMinimum(),
+                ext.xMaximum(),
+                ext.yMaximum(),
+            ],
+        }
+    return {
+        "status": "ok",
+        "engine": "qgis",
+        "layer": layer_info,
+        "raster": raster_info,
+        "out_dir": STATE.get("out_dir"),
+    }
+
+
+def tool_save_project(path: str = "gis_project.qgz") -> dict:
+    project = QgsProject.instance()
+    project.removeAllMapLayers()
+    layer = STATE.get("layer")
+    if layer is not None:
+        project.addMapLayer(layer)
+    raster = STATE.get("raster")
+    if raster is not None:
+        project.addMapLayer(raster)
+    if not project.write(path):
+        raise RuntimeError(f"保存工程失败: {path}")
+    return _result(f"已保存工程 {os.path.basename(path)}")
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -927,6 +971,8 @@ HANDLERS = {
     "duplicate_layer": tool_duplicate_layer,
     "categorized": tool_categorized,
     "set_labeling": tool_set_labeling,
+    "get_project_info": tool_get_project_info,
+    "save_project": tool_save_project,
 }
 
 

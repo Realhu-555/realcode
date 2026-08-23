@@ -786,6 +786,24 @@ class GisEngine:
         self._layer = self._layer.copy()
         return self._result("已复制当前图层")
 
+    def get_project_info(self) -> dict:
+        """获取当前工程信息（引擎状态摘要）"""
+        return {
+            "status": "ok",
+            "engine": "geopandas",
+            "layer": self._summary(self._layer) if self._layer is not None else None,
+            "raster": self._raster,
+            "outputs": list(self.outputs),
+            "output_paths": self._output_paths(),
+            "out_dir": str(self.out_dir.resolve()),
+        }
+
+    def save_project(self, path: str = "gis_project.qgz") -> dict:
+        """保存 QGIS 工程文件（仅 QGIS 引擎支持）"""
+        raise GisEngineError(
+            "geopandas 引擎不支持保存 QGIS 工程，请用 GIS_ENGINE=qgis 或改用 export_geojson"
+        )
+
     def save_layer_snapshot(self, path: str) -> None:
         """???????? GeoJSON????????????????"""
         if self._layer is None:
