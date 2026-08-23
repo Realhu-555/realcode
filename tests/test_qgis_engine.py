@@ -386,3 +386,24 @@ def test_edit_requires_start(tmp_path, qgis_engine):
     qgis_engine.load_data(_writable_points(tmp_path))
     with pytest.raises(GisEngineError, match="未开始编辑"):
         qgis_engine.add_features("POINT(119 32)")
+
+
+def test_categorized(point_csv, qgis_engine):
+    """分类设色：按类别出图（QGIS CategorizedRenderer）"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.categorized("province", output="cat.png")
+    assert res["status"] == "ok"
+    assert res["classes"] == 3
+    assert (qgis_engine.out_dir / "cat.png").is_file()
+
+
+def test_set_labeling(point_csv, qgis_engine):
+    """设置标注"""
+    qgis_engine.load_data(point_csv)
+    res = qgis_engine.set_labeling("province")
+    assert res["status"] == "ok"
+    assert "启用" in res["message"]
+    res = qgis_engine.set_labeling("province", enabled=False)
+    assert "关闭" in res["message"]
+    with pytest.raises(GisEngineError, match="列不存在"):
+        qgis_engine.set_labeling("nope")

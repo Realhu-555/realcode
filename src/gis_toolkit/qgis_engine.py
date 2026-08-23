@@ -334,6 +334,21 @@ class QgsEngine:
             raise GisEngineError("当前没有图层，请先 load_data")
         return self._merge(self._call("duplicate_layer"))
 
+    def categorized(self, column: str, output: str = "categorized.png") -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(output)
+        result = self._call("categorized", {"column": column, "output": name})
+        self.outputs.append(name)
+        return self._merge(result)
+
+    def set_labeling(self, label_field: str, enabled: bool = True) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(
+            self._call("set_labeling", {"label_field": label_field, "enabled": enabled})
+        )
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]

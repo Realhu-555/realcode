@@ -8,7 +8,7 @@ from src.gis_mcp import tools
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 
 EXPECTED_TOOL_NAMES = [f"gis_{s['function']['name']}" for s in TOOL_SCHEMAS]
-EXPECTED_TOOL_COUNT = 28
+EXPECTED_TOOL_COUNT = 30
 
 
 @pytest.fixture()

@@ -372,6 +372,28 @@ def _duplicate_layer() -> dict:
     return _get_manager().get().duplicate_layer()
 
 
+def _categorized(column: str, output: str = "categorized.png") -> dict:
+    """对分类列做分类设色图并保存 PNG。
+
+    Args:
+        column: 分类列名（文本/枚举）。
+        output: 产物文件名。
+    """
+    return _get_manager().get().categorized(column=column, output=output)
+
+
+def _set_labeling(label_field: str, enabled: bool = True) -> dict:
+    """设置当前图层字段标注。
+
+    Args:
+        label_field: 标注字段名。
+        enabled: 是否启用标注。
+    """
+    return _get_manager().get().set_labeling(
+        label_field=label_field, enabled=enabled
+    )
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -411,6 +433,8 @@ _HANDLERS = {
     "commit_edits": _commit_edits,
     "rollback_edits": _rollback_edits,
     "duplicate_layer": _duplicate_layer,
+    "categorized": _categorized,
+    "set_labeling": _set_labeling,
     "finish": _finish,
 }
 

@@ -536,6 +536,52 @@ def test_duplicate_layer(tmp_path):
     assert eng.list_layers()["layer"]["rows"] == 1
 
 
+def test_categorized(tmp_path):
+    """分类设色：按类别出图"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text(
+        "cat,lon,lat\nA,116,39\nB,117,40\nA,118,41\nC,119,42\n", encoding="utf-8"
+    )
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.categorized("cat", output="cat.png")
+    assert res["status"] == "ok"
+    assert res["classes"] == 3
+    assert (tmp_path / "out" / "cat.png").is_file()
+
+
+def test_categorized_missing_column(tmp_path):
+    pts = tmp_path / "pts.csv"
+    pts.write_text("cat,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="列不存在"):
+        eng.categorized("nope")
+
+
+def test_set_labeling_and_render(tmp_path):
+    """设置标注后出图带标注"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\nB,117,40\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    assert eng.set_labeling("name")["status"] == "ok"
+    res = eng.render_map(output="labeled.png")
+    assert res["status"] == "ok"
+    assert (tmp_path / "out" / "labeled.png").is_file()
+    # 关闭标注
+    assert eng.set_labeling("name", enabled=False)["status"] == "ok"
+
+
+def test_set_labeling_missing_column(tmp_path):
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="列不存在"):
+        eng.set_labeling("nope")
+
+
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):

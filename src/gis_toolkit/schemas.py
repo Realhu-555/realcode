@@ -492,4 +492,46 @@ TOOL_SCHEMAS: list[dict] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "categorized",
+            "description": (
+                "对当前图层的分类列（文本/枚举，如地类、行政区）做分类设色图并保存 PNG，"
+                "每个类别一种颜色并带图例。用于非数值字段的专题图。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "column": {"type": "string", "description": "分类列名（文本/枚举）"},
+                    "output": {"type": "string", "description": "产物文件名，如 categorized.png"},
+                },
+                "required": ["column"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_labeling",
+            "description": (
+                "给当前图层设置字段标注（后续 render_map/choropleth/categorized 出图时显示标注）。"
+                "label_field 为要显示的字段名。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label_field": {
+                        "type": "string",
+                        "description": "用于标注的字段名",
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "是否启用标注（默认 true）",
+                    },
+                },
+                "required": ["label_field"],
+            },
+        },
+    },
 ]

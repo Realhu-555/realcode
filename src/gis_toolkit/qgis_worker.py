@@ -29,6 +29,7 @@ from qgis import processing
 from qgis.analysis import QgsNativeAlgorithms
 from qgis.core import (
     QgsApplication,
+    QgsCategorizedSymbolRenderer,
     QgsClassificationEqualInterval,
     QgsClassificationJenks,
     QgsClassificationQuantile,
@@ -40,13 +41,18 @@ from qgis.core import (
     QgsFeature,
     QgsField,
     QgsFields,
+    QgsFillSymbol,
     QgsGeometry,
     QgsGraduatedSymbolRenderer,
     QgsMapRendererParallelJob,
     QgsMapSettings,
+    QgsPalLayerSettings,
     QgsRasterLayer,
+    QgsRendererCategory,
+    QgsTextFormat,
     QgsVectorFileWriter,
     QgsVectorLayer,
+    QgsVectorLayerSimpleLabeling,
     QgsVectorLayerUtils,
     QgsWkbTypes,
 )
@@ -74,6 +80,13 @@ _SCHEME_CLASS = {
     "Quantiles": QgsClassificationQuantile,
     "EqualInterval": QgsClassificationEqualInterval,
 }
+
+_TAB20_HEX = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
+    "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5",
+]
 
 STATE: dict = {}
 
@@ -834,6 +847,55 @@ def tool_duplicate_layer() -> dict:
     return _result("已复制当前图层")
 
 
+def tool_categorized(column: str, output: str = "categorized.png") -> dict:
+    layer = _require_layer()
+    if column not in _field_names(layer):
+        raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
+    values = sorted(
+        {str(f[column]) for f in layer.getFeatures() if f[column] is not None}
+    )
+    if not values:
+        raise RuntimeError(f"列 {column} 没有有效分类值")
+    renderer = QgsCategorizedSymbolRenderer(column, [])
+    for i, v in enumerate(values):
+        sym = QgsFillSymbol.createSimple(
+            {
+                "color": _TAB20_HEX[i % len(_TAB20_HEX)],
+                "outline_color": "#666666",
+                "outline_width": "0.3",
+            }
+        )
+        renderer.addCategory(QgsRendererCategory(v, sym, v))
+    layer.setRenderer(renderer)
+    image = _render_map(layer)
+    out_path = os.path.join(STATE["out_dir"], output)
+    if not image.save(out_path, "PNG"):
+        raise RuntimeError(f"保存分类设色图失败: {out_path}")
+    return _result(
+        f"已保存分类设色图 {output}（{len(values)} 个类别）",
+        size_bytes=os.path.getsize(out_path),
+        classes=len(values),
+    )
+
+
+def tool_set_labeling(label_field: str, enabled: bool = True) -> dict:
+    layer = _require_layer()
+    if label_field not in _field_names(layer):
+        raise RuntimeError(
+            f"列不存在: {label_field}（可用列: {_field_names(layer)}）"
+        )
+    if enabled:
+        settings = QgsPalLayerSettings()
+        settings.fieldName = label_field
+        settings.setFormat(QgsTextFormat())
+        settings.enabled = True
+        layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+        layer.setLabelsEnabled(True)
+    else:
+        layer.setLabelsEnabled(False)
+    return _result(f"已{'启用' if enabled else '关闭'}标注（字段 {label_field}）")
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -863,6 +925,8 @@ HANDLERS = {
     "commit_edits": tool_commit_edits,
     "rollback_edits": tool_rollback_edits,
     "duplicate_layer": tool_duplicate_layer,
+    "categorized": tool_categorized,
+    "set_labeling": tool_set_labeling,
 }
 
 

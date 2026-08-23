@@ -101,6 +101,7 @@ class GisEngine:
         self._layer: gpd.GeoDataFrame | None = None
         self._editing: gpd.GeoDataFrame | None = None  # 编辑会话缓冲区
         self._raster: str | None = None  # 当前栅格文件路径（栅格状态与矢量状态并存）
+        self._label_field: str | None = None  # 标注字段（Gate 7）
         self._base_map: gpd.GeoDataFrame | None = self._load_base_map()
         if data_file:
             self.load_data(data_file)
@@ -553,6 +554,8 @@ class GisEngine:
         except Exception as exc:
             plt.close(fig)
             raise GisEngineError(f"渲染地图失败: {exc}") from exc
+        if self._label_field:
+            self._draw_labels(ax, layer)
         ax.set_title("当前图层")
         ax.set_axis_off()
         fig.tight_layout()
@@ -560,6 +563,76 @@ class GisEngine:
         plt.close(fig)
         self.outputs.append(output)
         return self._result(f"已保存地图 {output}", size_bytes=out.stat().st_size)
+
+    def categorized(self, column: str, output: str = "categorized.png") -> dict:
+        """对分类列做分类设色图（每个类别一种颜色）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if column not in self._layer.columns:
+            raise GisEngineError(f"列不存在: {column}（可用列: {list(self._layer.columns)}）")
+        out = self.out_dir / _sanitize_filename(output)
+        import matplotlib.cm as cm
+
+        layer = self._layer
+        cats = sorted({str(v) for v in layer[column].dropna().unique()})
+        if not cats:
+            raise GisEngineError(f"列 {column} 没有有效分类值")
+        cat_to_color = {c: cm.tab20(i % 20) for i, c in enumerate(cats)}
+        colors = layer[column].astype(str).map(cat_to_color)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        try:
+            layer.plot(ax=ax, color=colors, edgecolor="#666666", linewidth=0.5)
+            handles = [
+                plt.Line2D(
+                    [0], [0], marker="o", color="w", markerfacecolor=cat_to_color[c],
+                    markersize=8, label=c,
+                )
+                for c in cats
+            ]
+            ax.legend(handles=handles, loc="lower right", fontsize=8)
+        except Exception as exc:
+            plt.close(fig)
+            raise GisEngineError(f"分类设色失败: {exc}") from exc
+        if self._label_field:
+            self._draw_labels(ax, layer)
+        ax.set_title(f"{column} 分类设色")
+        ax.set_axis_off()
+        fig.tight_layout()
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        self.outputs.append(output)
+        return self._result(
+            f"已保存分类设色图 {output}（{len(cats)} 个类别）",
+            size_bytes=out.stat().st_size,
+            classes=len(cats),
+        )
+
+    def set_labeling(self, label_field: str, enabled: bool = True) -> dict:
+        """设置当前图层标注字段（出图时显示）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if label_field not in self._layer.columns:
+            raise GisEngineError(
+                f"列不存在: {label_field}（可用列: {list(self._layer.columns)}）"
+            )
+        self._label_field = label_field if enabled else None
+        return self._result(
+            f"已{'启用' if enabled else '关闭'}标注（字段 {label_field}）"
+        )
+
+    def _draw_labels(self, ax, layer) -> None:
+        """在图上绘制标注（点/面质心处显示 label_field 值）"""
+        if not self._label_field or self._label_field not in layer.columns:
+            return
+        geom_type = layer.geometry.geom_type.mode().iloc[0] if len(layer) else ""
+        if geom_type.startswith("Point"):
+            xs, ys = layer.geometry.x, layer.geometry.y
+        else:
+            xs, ys = layer.geometry.centroid.x, layer.geometry.centroid.y
+        for x, y, label in zip(
+            xs, ys, layer[self._label_field].astype(str), strict=False
+        ):
+            ax.annotate(label, (x, y), fontsize=6, ha="center", va="center")
 
     def run_algorithm(self, algorithm: str, params: dict | None = None) -> dict:
         """运行白名单空间算法（结果成为新的当前图层）"""
