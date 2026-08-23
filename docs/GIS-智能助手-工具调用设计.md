@@ -204,6 +204,26 @@ return 达到步数上限（轨迹保留，标记超限）
 
 ---
 
+## 9.1 测试数据清单（2026-08-23 扩充）
+
+完整清单见 [`data/README.md`](../data/README.md)。本次扩充内容：
+
+- **行政区划边界**（DataV.GeoAtlas）：全国/北京/上海/重庆/港澳 区县级、粤/川/浙/苏/豫/鲁/鄂/陕 市级、广州/成都 区县级；
+- **派生点图层**：全国省会、广东/四川/浙江市级、北京区级驻地点（buffer / voronoi / 空间连接 / 散点图）；
+- **统计面图层**：`*_stats.geojson`（含 `gdp_2023` / `pop_2023`，可直接面分级设色）；
+- **演示 CSV**：`china_population.csv`（省级人口/GDP）、`poi_demo.csv`（合成 POI，40 行）；
+- **线 / 栅格**：`major_rivers.geojson`（示意水系）、`dem_demo.tif`（演示 DEM，`load_raster` 用）；
+- **修复**：`gis_bench_data/cities.geojson` 城市名乱码（北京/上海/广州）。
+
+下载与生成命令：
+
+```bash
+python scripts/download_test_data.py                     # 拉取 DataV 边界
+venv\Scripts\python.exe scripts\generate_test_data.py    # 生成派生数据
+```
+
+---
+
 ## 10. 里程碑（Task 拆分，完成后在本文档标记 ✅）
 
 - [ ] **Task A 引擎层**：`src/gis_toolkit/engine.py` —— GeoPandas 实现 9 个工具 + 输出目录/文件名净化 + 单测（fake 数据）；
