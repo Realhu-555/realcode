@@ -48,6 +48,7 @@ class GisToolAgent:
         engine: GisEngine | None = None,
         max_steps: int = 12,
         max_check_retries: int = 3,
+        approval_gate: ApprovalGate | None = None,
         agent_type: str = "gis_assistant",
         model_id: str | None = None,
     ) -> None:
@@ -57,7 +58,7 @@ class GisToolAgent:
         self.max_check_retries = max_check_retries
         self._check_failures: dict[str, int] = {}
         self.sub_agent = None  # T9：子任务执行器预留（默认 None，实现后注入）
-        self.approval_gate: ApprovalGate | None = None  # HITL：危险操作审批门
+        self.approval_gate = approval_gate  # HITL：危险操作审批门
         self.on_event_callback = None  # run_stream 设置，供审批事件推送
         self.agent_type = agent_type
         self.model_id = model_id
