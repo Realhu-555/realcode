@@ -751,6 +751,24 @@ class GisEngine:
         self._editing = editing.drop(index=valid).reset_index(drop=True)
         return self._result(f"已删除 {len(valid)} 个要素（待 commit）")
 
+    def calculate_field(self, expression: str, field_name: str, where: str | None = None) -> dict:
+        """编辑会话中按表达式生成新列，如 'gdp / population'。可选 where 限定范围。"""
+        editing = self._require_editing()
+        if field_name in editing.columns:
+            raise GisEngineError(f"字段已存在: {field_name}（可用列: {list(editing.columns)}）")
+        try:
+            values = editing.eval(expression)
+        except Exception as exc:
+            raise GisEngineError(f"计算表达式无效: {exc}") from exc
+        if where:
+            try:
+                mask = editing.eval(where)
+            except Exception as exc:
+                raise GisEngineError(f"条件表达式无效: {exc}") from exc
+            values = values.where(mask)
+        self._editing[field_name] = values
+        return self._result(f"已新增字段 {field_name}（待 commit）")
+
     def commit_edits(self) -> dict:
         """提交编辑：缓冲区生效为当前图层"""
         editing = self._require_editing()

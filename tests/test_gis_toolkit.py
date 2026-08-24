@@ -545,6 +545,65 @@ def test_duplicate_layer(tmp_path):
     assert eng.list_layers()["layer"]["rows"] == 1
 
 
+def test_calculate_field(tmp_path):
+    """编辑会话：按表达式生成新列，commit 前不生效"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text(
+        "name,gdp,pop,lon,lat\nA,100,10,116,39\nB,200,20,117,40\n",
+        encoding="utf-8",
+    )
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.start_editing()
+    res = eng.calculate_field("gdp / pop", "per_capita")
+    assert res["status"] == "ok" and "per_capita" in res["message"]
+    assert "per_capita" not in eng.list_layers()["layer"]["columns"]  # 未 commit 不生效
+    eng.commit_edits()
+    sample = eng.inspect_data()["sample_rows"]
+    assert sample[0]["per_capita"] == 10.0
+    assert sample[1]["per_capita"] == 10.0
+
+
+def test_calculate_field_where(tmp_path):
+    """编辑会话：where 限定计算范围，不满足的要素置空"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text(
+        "name,gdp,pop,lon,lat\nA,100,10,116,39\nB,200,20,117,40\n",
+        encoding="utf-8",
+    )
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.start_editing()
+    res = eng.calculate_field("gdp / pop", "per_capita", where="name == 'A'")
+    assert res["status"] == "ok"
+    eng.commit_edits()
+    sample = eng.inspect_data()["sample_rows"]
+    assert sample[0]["per_capita"] == 10.0
+    assert pd.isna(sample[1]["per_capita"])
+
+
+def test_calculate_field_errors(tmp_path):
+    """字段重名 / 非法表达式 / 未开始编辑均报错"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,gdp,lon,lat\nA,100,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    with pytest.raises(GisEngineError, match="未开始编辑"):
+        eng.calculate_field("gdp * 2", "new_col")
+    eng.start_editing()
+    with pytest.raises(GisEngineError, match="字段已存在"):
+        eng.calculate_field("gdp * 2", "gdp")
+    with pytest.raises(GisEngineError, match="计算表达式无效"):
+        eng.calculate_field("gdp / 0 +", "new_col")
+
+
+def test_calculate_field_dangerous():
+    """calculate_field 属于危险写操作，需走人工审批"""
+    from src.gis_toolkit.approval import DANGEROUS_TOOLS
+
+    assert "calculate_field" in DANGEROUS_TOOLS
+
+
 def test_categorized(tmp_path):
     """分类设色：按类别出图"""
     pts = tmp_path / "pts.csv"

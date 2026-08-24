@@ -467,6 +467,30 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "calculate_field",
+            "description": (
+                "在编辑会话中按表达式生成新字段（列）。expression 为计算表达式，如 "
+                "'gdp / population' 或 \"province + '-' + name\"；field_name 为新字段名"
+                "（不可与现有字段重名）；可选 where 限定只对满足条件的要素计算。"
+                "危险操作，需人工审批。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "计算表达式"},
+                    "field_name": {"type": "string", "description": "新字段名（不可重名）"},
+                    "where": {
+                        "type": "string",
+                        "description": "可选条件表达式，只对满足条件的要素计算",
+                    },
+                },
+                "required": ["expression", "field_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "commit_edits",
             "description": "提交编辑会话：缓冲区改动生效为当前图层，结束编辑。危险操作，需人工审批。",
             "parameters": {"type": "object", "properties": {}},
