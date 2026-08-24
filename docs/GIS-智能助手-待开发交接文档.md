@@ -61,12 +61,12 @@
   3. 补齐测试：`tests/test_memory_gate4.py` 11 项（向量写入/确定性/语义命中/排序/空库/旧库回退/压缩阈值/60 条长对话有界）
 - 验收：长链对话稳定；跨会话召回可用；`Gate 4` 在文档标记 ✅（已标记）
 
-### P1 — 操作能力补强（操作型主线，用户高频需求）
-1. **字段计算 `calculate_field`**：对当前图层按表达式生成新列（四则运算、归一化、人均 = gdp/pop 等）；危险写操作进审批
-2. **属性连接 `join_by_attribute`**：CSV/表按关键字段关联到当前图层（当前只有空间连接 `join_by_location`）
-3. **图层管理增强**：图层重命名/移除、图层清单导出
+### P1 — 操作能力补强（操作型主线，用户高频需求）✅
+1. **字段计算 `calculate_field`**：对当前图层按表达式生成新列（四则运算、归一化、人均 = gdp/pop 等）；危险写操作进审批（Marvis 2026-08-24 完成）
+2. **属性连接 `join_by_attribute`**：CSV/表按关键字段关联到当前图层（当前只有空间连接 `join_by_location`）（Marvis 2026-08-24 完成）
+3. **图层管理增强**：图层重命名 `rename_layer`/移除 `remove_layer`（进审批）/图层清单导出 `export_layer_inventory`（Marvis 2026-08-24 完成）
 - 规则：新工具必须走「`schemas.py` 加 schema → `engine.py` 实现 → `qgis_engine/qgis_worker` 同步实现 → MCP 自动暴露 → 单测」五步；危险操作进 `DANGEROUS_TOOLS`
-- 验收：Web 与 dsh/MCP 双入口都能用；单测覆盖；工具总数更新（32 → 35+）
+- 验收：Web 与 dsh/MCP 双入口都能用；单测覆盖；工具总数更新（32 → 35+，当前 37）
 
 ### P2 — Gate 8：地图排版与底图
 - 布局出图：图例/比例尺/指北针 → 导出 PDF/PNG（geopandas/matplotlib 先做，QGIS `QgsLayout` 校准）
