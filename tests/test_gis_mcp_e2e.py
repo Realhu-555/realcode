@@ -69,7 +69,7 @@ def test_list_tools_has_thirty_two(tmp_path):
         return sorted(t.name for t in tools.tools)
 
     names = _with_session(_run, tmp_path / "out")
-    assert len(names) == 34
+    assert len(names) == 37
     assert all(n.startswith("gis_") for n in names)
 
 

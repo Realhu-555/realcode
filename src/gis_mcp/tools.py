@@ -402,6 +402,21 @@ def _rollback_edits() -> dict:
     return _get_manager().get().rollback_edits()
 
 
+def _rename_layer(new_name: str) -> dict:
+    """重命名当前图层（仅改图层名称，不影响底层数据文件）。"""
+    return _get_manager().get().rename_layer(new_name=new_name)
+
+
+def _remove_layer() -> dict:
+    """移除当前图层（危险操作，需人工审批）。"""
+    return _get_manager().get().remove_layer()
+
+
+def _export_layer_inventory(output: str = "layer_inventory.json") -> dict:
+    """导出当前图层清单到 JSON 文件。"""
+    return _get_manager().get().export_layer_inventory(output=output)
+
+
 def _duplicate_layer() -> dict:
     """复制当前图层。"""
     return _get_manager().get().duplicate_layer()
@@ -481,6 +496,9 @@ _HANDLERS = {
     "join_by_attribute": _join_by_attribute,
     "commit_edits": _commit_edits,
     "rollback_edits": _rollback_edits,
+    "rename_layer": _rename_layer,
+    "remove_layer": _remove_layer,
+    "export_layer_inventory": _export_layer_inventory,
     "duplicate_layer": _duplicate_layer,
     "categorized": _categorized,
     "set_labeling": _set_labeling,
