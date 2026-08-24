@@ -311,6 +311,14 @@ class QgsEngine:
             raise GisEngineError("当前没有图层，请先 load_data")
         return self._merge(self._call("delete_features", {"ids": list(ids)}))
 
+    def calculate_field(self, expression: str, field_name: str, where: str | None = None) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        args: dict = {"expression": expression, "field_name": field_name}
+        if where:
+            args["where"] = where
+        return self._merge(self._call("calculate_field", args))
+
     def commit_edits(self) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")

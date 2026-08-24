@@ -830,6 +830,65 @@ def tool_delete_features(ids: list) -> dict:
     return _result(f"已删除 {len(drop)} 个要素（待 commit）")
 
 
+def _infer_qvariant(v):
+    """按求值结果推断 QVariant 字段类型"""
+    if isinstance(v, bool):
+        return QVariant.Bool
+    if isinstance(v, int):
+        return QVariant.Int
+    if isinstance(v, float):
+        return QVariant.Double
+    return QVariant.String
+
+
+def tool_calculate_field(expression: str, field_name: str, where: str | None = None) -> dict:
+    """编辑会话中按表达式生成新字段，可选 where 限定计算范围"""
+    layer = _require_editing()
+    cols = _field_names(layer)
+    if field_name in cols:
+        raise RuntimeError(f"字段已存在: {field_name}（可用列: {cols}）")
+    expr = QgsExpression(expression)
+    if expr.hasParserError():
+        raise RuntimeError(f"计算表达式无效: {expr.parserErrorString()}")
+    for col in expr.referencedColumns():
+        if col and col not in cols:
+            raise RuntimeError(f"表达式引用了不存在的字段: {col}（可用列: {cols}）")
+    ctx = QgsExpressionContext()
+    ctx.appendScope(QgsExpressionContextUtils.layerScope(layer))
+    whr = None
+    if where:
+        whr = QgsExpression(where)
+        if whr.hasParserError():
+            raise RuntimeError(f"条件表达式无效: {whr.parserErrorString()}")
+        for col in whr.referencedColumns():
+            if col and col not in cols:
+                raise RuntimeError(f"条件引用了不存在的字段: {col}（可用列: {cols}）")
+    # 用首个满足条件（或无 where 时首个）的非空要素值推断字段类型
+    qtype = QVariant.String
+    for feat in layer.getFeatures():
+        ctx.setFeature(feat)
+        if whr is not None and not whr.evaluate(ctx):
+            continue
+        v = expr.evaluate(ctx)
+        if v is not None:
+            qtype = _infer_qvariant(v)
+            break
+    fld = QgsField(field_name, qtype)
+    if not layer.addAttribute(fld):
+        raise RuntimeError("添加字段失败")
+    layer.updateFields()
+    idx = layer.fields().indexOf(field_name)
+    n = 0
+    for feat in layer.getFeatures():
+        ctx.setFeature(feat)
+        if whr is not None and not whr.evaluate(ctx):
+            continue
+        v = expr.evaluate(ctx)
+        layer.changeAttributeValue(feat.id(), idx, v)
+        n += 1
+    return _result(f"已新增字段 {field_name}（待 commit，计算 {n} 个要素）")
+
+
 def tool_commit_edits() -> dict:
     layer = _require_layer()
     if not layer.isEditable():
@@ -971,6 +1030,7 @@ HANDLERS = {
     "update_features": tool_update_features,
     "update_geometry": tool_update_geometry,
     "delete_features": tool_delete_features,
+    "calculate_field": tool_calculate_field,
     "commit_edits": tool_commit_edits,
     "rollback_edits": tool_rollback_edits,
     "duplicate_layer": tool_duplicate_layer,
