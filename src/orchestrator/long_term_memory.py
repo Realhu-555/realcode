@@ -9,11 +9,55 @@
 - 内容项目管理（营销内容平台新增）
 """
 
+import hashlib
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+# ── 轻量向量化（自研哈希特征，无外部依赖） ──────────────────────────
+# 说明：经验教训的语义检索不引入 ChromaDB/外部 embedding 服务，用
+# 字符 n-gram 哈希特征向量（hashing trick）+ 余弦相似度实现轻量语义召回，
+# 对中文短文本足够且零依赖、确定性可复现。
+_EMBED_DIM = 256
+
+
+def _feature_hash(feature: str, dim: int, salt: str) -> int:
+    """对特征做带盐 MD5 哈希映射到 [0, dim)"""
+    return int(hashlib.md5((salt + feature).encode("utf-8")).hexdigest(), 16) % dim
+
+
+def _tokenize(text: str) -> list[str]:
+    """中文按 单字 + 2-gram + 3-gram，英文/数字按小写词切分"""
+    tokens: list[str] = []
+    tokens.extend(re.findall(r"[a-z0-9]+", text.lower()))
+    cjk = "".join(re.findall(r"[\u4e00-\u9fff]", text))
+    tokens.extend(cjk)
+    for i in range(len(cjk) - 1):
+        tokens.append(cjk[i : i + 2])
+    for i in range(len(cjk) - 2):
+        tokens.append(cjk[i : i + 3])
+    return tokens
+
+
+def _embed_vector(text: str, dim: int = _EMBED_DIM) -> list[float]:
+    """文本 → L2 归一化特征向量（随机符号哈希）"""
+    vec = [0.0] * dim
+    for feat in _tokenize(text or ""):
+        idx = _feature_hash(feat, dim, "w")
+        sign = 1.0 if _feature_hash(feat, dim, "s") % 2 == 0 else -1.0
+        vec[idx] += sign
+    norm = sum(x * x for x in vec) ** 0.5
+    if norm == 0:
+        return vec
+    return [x / norm for x in vec]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """两个已归一化向量的余弦相似度（点积）"""
+    return sum(x * y for x, y in zip(a, b, strict=False))
 
 
 @dataclass
@@ -207,6 +251,15 @@ class LongTermMemory:
             )
         """)
 
+        # 经验教训向量表（语义检索用；无向量时回退文本匹配）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lesson_embeddings (
+                lesson_id TEXT PRIMARY KEY,
+                embedding TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # 创建用户偏好表
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_preferences (
@@ -371,7 +424,7 @@ class LongTermMemory:
         conn.close()
 
     def save_lesson(self, lesson: Lesson) -> None:
-        """保存经验教训。
+        """保存经验教训（同步写入语义向量，向量失败不阻断主写入）。
 
         Args:
             lesson: 经验教训
@@ -394,8 +447,74 @@ class LongTermMemory:
                 data["created_at"],
             ),
         )
+        try:
+            embedding = json.dumps(_embed_vector(lesson.lesson))
+            cursor.execute(
+                "INSERT OR REPLACE INTO lesson_embeddings (lesson_id, embedding) VALUES (?, ?)",
+                (data["id"], embedding),
+            )
+        except Exception:
+            pass  # 向量生成失败不影响经验教训主记录
         conn.commit()
         conn.close()
+
+    def _embed_text(self, text: str, dim: int = _EMBED_DIM) -> list[float]:
+        """暴露给上层/测试的文本向量化（确定性可复现）"""
+        return _embed_vector(text, dim)
+
+    def _get_lesson_embeddings(self, lesson_id: str) -> str | None:
+        """按 lesson id 取向量 JSON（无记录返回 None）"""
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT embedding FROM lesson_embeddings WHERE lesson_id = ?", (lesson_id,)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def _all_lesson_embeddings(self) -> list[tuple[str, list[float]]]:
+        """返回全部 (lesson_id, 向量) 列表"""
+        conn = self._get_connection()
+        rows = conn.execute("SELECT lesson_id, embedding FROM lesson_embeddings").fetchall()
+        conn.close()
+        out: list[tuple[str, list[float]]] = []
+        for lesson_id, emb_str in rows:
+            try:
+                out.append((lesson_id, json.loads(emb_str)))
+            except Exception:
+                continue
+        return out
+
+    def semantic_search_lessons(
+        self,
+        query: str,
+        limit: int = 5,
+        agent_name: str | None = None,
+    ) -> list[Lesson]:
+        """按语义相关性召回经验教训（余弦 top-k）。
+
+        Args:
+            query: 查询文本
+            limit: 最大返回数量
+            agent_name: 按 agent 过滤（如按用户隔离）
+
+        Returns:
+            相关经验教训列表（按相关性降序）
+        """
+        query_vec = _embed_vector(query)
+        scored: list[tuple[float, str]] = []
+        for lesson_id, emb in self._all_lesson_embeddings():
+            score = _cosine(query_vec, emb)
+            if score > 0:
+                scored.append((score, lesson_id))
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        lessons = self.get_lessons(agent_name=agent_name)
+        by_id = {item.id: item for item in lessons}
+        out: list[Lesson] = []
+        for _score, lesson_id in scored[:limit]:
+            if lesson_id in by_id:
+                out.append(by_id[lesson_id])
+        return out
 
     def get_lessons(
         self,
@@ -563,9 +682,10 @@ class LongTermMemory:
         return [project for _, project in scored_projects[:limit]]
 
     def get_relevant_lessons(self, context: str, limit: int = 5) -> list[Lesson]:
-        """获取相关经验教训（简单文本匹配）。
+        """获取相关经验教训。
 
-        注意：完整实现应使用 ChromaDB 进行语义搜索。
+        优先向量语义检索；对无向量的历史数据回退简单文本匹配，
+        保证旧库兼容不丢召回。
 
         Args:
             context: 上下文信息
@@ -574,6 +694,12 @@ class LongTermMemory:
         Returns:
             相关经验教训列表
         """
+        # 语义检索优先（有向量数据的库）
+        hits = self.semantic_search_lessons(context, limit=limit)
+        if hits:
+            return hits
+
+        # 回退：简单文本匹配（兼容无向量历史数据）
         all_lessons = self.get_lessons()
         context_lower = context.lower()
 
