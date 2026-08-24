@@ -29,9 +29,7 @@ class PlanAgent(BaseAgent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"用户需求：{state.get('user_request', '')}"},
         ]
-        content = self.llm.chat(
-            messages, agent_type="plan", model_id=state.get("model_preference")
-        )
+        content = self.llm.chat(messages, agent_type="plan", model_id=state.get("model_preference"))
 
         question = parse_ask_user(content)
         if question:

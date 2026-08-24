@@ -1,4 +1,4 @@
-﻿"""GIS 智能助手 CLI 演示（设计文档 Task C）
+"""GIS 智能助手 CLI 演示（设计文档 Task C）
 
 用法：
     python -m src.gis_toolkit.demo "把 gdp_demo.csv 按省份做分级设色图" --data data/gis_demo/gdp_demo.csv
@@ -32,7 +32,9 @@ def main() -> None:
     for t in result["trajectory"]:
         st = t["result"].get("status")
         detail = t["result"].get("message") or t["result"].get("error") or ""
-        print(f"  step {t['step']:>2}  {t['tool']:<15} {json.dumps(t['args'], ensure_ascii=False)}  ->  {st}  {detail}")
+        print(
+            f"  step {t['step']:>2}  {t['tool']:<15} {json.dumps(t['args'], ensure_ascii=False)}  ->  {st}  {detail}"
+        )
     print("\n===== 结果 =====")
     print(f"  steps     = {result['steps']}")
     print(f"  timed_out = {result['timed_out']}")

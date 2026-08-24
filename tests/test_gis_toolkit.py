@@ -1,4 +1,4 @@
-﻿"""GIS 引擎 9 个工具可用性验证 — 真实 GeoPandas 执行 + 产物断言"""
+"""GIS 引擎 9 个工具可用性验证 — 真实 GeoPandas 执行 + 产物断言"""
 
 import geopandas as gpd
 import pandas as pd
@@ -53,6 +53,7 @@ def _engine(tmp_path, data_file=None, allowed=None):
 
 # ── load_data / inspect_data ──────────────────────────
 
+
 def test_load_data_csv(point_csv, tmp_path):
     eng = _engine(tmp_path)
     res = eng.load_data(point_csv)
@@ -94,6 +95,7 @@ def test_inspect_without_layer(tmp_path):
 
 # ── buffer ────────────────────────────────────────────
 
+
 def test_buffer_enlarges_area(poly_a, tmp_path):
     eng = _engine(tmp_path, data_file=poly_a)
     before = eng._layer.geometry.area.iloc[0]
@@ -110,6 +112,7 @@ def test_buffer_without_layer(tmp_path):
 
 
 # ── overlay ───────────────────────────────────────────
+
 
 def test_overlay_intersection(poly_a, poly_b, tmp_path):
     eng = _engine(tmp_path, data_file=poly_a)
@@ -146,6 +149,7 @@ def test_overlay_rejects_crs_mismatch(poly_a, poly_b, tmp_path):
 
 # ── choropleth / scatter_plot ─────────────────────────
 
+
 def test_choropleth(point_csv, tmp_path):
     eng = _engine(tmp_path, data_file=point_csv)
     res = eng.choropleth(column="gdp", scheme="Quantiles", k=3, output="map.png")
@@ -168,6 +172,7 @@ def test_scatter_plot(point_csv, tmp_path):
 
 
 # ── summarize ─────────────────────────────────────────
+
 
 def test_summarize_groupby(point_csv, tmp_path):
     eng = _engine(tmp_path, data_file=point_csv)
@@ -215,6 +220,7 @@ def test_summarize_sorted_desc(tmp_path):
 
 # ── export_geojson / finish ───────────────────────────
 
+
 def test_export_geojson(point_csv, tmp_path):
     eng = _engine(tmp_path, data_file=point_csv)
     res = eng.export_geojson(output="pts.geojson")
@@ -232,6 +238,7 @@ def test_finish_declares_only_real_outputs(point_csv, tmp_path):
 
 
 # ── P0 新工具：join_by_location / voronoi / crs / list_layers ──────────
+
 
 def test_join_by_location_point_in_poly(tmp_path):
     """空间连接：点归属面（within），另一图层属性并入"""
@@ -335,6 +342,7 @@ def test_list_layers_snapshot(tmp_path):
 
 # ── P1 新工具：field_statistics / unique_values / transform_coords / render_map ──
 
+
 def test_field_statistics(tmp_path):
     """字段统计：数值列返回 count/mean/min/max/missing"""
     pts = tmp_path / "pts.csv"
@@ -411,9 +419,9 @@ def test_run_algorithm_dissolve(tmp_path):
 def test_run_algorithm_centroids(tmp_path):
     """centroids：要素质心"""
     poly = tmp_path / "poly.geojson"
-    gpd.GeoDataFrame(
-        {"name": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
-    ).to_file(poly, driver="GeoJSON")
+    gpd.GeoDataFrame({"name": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326").to_file(
+        poly, driver="GeoJSON"
+    )
     eng = _engine(tmp_path)
     eng.load_data(str(poly))
     res = eng.run_algorithm("centroids")
@@ -471,6 +479,7 @@ def test_load_raster_rejects_non_raster(tmp_path):
 
 
 # ── Gate 6 编辑会话（HITL 审批联动）─────────────────
+
 
 def test_edit_session_add_commit(tmp_path):
     """编辑会话：start → add → commit 生效"""
@@ -539,9 +548,7 @@ def test_duplicate_layer(tmp_path):
 def test_categorized(tmp_path):
     """分类设色：按类别出图"""
     pts = tmp_path / "pts.csv"
-    pts.write_text(
-        "cat,lon,lat\nA,116,39\nB,117,40\nA,118,41\nC,119,42\n", encoding="utf-8"
-    )
+    pts.write_text("cat,lon,lat\nA,116,39\nB,117,40\nA,118,41\nC,119,42\n", encoding="utf-8")
     eng = _engine(tmp_path)
     eng.load_data(str(pts))
     res = eng.categorized("cat", output="cat.png")
@@ -610,6 +617,7 @@ def test_save_project_geopandas_unsupported(tmp_path):
 
 # ── 文件名净化 / 输入白名单 ───────────────────────────
 
+
 def test_output_filename_rejects_path_traversal(point_csv, tmp_path):
     eng = _engine(tmp_path, data_file=point_csv)
     with pytest.raises(GisEngineError, match="非法产物文件名"):
@@ -634,6 +642,7 @@ def test_csv_without_coords_rejected(tmp_path):
 
 # ── 省界底图 choropleth ─────────────────────────────
 
+
 def _fake_base_map():
     """假省界：北京 / 上海 两个矩形（EPSG:4326），name 带行政后缀"""
     return gpd.GeoDataFrame(
@@ -654,7 +663,9 @@ def test_province_norm():
 
 def test_choropleth_aggregates_province_onto_base_map(point_csv, tmp_path):
     """点数据 + province 列 + 省界底图 → 按省份聚合输出省面图"""
-    eng = GisEngine(data_file=point_csv, out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
+    eng = GisEngine(
+        data_file=point_csv, out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)]
+    )
     eng._base_map = _fake_base_map()
     res = eng.choropleth(column="gdp", scheme="Quantiles", k=3, output="province_map.png")
     assert res["status"] == "ok"

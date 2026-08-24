@@ -32,8 +32,8 @@ class PromptContext:
     """
 
     # === Agent 身份 ===
-    agent_name: str = ""                    # "公众号内容创作者"
-    role_instructions: str = ""             # 角色定义（从模板文件加载）
+    agent_name: str = ""  # "公众号内容创作者"
+    role_instructions: str = ""  # 角色定义（从模板文件加载）
 
     # === 工具信息 ===
     tools: list[ToolDescription] = field(default_factory=list)
@@ -43,23 +43,23 @@ class PromptContext:
     product_description: str = ""
     target_users: str = ""
     key_selling_points: list[str] = field(default_factory=list)
-    brand_tone: str = ""                   # 专业 / 轻松 / 极客
+    brand_tone: str = ""  # 专业 / 轻松 / 极客
     competitors: list[str] = field(default_factory=list)
 
     # === 图片输入（MiMo V2.5 视觉理解结果）===
-    image_descriptions: str = ""           # 上传图片的文字描述
+    image_descriptions: str = ""  # 上传图片的文字描述
 
     # === 上游产出 ===
-    strategy: str | None = None            # 策略 Agent 的输出（渠道 Agent 用）
+    strategy: str | None = None  # 策略 Agent 的输出（渠道 Agent 用）
 
     # === 审校 Agent 专用 ===
     other_channel_contents: dict[str, str] | None = None  # 其他渠道的内容
 
     # === GIS（GIS 智能操作平台）===
-    gis: dict[str, Any] | None = None       # user_request / data_schema / tech_plan / exec_log 等
+    gis: dict[str, Any] | None = None  # user_request / data_schema / tech_plan / exec_log 等
 
     # === 记忆 ===
-    user_preferences: str = ""             # 长期记忆中提取的用户偏好
+    user_preferences: str = ""  # 长期记忆中提取的用户偏好
 
     # === 环境 ===
     current_date: str = field(default_factory=lambda: date.today().isoformat())

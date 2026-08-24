@@ -39,14 +39,14 @@ _GOOD_SCRIPT = (
     "import pandas as pd\n"
     "import geopandas as gpd\n"
     "import matplotlib.pyplot as plt\n"
-    "df = pd.DataFrame({\"province\": [\"A\", \"B\"], \"gdp\": [1, 2],"
-    " \"lon\": [116.4, 121.5], \"lat\": [39.9, 31.2]})\n"
-    "gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[\"lon\"], df[\"lat\"]), crs=\"EPSG:4326\")\n"
-    "print(\"CRS:\", gdf.crs.to_string())\n"
+    'df = pd.DataFrame({"province": ["A", "B"], "gdp": [1, 2],'
+    ' "lon": [116.4, 121.5], "lat": [39.9, 31.2]})\n'
+    'gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df["lon"], df["lat"]), crs="EPSG:4326")\n'
+    'print("CRS:", gdf.crs.to_string())\n'
     "fig, ax = plt.subplots()\n"
-    "gdf.plot(ax=ax, column=\"gdp\")\n"
-    "fig.savefig(\"choropleth.png\")\n"
-    "print(\"ROWS:\", len(gdf))\n"
+    'gdf.plot(ax=ax, column="gdp")\n'
+    'fig.savefig("choropleth.png")\n'
+    'print("ROWS:", len(gdf))\n'
 )
 
 
@@ -55,12 +55,16 @@ def _fake_codegen_good(state):
 
 
 def _fake_codegen_evil(state):
-    evil = "import os\nos.remove(\"data.csv\")"
+    evil = 'import os\nos.remove("data.csv")'
     return {**state, "script": evil, "current_stage": "exec"}
 
 
 def _fake_checker_pass(state):
-    return {**state, "check_report": "- ✅ choropleth.png 存在\n整体结论: PASS", "current_stage": "check"}
+    return {
+        **state,
+        "check_report": "- ✅ choropleth.png 存在\n整体结论: PASS",
+        "current_stage": "check",
+    }
 
 
 def _fake_checker_fail(state):

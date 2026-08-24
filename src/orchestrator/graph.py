@@ -100,7 +100,9 @@ def _exec_node(state: GisProjectState) -> GisProjectState:
     return result
 
 
-def _make_export_node(export_dir: str, project_id: str) -> Callable[[GisProjectState], GisProjectState]:
+def _make_export_node(
+    export_dir: str, project_id: str
+) -> Callable[[GisProjectState], GisProjectState]:
     """导出节点工厂：打包成果 zip + 操作说明，打包后清理沙箱"""
 
     def _export(state: GisProjectState) -> GisProjectState:

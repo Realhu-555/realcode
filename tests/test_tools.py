@@ -6,6 +6,7 @@ from src.tools.protocol import ToolContext, ToolDescription, ToolKind, ToolResul
 # ToolDescription
 # ========================================================================
 
+
 class TestToolDescription:
     def test_creation(self):
         desc = ToolDescription(
@@ -30,6 +31,7 @@ class TestToolDescription:
 # ToolContext
 # ========================================================================
 
+
 class TestToolContext:
     def test_creation_with_defaults(self):
         ctx = ToolContext(session_id="s1", working_dir="/tmp/test")
@@ -50,6 +52,7 @@ class TestToolContext:
 # ========================================================================
 # ToolResult
 # ========================================================================
+
 
 class TestToolResult:
     def test_success_result(self):
@@ -76,6 +79,7 @@ class TestToolResult:
 # ========================================================================
 # ToolRegistry
 # ========================================================================
+
 
 class TestToolRegistry:
     def test_register_and_get(self):

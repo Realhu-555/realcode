@@ -40,9 +40,9 @@ def test_check_geojson_ok(tmp_path):
     from shapely.geometry import Point
 
     p = tmp_path / "pt.geojson"
-    gpd.GeoDataFrame(
-        {"id": [1]}, geometry=[Point(116, 39)], crs="EPSG:4326"
-    ).to_file(p, driver="GeoJSON")
+    gpd.GeoDataFrame({"id": [1]}, geometry=[Point(116, 39)], crs="EPSG:4326").to_file(
+        p, driver="GeoJSON"
+    )
     assert check_outputs({"output_paths": [str(p)]}) == []
 
 

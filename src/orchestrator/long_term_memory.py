@@ -666,9 +666,15 @@ class LongTermMemory:
     def _row_to_brand_profile(row: tuple) -> dict[str, Any]:
         """数据库行 → 品牌档案字典"""
         columns = [
-            "id", "name", "description", "target_users",
-            "key_selling_points", "tone", "competitors",
-            "created_at", "updated_at",
+            "id",
+            "name",
+            "description",
+            "target_users",
+            "key_selling_points",
+            "tone",
+            "competitors",
+            "created_at",
+            "updated_at",
         ]
         data = dict(zip(columns, row, strict=False))
         # 反序列化 JSON 字段
@@ -750,11 +756,24 @@ class LongTermMemory:
     def _row_to_content_project(row: tuple) -> dict[str, Any]:
         """数据库行 → 内容项目字典"""
         columns = [
-            "id", "product_name", "product_description", "target_users",
-            "key_selling_points", "brand_tone", "competitors", "user_idea",
-            "input_mode", "strategy", "gzh_content", "zhihu_content",
-            "xhs_content", "review_report", "status", "error_message",
-            "created_at", "updated_at",
+            "id",
+            "product_name",
+            "product_description",
+            "target_users",
+            "key_selling_points",
+            "brand_tone",
+            "competitors",
+            "user_idea",
+            "input_mode",
+            "strategy",
+            "gzh_content",
+            "zhihu_content",
+            "xhs_content",
+            "review_report",
+            "status",
+            "error_message",
+            "created_at",
+            "updated_at",
         ]
         data = dict(zip(columns, row, strict=False))
         # 反序列化 JSON 字段

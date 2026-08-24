@@ -1,4 +1,5 @@
 """Docker 中跑 Tesseract OCR 测试"""
+
 import pytesseract
 from PIL import Image
 

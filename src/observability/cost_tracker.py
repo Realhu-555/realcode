@@ -68,15 +68,17 @@ class CostTracker:
         success: bool = True,
         error_type: str | None = None,
     ) -> None:
-        self.records.append(CostRecord(
-            agent_type=agent_type,
-            model=model,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            duration_ms=duration_ms,
-            success=success,
-            error_type=error_type,
-        ))
+        self.records.append(
+            CostRecord(
+                agent_type=agent_type,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                duration_ms=duration_ms,
+                success=success,
+                error_type=error_type,
+            )
+        )
 
     # ── 聚合 ──
     def total_tokens(self) -> int:
@@ -117,9 +119,7 @@ class CostTracker:
 
     def failures(self) -> list[dict[str, Any]]:
         """失败的 LLM 调用列表"""
-        return [
-            asdict(r) for r in self.records if not r.success
-        ]
+        return [asdict(r) for r in self.records if not r.success]
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -168,9 +168,15 @@ class CostTracker:
                     estimated_cost_usd, error_info, trace_path, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    run_id, scenario, int(success), latency_ms,
-                    self.total_tokens(), self.estimate_cost(),
-                    str(error_info or ""), trace_path, time.time(),
+                    run_id,
+                    scenario,
+                    int(success),
+                    latency_ms,
+                    self.total_tokens(),
+                    self.estimate_cost(),
+                    str(error_info or ""),
+                    trace_path,
+                    time.time(),
                 ),
             )
             conn.commit()

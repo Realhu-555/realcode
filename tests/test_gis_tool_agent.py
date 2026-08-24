@@ -1,4 +1,4 @@
-﻿"""GisToolAgent 工具调用循环测试 — fake LLM 驱动各场景"""
+"""GisToolAgent 工具调用循环测试 — fake LLM 驱动各场景"""
 
 import json
 import threading
@@ -64,11 +64,14 @@ def _agent(tmp_path, responses, max_steps=12):
 
 def _point_csv(tmp_path):
     p = tmp_path / "points.csv"
-    p.write_text("province,gdp,lon,lat\n北京,100,116.4,39.9\n上海,200,121.5,31.2\n", encoding="utf-8")
+    p.write_text(
+        "province,gdp,lon,lat\n北京,100,116.4,39.9\n上海,200,121.5,31.2\n", encoding="utf-8"
+    )
     return str(p)
 
 
 # ── T6 checker 校验回环 ──────────────────────────────
+
 
 def _empty_png(tmp_path):
     out = tmp_path / "out"
@@ -140,7 +143,10 @@ def test_run_recover_after_check_failure(tmp_path):
             {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
             {"content": None, "tool_calls": [_tc("c2", "render_map", {"output": "map.png"})]},
             {"content": None, "tool_calls": [_tc("c3", "render_map", {"output": "map.png"})]},
-            {"content": None, "tool_calls": [_tc("c4", "finish", {"outputs": ["map.png"], "summary": "完成"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c4", "finish", {"outputs": ["map.png"], "summary": "完成"})],
+            },
         ],
     )
     agent.engine.render_map = fake_render
@@ -153,6 +159,7 @@ def test_run_recover_after_check_failure(tmp_path):
 
 
 # ── T7 滚动摘要（短期记忆压缩）────────────────────────
+
 
 def _session_with_history(tmp_path, n_messages: int):
     out_dir = tmp_path / "sess_out"
@@ -206,7 +213,11 @@ def _round_trip_messages(n_rounds: int) -> list[dict]:
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [
-                    {"id": f"c{i}", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+                    {
+                        "id": f"c{i}",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
                 ],
             }
         )
@@ -218,9 +229,7 @@ def _assert_no_orphan_tool(messages: list[dict]) -> None:
     """每个 role=tool 消息前一条必须是 assistant（无孤立 tool）"""
     for j, m in enumerate(messages):
         if m.get("role") == "tool":
-            assert j > 0 and messages[j - 1].get("role") == "assistant", (
-                f"孤立 tool 消息 @{j}"
-            )
+            assert j > 0 and messages[j - 1].get("role") == "assistant", f"孤立 tool 消息 @{j}"
 
 
 def test_history_window_aligned_no_orphan_tool(tmp_path):
@@ -243,6 +252,7 @@ def test_prepare_messages_no_orphan_tool(tmp_path):
 
 
 # ── T8 思考展示 / T9 subagent 预留 ────────────────────
+
 
 def test_run_stream_emits_tool_reason(tmp_path):
     """工具调用前输出理由（tool_reason 事件）"""
@@ -286,6 +296,7 @@ def test_execute_subtask_with_injected_impl(tmp_path):
 
 # ── T11 轨迹落盘 ─────────────────────────────────────
 
+
 def test_save_trace_writes_json(tmp_path):
     """轨迹落盘：_save_trace 写入可解析的 JSON 到 data/gis_traces/"""
     import json as _json
@@ -313,6 +324,7 @@ def test_save_trace_writes_json(tmp_path):
 
 # ── HITL 审批（agent 集成）───────────────────────────
 
+
 def test_agent_hitl_approve_then_execute(tmp_path):
     """危险操作 ask 模式下挂起，审批通过后执行"""
     agent = _agent(tmp_path, [])
@@ -322,9 +334,7 @@ def test_agent_hitl_approve_then_execute(tmp_path):
     holder: dict = {}
 
     def run():
-        holder["result"] = agent._execute_with_check(
-            "delete_features", {"ids": [1, 2]}
-        )
+        holder["result"] = agent._execute_with_check("delete_features", {"ids": [1, 2]})
 
     t = threading.Thread(target=run)
     t.start()
@@ -383,8 +393,14 @@ def test_full_flow(tmp_path):
         [
             {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
             {"content": None, "tool_calls": [_tc("c2", "inspect_data", {})]},
-            {"content": None, "tool_calls": [_tc("c3", "choropleth", {"column": "gdp", "output": "map.png"})]},
-            {"content": None, "tool_calls": [_tc("c4", "finish", {"outputs": ["map.png"], "summary": "完成"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c3", "choropleth", {"column": "gdp", "output": "map.png"})],
+            },
+            {
+                "content": None,
+                "tool_calls": [_tc("c4", "finish", {"outputs": ["map.png"], "summary": "完成"})],
+            },
         ],
     )
     result = agent.run("画分级设色图")
@@ -392,7 +408,10 @@ def test_full_flow(tmp_path):
     assert result["steps"] == 4
     assert result["outputs"] == ["map.png"]
     assert [t["tool"] for t in result["trajectory"]] == [
-        "load_data", "inspect_data", "choropleth", "finish",
+        "load_data",
+        "inspect_data",
+        "choropleth",
+        "finish",
     ]
     # 每个工具结果都是 ok / finished
     assert all(t["result"]["status"] in {"ok", "finished"} for t in result["trajectory"])
@@ -411,9 +430,18 @@ def test_error_then_recover(tmp_path):
         tmp_path,
         [
             {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
-            {"content": None, "tool_calls": [_tc("c2", "choropleth", {"column": "nope", "output": "m.png"})]},
-            {"content": None, "tool_calls": [_tc("c3", "choropleth", {"column": "gdp", "output": "m.png"})]},
-            {"content": None, "tool_calls": [_tc("c4", "finish", {"outputs": ["m.png"], "summary": "修正完成"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c2", "choropleth", {"column": "nope", "output": "m.png"})],
+            },
+            {
+                "content": None,
+                "tool_calls": [_tc("c3", "choropleth", {"column": "gdp", "output": "m.png"})],
+            },
+            {
+                "content": None,
+                "tool_calls": [_tc("c4", "finish", {"outputs": ["m.png"], "summary": "修正完成"})],
+            },
         ],
     )
     result = agent.run("画图")
@@ -453,10 +481,7 @@ def test_max_steps_timeout(tmp_path):
     """LLM 无限调工具 → 步数上限触发 timed_out"""
     agent = _agent(
         tmp_path,
-        [
-            {"content": None, "tool_calls": [_tc(f"c{i}", "inspect_data", {})]}
-            for i in range(20)
-        ],
+        [{"content": None, "tool_calls": [_tc(f"c{i}", "inspect_data", {})]} for i in range(20)],
         max_steps=3,
     )
     result = agent.run("无限循环")
@@ -543,8 +568,14 @@ def test_run_stream_emits_events_in_order(tmp_path):
         tmp_path,
         [
             {"content": "开始处理", "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
-            {"content": "正在绘图", "tool_calls": [_tc("c2", "choropleth", {"column": "gdp", "output": "map.png"})]},
-            {"content": "完成，这是结果", "tool_calls": [_tc("c3", "finish", {"outputs": ["map.png"], "summary": "完成"})]},
+            {
+                "content": "正在绘图",
+                "tool_calls": [_tc("c2", "choropleth", {"column": "gdp", "output": "map.png"})],
+            },
+            {
+                "content": "完成，这是结果",
+                "tool_calls": [_tc("c3", "finish", {"outputs": ["map.png"], "summary": "完成"})],
+            },
         ],
     )
     events: list[dict] = []

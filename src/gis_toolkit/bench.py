@@ -1,4 +1,4 @@
-﻿"""GIS 助手基准任务集评测（设计文档 8 节级别 3）
+"""GIS 助手基准任务集评测（设计文档 8 节级别 3）
 
 每个任务 = 用户请求 + 数据文件 + 一组规则检查；评测器跑真实 GisToolAgent，
 对轨迹与产物做断言，输出 pass/fail 报告。
@@ -29,6 +29,7 @@ CITIES_GEOJSON = str(BENCH_DATA / "cities.geojson")
 
 # ── 检查函数：fn(result, engine, task) -> (bool, detail) ────────────────
 
+
 def _tool_called(result: dict, tool: str) -> tuple[bool, str]:
     called = [t["tool"] for t in result["trajectory"]]
     return (tool in called, f"轨迹含 {tool}: {tool in called}")
@@ -36,7 +37,10 @@ def _tool_called(result: dict, tool: str) -> tuple[bool, str]:
 
 def _finish_called(result: dict) -> tuple[bool, str]:
     tools = [t["tool"] for t in result["trajectory"]]
-    return (bool(tools) and tools[-1] == "finish", f"最后一步是 finish: {tools[-1] if tools else None}")
+    return (
+        bool(tools) and tools[-1] == "finish",
+        f"最后一步是 finish: {tools[-1] if tools else None}",
+    )
 
 
 def _has_output(result: dict, suffix: str) -> tuple[bool, str]:
@@ -90,6 +94,7 @@ def _buffer_area_grew(engine: GisEngine) -> tuple[bool, str]:
 
 # ── 任务定义 ─────────────────────────────────────────
 
+
 def _gdp_total() -> float:
     df = pd.read_csv(GDP_CSV)
     return float(df["gdp"].sum())
@@ -115,8 +120,14 @@ TASKS: list[dict] = [
             {"name": "tool_called_summarize", "fn": lambda r, e, t: _tool_called(r, "summarize")},
             {"name": "output_csv", "fn": lambda r, e, t: _has_output(r, ".csv")},
             {"name": "csv_rows_31", "fn": lambda r, e, t: _csv_rows(e, "summary.csv", 31)},
-            {"name": "csv_columns", "fn": lambda r, e, t: _csv_columns(e, "summary.csv", ["province", "gdp"])},
-            {"name": "gdp_total", "fn": lambda r, e, t: _csv_sum_total(e, "summary.csv", "gdp", _gdp_total())},
+            {
+                "name": "csv_columns",
+                "fn": lambda r, e, t: _csv_columns(e, "summary.csv", ["province", "gdp"]),
+            },
+            {
+                "name": "gdp_total",
+                "fn": lambda r, e, t: _csv_sum_total(e, "summary.csv", "gdp", _gdp_total()),
+            },
             {"name": "finish_called", "fn": lambda r, e, t: _finish_called(r)},
         ],
     },
@@ -146,6 +157,7 @@ TASKS: list[dict] = [
 
 
 # ── 评测运行器 ───────────────────────────────────────
+
 
 def run_one(task: dict, out_dir: Path) -> dict:
     engine = GisEngine(out_dir=str(out_dir / task["id"]), allowed_roots=["data"])
@@ -202,7 +214,9 @@ def _print_report(summary: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIS 助手基准任务集评测")
-    parser.add_argument("--task", action="append", choices=[t["id"] for t in TASKS], help="只跑指定任务（可多次）")
+    parser.add_argument(
+        "--task", action="append", choices=[t["id"] for t in TASKS], help="只跑指定任务（可多次）"
+    )
     args = parser.parse_args()
     summary = run_bench(args.task)
     _print_report(summary)

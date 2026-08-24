@@ -8,6 +8,7 @@ from src.llm.provider import LLMProvider
 def test_registry_exists():
     """模型注册表存在且非空"""
     from src.llm.models import load_registry
+
     registry = load_registry()
     assert len(registry.models) > 0
 
@@ -15,6 +16,7 @@ def test_registry_exists():
 def test_all_content_agents_have_deepseek_model():
     """内容平台 Agent 默认全部使用 DeepSeek"""
     from src.llm.models import load_registry
+
     registry = load_registry()
     agents = ["celve", "gongzhonghao", "zhihu", "xiaohongshu", "shenjiao", "export"]
     for agent_type in agents:
@@ -25,6 +27,7 @@ def test_all_content_agents_have_deepseek_model():
 def test_vision_moved_to_vision_module():
     """视觉模型独立于 LLM 注册表（vision/__init__.py）"""
     from src.llm.models import load_registry
+
     registry = load_registry()
     assert "vision" not in registry.models
 
@@ -106,5 +109,6 @@ def test_vision_module_imports():
     """视觉模块独立存在"""
 
     from src.vision import describe_images
+
     assert callable(describe_images)
     # describe_images(image_data_urls, product_name) -> str

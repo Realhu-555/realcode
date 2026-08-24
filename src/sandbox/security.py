@@ -11,31 +11,85 @@ import ast
 import re
 
 # import 黑名单（含 from x import y 的根模块）
-FORBIDDEN_IMPORTS: frozenset[str] = frozenset({
-    "os", "shutil", "subprocess", "socket", "requests", "urllib",
-    "importlib", "ctypes", "multiprocessing", "threading",
-    "builtins", "pickle", "marshal",
-})
+FORBIDDEN_IMPORTS: frozenset[str] = frozenset(
+    {
+        "os",
+        "shutil",
+        "subprocess",
+        "socket",
+        "requests",
+        "urllib",
+        "importlib",
+        "ctypes",
+        "multiprocessing",
+        "threading",
+        "builtins",
+        "pickle",
+        "marshal",
+    }
+)
 
 # 模块属性调用黑名单：base.attr
 FORBIDDEN_ATTRS: dict[str, frozenset[str]] = {
-    "os": frozenset({
-        "remove", "unlink", "rmdir", "removedirs", "rename", "replace",
-        "system", "popen", "spawn", "startfile", "kill", "chmod", "chown",
-        "makedirs", "symlink", "link", "listdir", "scandir", "walk",
-        "getenv", "putenv", "setenv", "unsetenv",
-    }),
-    "shutil": frozenset({
-        "rmtree", "move", "copy", "copy2", "copytree", "remove",
-        "make_archive", "unpack_archive", "disk_usage",
-    }),
+    "os": frozenset(
+        {
+            "remove",
+            "unlink",
+            "rmdir",
+            "removedirs",
+            "rename",
+            "replace",
+            "system",
+            "popen",
+            "spawn",
+            "startfile",
+            "kill",
+            "chmod",
+            "chown",
+            "makedirs",
+            "symlink",
+            "link",
+            "listdir",
+            "scandir",
+            "walk",
+            "getenv",
+            "putenv",
+            "setenv",
+            "unsetenv",
+        }
+    ),
+    "shutil": frozenset(
+        {
+            "rmtree",
+            "move",
+            "copy",
+            "copy2",
+            "copytree",
+            "remove",
+            "make_archive",
+            "unpack_archive",
+            "disk_usage",
+        }
+    ),
 }
 
 # 直接调用黑名单
-FORBIDDEN_CALLS: frozenset[str] = frozenset({
-    "eval", "exec", "compile", "input", "exit", "quit",
-    "__import__", "breakpoint", "globals", "locals", "vars", "getattr",
-})
+FORBIDDEN_CALLS: frozenset[str] = frozenset(
+    {
+        "eval",
+        "exec",
+        "compile",
+        "input",
+        "exit",
+        "quit",
+        "__import__",
+        "breakpoint",
+        "globals",
+        "locals",
+        "vars",
+        "getattr",
+    }
+)
 
 # 绝对路径字面量（Windows 盘符 / UNC / POSIX 根路径）
 _ABS_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
@@ -98,9 +152,17 @@ def _check_call(node: ast.AST, violations: list[str]) -> None:
 def _call_open_mode(node: ast.Call) -> str | None:
     """提取 open() 的 mode 参数（位置或关键字），无则返回 None（默认只读）"""
     for kw in node.keywords:
-        if kw.arg == "mode" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+        if (
+            kw.arg == "mode"
+            and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str)
+        ):
             return kw.value.value
-    if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+    if (
+        len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+    ):
         return node.args[1].value
     return None
 

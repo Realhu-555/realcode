@@ -37,7 +37,9 @@ def is_retryable_openai_error(exc: Exception) -> bool:
     if "connection" in name or "timeout" in name:
         return True
     msg = str(exc).lower()
-    return any(k in msg for k in ("connection", "timeout", "rate limit", "temporarily", "overloaded"))
+    return any(
+        k in msg for k in ("connection", "timeout", "rate limit", "temporarily", "overloaded")
+    )
 
 
 def retry_call(
@@ -77,7 +79,7 @@ def retry_call(
                 raise
             if retryable is not None and not retryable(e):
                 raise
-            delay = min(max_delay, base_delay * (2 ** attempt)) + random.uniform(0, jitter)
+            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0, jitter)
             if on_retry is not None:
                 on_retry(attempt, delay, e)
             time.sleep(delay)

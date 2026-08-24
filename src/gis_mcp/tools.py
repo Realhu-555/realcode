@@ -28,9 +28,7 @@ from src.utils.config import settings
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 默认产物目录 / 输入白名单从 settings 读取（.env 可覆盖，见 src/utils/config.py）
 DEFAULT_OUT_ROOT = settings.gis_out_root
-DEFAULT_ALLOWED_ROOTS = list(settings.gis_allowed_roots) or [
-    str(_PROJECT_ROOT / "data")
-]
+DEFAULT_ALLOWED_ROOTS = list(settings.gis_allowed_roots) or [str(_PROJECT_ROOT / "data")]
 
 
 def resolve_out_root(out_root: str | None = None) -> str:
@@ -191,13 +189,17 @@ def _summarize(
         sort_by: 排序依据列（默认分组列或统计列）。
         desc: 降序排序（取 Top 名单时传 true）。
     """
-    return _get_manager().get().summarize(
-        column=column,
-        groupby=groupby,
-        agg=agg,
-        output=output,
-        sort_by=sort_by,
-        desc=desc,
+    return (
+        _get_manager()
+        .get()
+        .summarize(
+            column=column,
+            groupby=groupby,
+            agg=agg,
+            output=output,
+            sort_by=sort_by,
+            desc=desc,
+        )
     )
 
 
@@ -220,9 +222,7 @@ def _join_by_location(
         other_path: 第二个数据文件路径（CSV / GeoJSON / zip）。
         predicate: 空间关系（intersects/within/contains）。
     """
-    return _get_manager().get().join_by_location(
-        other_path=other_path, predicate=predicate
-    )
+    return _get_manager().get().join_by_location(other_path=other_path, predicate=predicate)
 
 
 def _voronoi() -> dict:
@@ -295,9 +295,7 @@ def _run_algorithm(
         algorithm: 算法名（dissolve/centroids/convexhull）。
         params: 算法参数，如 {"field": "省份"}。
     """
-    return _get_manager().get().run_algorithm(
-        algorithm=algorithm, params=params or {}
-    )
+    return _get_manager().get().run_algorithm(algorithm=algorithm, params=params or {})
 
 
 def _load_raster(path: str) -> dict:
@@ -321,9 +319,7 @@ def _add_features(geometry: str, attributes: dict | None = None) -> dict:
         geometry: 新要素几何（WKT）。
         attributes: 可选属性键值。
     """
-    return _get_manager().get().add_features(
-        geometry=geometry, attributes=attributes or {}
-    )
+    return _get_manager().get().add_features(geometry=geometry, attributes=attributes or {})
 
 
 def _update_features(where: str, attributes: dict) -> dict:
@@ -343,9 +339,7 @@ def _update_geometry(feature_id: int, geometry: str) -> dict:
         feature_id: 要素行号（0 起）。
         geometry: 新几何（WKT）。
     """
-    return _get_manager().get().update_geometry(
-        feature_id=feature_id, geometry=geometry
-    )
+    return _get_manager().get().update_geometry(feature_id=feature_id, geometry=geometry)
 
 
 def _delete_features(ids: list[int]) -> dict:
@@ -389,9 +383,7 @@ def _set_labeling(label_field: str, enabled: bool = True) -> dict:
         label_field: 标注字段名。
         enabled: 是否启用标注。
     """
-    return _get_manager().get().set_labeling(
-        label_field=label_field, enabled=enabled
-    )
+    return _get_manager().get().set_labeling(label_field=label_field, enabled=enabled)
 
 
 def _get_project_info() -> dict:

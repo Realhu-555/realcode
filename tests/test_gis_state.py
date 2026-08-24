@@ -10,7 +10,14 @@ from src.orchestrator.state import (
 def test_gis_stage_values():
     """GisStage 枚举值覆盖流水线全阶段"""
     assert [s.value for s in GisStage] == [
-        "plan", "design", "codegen", "exec", "check", "export", "done", "error",
+        "plan",
+        "design",
+        "codegen",
+        "exec",
+        "check",
+        "export",
+        "done",
+        "error",
     ]
 
 

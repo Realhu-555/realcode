@@ -21,23 +21,23 @@ from pathlib import Path
 @dataclass
 class TraceStep:
     step_index: int
-    step_type: str        # "llm_call" | "tool_results" | "final"
+    step_type: str  # "llm_call" | "tool_results" | "final"
     timestamp: float = field(default_factory=time.time)
 
     # 可观测性扩展（评测/成本/耗时）
-    stage: str | None = None            # ContentStage: strategy/generating/review...
-    cost: dict | None = None            # Token 明细: {"prompt_tokens":..,"completion_tokens":..}
-    duration_ms: float | None = None    # 本步耗时（毫秒）
+    stage: str | None = None  # ContentStage: strategy/generating/review...
+    cost: dict | None = None  # Token 明细: {"prompt_tokens":..,"completion_tokens":..}
+    duration_ms: float | None = None  # 本步耗时（毫秒）
 
     # LLM call — 原生 function calling 格式
-    messages: list[dict] | None = None       # 发给 LLM 的消息
-    tools: list[dict] | None = None          # 可用的 tools schema
-    content: str | None = None               # LLM 返回的文本内容
-    tool_calls: list[dict] | None = None     # LLM 决定调用的工具
+    messages: list[dict] | None = None  # 发给 LLM 的消息
+    tools: list[dict] | None = None  # 可用的 tools schema
+    content: str | None = None  # LLM 返回的文本内容
+    tool_calls: list[dict] | None = None  # LLM 决定调用的工具
     model: str | None = None
 
     # Tool results（本轮所有工具执行结果）
-    tool_results: list[dict] | None = None   # [{"id":..., "name":..., "result":..., "error":...}]
+    tool_results: list[dict] | None = None  # [{"id":..., "name":..., "result":..., "error":...}]
 
     # Final output
     final_output: str | None = None
@@ -58,32 +58,38 @@ class TraceTracker:
         tool_calls: list[dict] | None = None,
         model: str = "",
     ):
-        self.steps.append(TraceStep(
-            step_index=self._step_index,
-            step_type="llm_call",
-            messages=messages,
-            tools=tools,
-            content=content,
-            tool_calls=tool_calls,
-            model=model,
-        ))
+        self.steps.append(
+            TraceStep(
+                step_index=self._step_index,
+                step_type="llm_call",
+                messages=messages,
+                tools=tools,
+                content=content,
+                tool_calls=tool_calls,
+                model=model,
+            )
+        )
         self._step_index += 1
 
     def tool_results(self, results: list[dict]):
         """记录一批工具的执行结果"""
-        self.steps.append(TraceStep(
-            step_index=self._step_index,
-            step_type="tool_results",
-            tool_results=results,
-        ))
+        self.steps.append(
+            TraceStep(
+                step_index=self._step_index,
+                step_type="tool_results",
+                tool_results=results,
+            )
+        )
         self._step_index += 1
 
     def final(self, output: str):
-        self.steps.append(TraceStep(
-            step_index=self._step_index,
-            step_type="final",
-            final_output=output,
-        ))
+        self.steps.append(
+            TraceStep(
+                step_index=self._step_index,
+                step_type="final",
+                final_output=output,
+            )
+        )
         self._step_index += 1
 
     def to_dict(self) -> dict:
@@ -104,4 +110,3 @@ class TraceTracker:
         llm_count = sum(1 for s in self.steps if s.step_type == "llm_call")
         tool_count = sum(1 for s in self.steps if s.step_type == "tool_results")
         return f"{len(self.steps)} steps ({llm_count} LLM calls, {tool_count} tool results)"
-

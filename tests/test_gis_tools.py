@@ -34,13 +34,21 @@ async def test_inspect_csv(tmp_path):
 @pytest.mark.asyncio
 async def test_inspect_geojson(tmp_path):
     gj_path = tmp_path / "poi.geojson"
-    gj_path.write_text(json.dumps({
-        "type": "FeatureCollection",
-        "features": [
-            {"type": "Feature", "properties": {"name": "a", "count": 3},
-             "geometry": {"type": "Point", "coordinates": [1, 2]}},
-        ],
-    }), encoding="utf-8")
+    gj_path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"name": "a", "count": 3},
+                        "geometry": {"type": "Point", "coordinates": [1, 2]},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     result = await DataInspectTool().execute(_ctx(tmp_path), str(gj_path))
     assert result.success
     assert result.data["format"] == "geojson"

@@ -8,6 +8,7 @@ from src.tools.protocol import ToolDescription
 # PromptContext
 # ========================================================================
 
+
 class TestPromptContext:
     def test_default_creation(self):
         ctx = PromptContext()
@@ -120,6 +121,7 @@ class TestPromptContext:
 # ========================================================================
 # PromptRenderer
 # ========================================================================
+
 
 class TestPromptRenderer:
     def test_renderer_loads_template(self):

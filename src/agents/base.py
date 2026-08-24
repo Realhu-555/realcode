@@ -24,7 +24,7 @@ class BaseAgent(ABC):
     ) -> None:
         self.name = name
         self.system_prompt = system_prompt  # 保留向后兼容
-        self.tool_ids = tools or []         # 该 Agent 可用的工具 ID 列表
+        self.tool_ids = tools or []  # 该 Agent 可用的工具 ID 列表
         self.renderer = PromptRenderer()
 
     @abstractmethod

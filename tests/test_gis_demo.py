@@ -12,19 +12,19 @@ _DEMO_SCRIPT = (
     "import pandas as pd\n"
     "import geopandas as gpd\n"
     "import matplotlib\n"
-    "matplotlib.use(\"Agg\")\n"
+    'matplotlib.use("Agg")\n'
     "import matplotlib.pyplot as plt\n"
-    "df = pd.read_csv(\"gdp_demo.csv\")\n"
-    "gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[\"lon\"], df[\"lat\"]), crs=\"EPSG:4326\")\n"
-    "print(\"CRS:\", gdf.crs.to_string())\n"
-    "print(\"ROWS:\", len(gdf))\n"
+    'df = pd.read_csv("gdp_demo.csv")\n'
+    'gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df["lon"], df["lat"]), crs="EPSG:4326")\n'
+    'print("CRS:", gdf.crs.to_string())\n'
+    'print("ROWS:", len(gdf))\n'
     "fig, ax = plt.subplots(figsize=(8, 6))\n"
-    "gdf.plot(ax=ax, column=\"gdp\", cmap=\"OrRd\", scheme=\"Quantiles\", k=5, legend=True)\n"
-    "ax.set_title(\"GDP Choropleth by Province\")\n"
-    "fig.savefig(\"choropleth.png\", dpi=100)\n"
-    "summary = df[[\"province\", \"gdp\"]].sort_values(\"gdp\", ascending=False).reset_index(drop=True)\n"
-    "summary.to_csv(\"summary.csv\", index=False)\n"
-    "print(\"DONE\")\n"
+    'gdf.plot(ax=ax, column="gdp", cmap="OrRd", scheme="Quantiles", k=5, legend=True)\n'
+    'ax.set_title("GDP Choropleth by Province")\n'
+    'fig.savefig("choropleth.png", dpi=100)\n'
+    'summary = df[["province", "gdp"]].sort_values("gdp", ascending=False).reset_index(drop=True)\n'
+    'summary.to_csv("summary.csv", index=False)\n'
+    'print("DONE")\n'
 )
 
 
@@ -84,13 +84,15 @@ def _fake_agents():
 def test_mvp_acceptance_1_to_6(tmp_path):
     """验收清单 1-6：plan≥3步 / design 四要素 / 退出码0无ERROR / 双产出 / PASS / zip 含说明"""
     graph = create_gis_graph(_fake_agents(), export_dir=str(tmp_path), project_id="mvp")
-    result = graph.invoke({
-        "user_request": "把 gdp_demo.csv 按省份做分级设色图",
-        "data_file": str(DEMO_DATA),
-        "data_schema": "province: str\ngdp: int\nlon: float\nlat: float",
-        "current_stage": "plan",
-        "messages": [],
-    })
+    result = graph.invoke(
+        {
+            "user_request": "把 gdp_demo.csv 按省份做分级设色图",
+            "data_file": str(DEMO_DATA),
+            "data_schema": "province: str\ngdp: int\nlon: float\nlat: float",
+            "current_stage": "plan",
+            "messages": [],
+        }
+    )
 
     # 1. plan 产出 ≥3 步任务清单，且不追问
     assert result.get("ask_user") is None

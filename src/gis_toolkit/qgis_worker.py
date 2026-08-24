@@ -1,4 +1,4 @@
-﻿"""QGIS 引擎 worker — 由 QGIS 自带 Python（python-qgis-ltr.bat）运行。
+"""QGIS 引擎 worker — 由 QGIS 自带 Python（python-qgis-ltr.bat）运行。
 
 与主进程通过 stdin/stdout JSON-lines 通信：
     请求: {"op": "call"|"ping"|"exit", "tool": "...", "args": {...}}
@@ -83,16 +83,33 @@ _SCHEME_CLASS = {
 }
 
 _TAB20_HEX = [
-    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
-    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
-    "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5",
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+    "#bcbd22",
+    "#17becf",
+    "#aec7e8",
+    "#ffbb78",
+    "#98df8a",
+    "#ff9896",
+    "#c5b0d5",
+    "#c49c94",
+    "#f7b6d2",
+    "#c7c7c7",
+    "#dbdb8d",
+    "#9edae5",
 ]
 
 STATE: dict = {}
 
 
 # ── 初始化 ──
+
 
 def _find_prefix() -> str:
     """定位 QGIS 前缀目录（含 python/qgis/core 的 apps/qgis-ltr）"""
@@ -130,6 +147,7 @@ def _init(out_dir: str) -> None:
 
 # ── 通用小工具 ──
 
+
 def _pick_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
     cols = {str(c).lower(): c for c in df.columns}
     for cand in candidates:
@@ -148,11 +166,11 @@ def _province_norm(name: str) -> str:
 def _jsonable(v):
     if isinstance(v, dict):
         return {str(k): _jsonable(x) for k, x in v.items()}
-    if isinstance(v, (list, tuple)):
+    if isinstance(v, list | tuple):
         return [_jsonable(x) for x in v]
-    if v is None or isinstance(v, (str, bool)):
+    if v is None or isinstance(v, str | bool):
         return v
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
             return None
         return v
@@ -202,7 +220,9 @@ def _summary(layer: QgsVectorLayer) -> dict:
     }
 
 
-def _new_memory_layer(name: str, geom_type: str, crs: str, fields: QgsFields | None = None) -> QgsVectorLayer:
+def _new_memory_layer(
+    name: str, geom_type: str, crs: str, fields: QgsFields | None = None
+) -> QgsVectorLayer:
     layer = QgsVectorLayer(f"{geom_type}?crs={crs}", name, "memory")
     if fields is not None:
         layer.dataProvider().addAttributes(fields)
@@ -236,6 +256,7 @@ def _load_layer(path: str) -> QgsVectorLayer:
 
 
 # ── 工具实现 ──
+
 
 def tool_load_data(path: str) -> dict:
     layer = _load_layer(path)
@@ -318,9 +339,7 @@ def tool_choropleth(
 
     map_pil = _qimage_to_pil(_render_map(target))
     legend_img = _render_legend(ranges, column)
-    combined = Image.new(
-        "RGB", (map_pil.width + legend_img.width, map_pil.height), "white"
-    )
+    combined = Image.new("RGB", (map_pil.width + legend_img.width, map_pil.height), "white")
     combined.paste(map_pil, (0, 0))
     combined.paste(legend_img, (map_pil.width, 0))
     out_path = os.path.join(STATE["out_dir"], output)
@@ -348,7 +367,9 @@ def _prepare_choropleth_layer(layer: QgsVectorLayer, column: str):
     return layer, note
 
 
-def _aggregate_to_province(points: QgsVectorLayer, base: QgsVectorLayer, column: str) -> QgsVectorLayer:
+def _aggregate_to_province(
+    points: QgsVectorLayer, base: QgsVectorLayer, column: str
+) -> QgsVectorLayer:
     """点层按 province 字段聚合后，把聚合值 join 到省界底图"""
     rows = [
         {f.name(): feat.attribute(f.name()) for f in points.fields()}
@@ -484,8 +505,7 @@ def tool_summarize(
     if agg not in {"sum", "mean", "count", "min", "max"}:
         raise RuntimeError(f"agg 必须是 sum/mean/count/min/max，收到: {agg}")
     rows = [
-        {f.name(): feat.attribute(f.name()) for f in layer.fields()}
-        for feat in layer.getFeatures()
+        {f.name(): feat.attribute(f.name()) for f in layer.fields()} for feat in layer.getFeatures()
     ]
     df = pd.DataFrame(rows)
     if groupby:
@@ -555,9 +575,7 @@ def tool_join_by_location(other_path: str, predicate: str = "intersects") -> dic
     if not result.isValid():
         raise RuntimeError("空间连接失败：结果图层无效")
     STATE["layer"] = result
-    return _result(
-        f"空间连接完成（predicate={predicate}），结果 {result.featureCount()} 行"
-    )
+    return _result(f"空间连接完成（predicate={predicate}），结果 {result.featureCount()} 行")
 
 
 def tool_voronoi() -> dict:
@@ -638,9 +656,7 @@ def tool_unique_values(column: str) -> dict:
     layer = _require_layer()
     if column not in _field_names(layer):
         raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
-    values = sorted(
-        {str(f[column]) for f in layer.getFeatures() if f[column] is not None}
-    )
+    values = sorted({str(f[column]) for f in layer.getFeatures() if f[column] is not None})
     truncated = len(values) > 50
     return {
         "status": "ok",
@@ -655,9 +671,7 @@ def tool_transform_coords(target_crs: str) -> dict:
     layer = _require_layer()
     new_crs = QgsCoordinateReferenceSystem(target_crs)
     if not new_crs.isValid():
-        raise RuntimeError(
-            f"无效坐标系: {target_crs!r}（示例 EPSG:3857 / EPSG:32650）"
-        )
+        raise RuntimeError(f"无效坐标系: {target_crs!r}（示例 EPSG:3857 / EPSG:32650）")
     result = processing.run(
         "native:reprojectlayer",
         {"INPUT": layer, "TARGET_CRS": new_crs, "OUTPUT": "memory:"},
@@ -682,9 +696,7 @@ def tool_render_map(output: str = "map.png") -> dict:
     image = job.renderedImage()
     if not image.save(out_path, "PNG"):
         raise RuntimeError(f"渲染保存失败: {out_path}")
-    return _result(
-        f"已保存地图 {output}", size_bytes=os.path.getsize(out_path)
-    )
+    return _result(f"已保存地图 {output}", size_bytes=os.path.getsize(out_path))
 
 
 def tool_run_algorithm(algorithm: str, params: dict | None = None) -> dict:
@@ -696,16 +708,12 @@ def tool_run_algorithm(algorithm: str, params: dict | None = None) -> dict:
         "convexhull": ("native:convexhull", "convexhull"),
     }
     if algorithm not in alg_map:
-        raise RuntimeError(
-            f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）"
-        )
+        raise RuntimeError(f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）")
     alg_id, label = alg_map[algorithm]
     if algorithm == "dissolve":
         field = params.get("field")
         if not field or field not in _field_names(layer):
-            raise RuntimeError(
-                f"dissolve 需要有效的 field 参数（可用列: {_field_names(layer)}）"
-            )
+            raise RuntimeError(f"dissolve 需要有效的 field 参数（可用列: {_field_names(layer)}）")
         alg_params = {"INPUT": layer, "FIELD": [field], "OUTPUT": "memory:"}
     else:
         alg_params = {"INPUT": layer, "OUTPUT": "memory:"}
@@ -743,6 +751,7 @@ def tool_load_raster(path: str) -> dict:
 
 
 # ── 编辑会话（Gate 6：HITL 审批联动）───────────────
+
 
 def _require_editing() -> QgsVectorLayer:
     layer = _require_layer()
@@ -852,9 +861,7 @@ def tool_categorized(column: str, output: str = "categorized.png") -> dict:
     layer = _require_layer()
     if column not in _field_names(layer):
         raise RuntimeError(f"列不存在: {column}（可用列: {_field_names(layer)}）")
-    values = sorted(
-        {str(f[column]) for f in layer.getFeatures() if f[column] is not None}
-    )
+    values = sorted({str(f[column]) for f in layer.getFeatures() if f[column] is not None})
     if not values:
         raise RuntimeError(f"列 {column} 没有有效分类值")
     renderer = QgsCategorizedSymbolRenderer(column, [])
@@ -882,9 +889,7 @@ def tool_categorized(column: str, output: str = "categorized.png") -> dict:
 def tool_set_labeling(label_field: str, enabled: bool = True) -> dict:
     layer = _require_layer()
     if label_field not in _field_names(layer):
-        raise RuntimeError(
-            f"列不存在: {label_field}（可用列: {_field_names(layer)}）"
-        )
+        raise RuntimeError(f"列不存在: {label_field}（可用列: {_field_names(layer)}）")
     if enabled:
         settings = QgsPalLayerSettings()
         settings.fieldName = label_field
@@ -989,7 +994,9 @@ def main() -> int:
         try:
             req = json.loads(line)
         except json.JSONDecodeError:
-            sys.stdout.write(json.dumps({"ok": False, "error": "非法请求"}, ensure_ascii=False) + "\n")
+            sys.stdout.write(
+                json.dumps({"ok": False, "error": "非法请求"}, ensure_ascii=False) + "\n"
+            )
             sys.stdout.flush()
             continue
         op = req.get("op")

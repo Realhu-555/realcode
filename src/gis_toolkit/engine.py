@@ -1,4 +1,4 @@
-﻿"""GIS 引擎 — 基于 GeoPandas 的实现（工具接口面向未来 PyQGIS 对接抽象）
+"""GIS 引擎 — 基于 GeoPandas 的实现（工具接口面向未来 PyQGIS 对接抽象）
 
 每个工具返回可 JSON 序列化的摘要 dict；产物（图/CSV/GeoJSON）写入引擎输出目录。
 """
@@ -44,9 +44,7 @@ def _pick_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
 def _sanitize_filename(name: str) -> str:
     """产物文件名净化：拒绝空、绝对路径、路径穿越、非法字符"""
     if not name or not _SAFE_NAME.match(name):
-        raise GisEngineError(
-            f"非法产物文件名: {name!r}（只允许字母/数字/._-，禁止路径）"
-        )
+        raise GisEngineError(f"非法产物文件名: {name!r}（只允许字母/数字/._-，禁止路径）")
     return name
 
 
@@ -54,9 +52,9 @@ def _jsonable(obj):
     """????? JSON ??????shapely?WKT?numpy ???????????str"""
     if isinstance(obj, dict):
         return {str(k): _jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [_jsonable(v) for v in obj]
-    if obj is None or isinstance(obj, (str, int, float, bool)):
+    if obj is None or isinstance(obj, str | int | float | bool):
         return obj
     if hasattr(obj, "wkt"):  # shapely ??
         return obj.wkt
@@ -65,7 +63,6 @@ def _jsonable(obj):
     if hasattr(obj, "tolist"):  # numpy ??
         return obj.tolist()
     return str(obj)
-
 
 
 def _check_input_path(path: str, roots: list[Path]) -> Path:
@@ -199,7 +196,9 @@ class GisEngine:
         gdf = self._layer
         info = self._summary(gdf)
         bounds = gdf.total_bounds.tolist() if len(gdf) else None
-        non_geom = gdf.drop(columns=[gdf.geometry.name]) if gdf.geometry.name in gdf.columns else gdf
+        non_geom = (
+            gdf.drop(columns=[gdf.geometry.name]) if gdf.geometry.name in gdf.columns else gdf
+        )
         sample = _jsonable(non_geom.head(5).to_dict(orient="records"))
         return {
             "status": "ok",
@@ -295,9 +294,7 @@ class GisEngine:
                 note = f"（按省份聚合省界底图，{len(missing)} 个无数据省份）"
             elif is_points and self._base_map is not None:
                 # 底图 + 点叠加着色
-                self._base_map.plot(
-                    ax=ax, color="#f0e9dd", edgecolor="#9a9082", linewidth=0.5
-                )
+                self._base_map.plot(ax=ax, color="#f0e9dd", edgecolor="#9a9082", linewidth=0.5)
                 layer.plot(
                     column=column,
                     scheme=scheme,
@@ -406,9 +403,7 @@ class GisEngine:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         if predicate not in {"intersects", "within", "contains"}:
-            raise GisEngineError(
-                f"predicate 必须是 intersects/within/contains，收到: {predicate}"
-            )
+            raise GisEngineError(f"predicate 必须是 intersects/within/contains，收到: {predicate}")
         other = self._load_any(other_path)
         if self._layer.crs != other.crs:
             raise GisEngineError(
@@ -416,9 +411,7 @@ class GisEngine:
             )
         result = gpd.sjoin(self._layer, other, how="inner", predicate=predicate)
         self._layer = result
-        return self._result(
-            f"空间连接完成（predicate={predicate}），结果 {len(result)} 行"
-        )
+        return self._result(f"空间连接完成（predicate={predicate}），结果 {len(result)} 行")
 
     def voronoi(self) -> dict:
         """对当前点图层生成泰森多边形（结果成为新的当前图层）"""
@@ -435,9 +428,7 @@ class GisEngine:
             minx, miny, maxx, maxy = layer.total_bounds
             envelope = shapely.geometry.box(minx, miny, maxx, maxy)
             polys = voronoi_diagram(pts, envelope=envelope)
-            result = gpd.GeoDataFrame(
-                geometry=list(polys.geoms), crs=layer.crs
-            )
+            result = gpd.GeoDataFrame(geometry=list(polys.geoms), crs=layer.crs)
         except Exception as exc:
             raise GisEngineError(f"生成泰森多边形失败: {exc}") from exc
         self._layer = result
@@ -464,9 +455,7 @@ class GisEngine:
 
             new_crs = pyproj.CRS.from_user_input(crs)
         except Exception as exc:
-            raise GisEngineError(
-                f"无效坐标系: {crs!r}（示例 EPSG:4326 / EPSG:3857）"
-            ) from exc
+            raise GisEngineError(f"无效坐标系: {crs!r}（示例 EPSG:4326 / EPSG:3857）") from exc
         self._layer = self._layer.set_crs(new_crs, allow_override=True)
         return self._result(f"已设置坐标系为 {new_crs}")
 
@@ -584,8 +573,13 @@ class GisEngine:
             layer.plot(ax=ax, color=colors, edgecolor="#666666", linewidth=0.5)
             handles = [
                 plt.Line2D(
-                    [0], [0], marker="o", color="w", markerfacecolor=cat_to_color[c],
-                    markersize=8, label=c,
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    markerfacecolor=cat_to_color[c],
+                    markersize=8,
+                    label=c,
                 )
                 for c in cats
             ]
@@ -612,13 +606,9 @@ class GisEngine:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         if label_field not in self._layer.columns:
-            raise GisEngineError(
-                f"列不存在: {label_field}（可用列: {list(self._layer.columns)}）"
-            )
+            raise GisEngineError(f"列不存在: {label_field}（可用列: {list(self._layer.columns)}）")
         self._label_field = label_field if enabled else None
-        return self._result(
-            f"已{'启用' if enabled else '关闭'}标注（字段 {label_field}）"
-        )
+        return self._result(f"已{'启用' if enabled else '关闭'}标注（字段 {label_field}）")
 
     def _draw_labels(self, ax, layer) -> None:
         """在图上绘制标注（点/面质心处显示 label_field 值）"""
@@ -629,9 +619,7 @@ class GisEngine:
             xs, ys = layer.geometry.x, layer.geometry.y
         else:
             xs, ys = layer.geometry.centroid.x, layer.geometry.centroid.y
-        for x, y, label in zip(
-            xs, ys, layer[self._label_field].astype(str), strict=False
-        ):
+        for x, y, label in zip(xs, ys, layer[self._label_field].astype(str), strict=False):
             ax.annotate(label, (x, y), fontsize=6, ha="center", va="center")
 
     def run_algorithm(self, algorithm: str, params: dict | None = None) -> dict:
@@ -657,9 +645,7 @@ class GisEngine:
             result.geometry = layer.geometry.convex_hull
             message = f"已生成 {len(result)} 个要素凸包"
         else:
-            raise GisEngineError(
-                f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）"
-            )
+            raise GisEngineError(f"未知算法: {algorithm}（白名单: dissolve/centroids/convexhull）")
         self._layer = result
         return self._result(message)
 
@@ -832,6 +818,7 @@ class GisEngine:
             },
             ensure_ascii=False,
         )
+
 
 def create_gis_engine(engine: str | None = None, **kwargs) -> GisEngine:
     """按 GIS_ENGINE 环境变量（geopandas 默认 / qgis）创建引擎"""

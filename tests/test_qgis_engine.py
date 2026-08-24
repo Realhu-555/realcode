@@ -1,4 +1,4 @@
-﻿"""QGIS 引擎 9 个工具验证 — PyQGIS worker 真实执行 + 与 GeoPandas 引擎对照
+"""QGIS 引擎 9 个工具验证 — PyQGIS worker 真实执行 + 与 GeoPandas 引擎对照
 
 环境无 QGIS 时自动 skip（Gate 2 验收：同一批用例在两种引擎下产物与摘要 diff 通过）。
 """
@@ -96,7 +96,9 @@ def test_overlay_matches_geopandas(poly_a, poly_b, qgis_engine):
         res = qgis_engine.overlay(poly_b, how)
         g = gpd.overlay(gdf_a, gdf_b, how=how)
         assert res["status"] == "ok"
-        assert res["layer"]["rows"] == len(g), f"overlay {how} ?????: {res['layer']['rows']} vs {len(g)}"
+        assert res["layer"]["rows"] == len(g), (
+            f"overlay {how} ?????: {res['layer']['rows']} vs {len(g)}"
+        )
 
 
 def test_choropleth(point_csv, qgis_engine):
@@ -154,7 +156,9 @@ def test_snapshot(point_csv, qgis_engine, tmp_path):
 def test_engine_switch_creates_qgs(tmp_path):
     if not _qgis_available():
         pytest.skip("本机未安装 QGIS，跳过 QGIS 引擎测试")
-    eng = create_gis_engine(engine="qgis", out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
+    eng = create_gis_engine(
+        engine="qgis", out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)]
+    )
     assert isinstance(eng, QgsEngine)
     eng.close()
 
@@ -173,14 +177,15 @@ def test_whitelist_rejects_outside(tmp_path, point_csv, qgis_engine):
 
 # ── P0 新工具：join_by_location / voronoi / crs / list_layers ──────────
 
+
 def test_join_by_location_matches_geopandas(tmp_path, qgis_engine):
     """空间连接（within）与 geopandas 对照：行数与并入属性一致"""
     inner = tmp_path / "inner_points.csv"
     inner.write_text("name,lon,lat\np1,2,2\np2,8,8\np3,50,50\n", encoding="utf-8")
     poly = tmp_path / "poly_a.geojson"
-    gpd.GeoDataFrame(
-        {"region": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
-    ).to_file(poly, driver="GeoJSON")
+    gpd.GeoDataFrame({"region": ["A"]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326").to_file(
+        poly, driver="GeoJSON"
+    )
 
     # geopandas 对照（CSV 读出来是 DataFrame，显式构造点）
     gpd_pts = gpd.GeoDataFrame(
@@ -232,6 +237,7 @@ def test_list_layers(point_csv, qgis_engine):
 
 
 # ── P1 新工具：field_statistics / unique_values / transform_coords / render_map ──
+
 
 def test_field_statistics_matches_geopandas(point_csv, qgis_engine):
     """字段统计与 geopandas 对照（count/mean/min/max）"""

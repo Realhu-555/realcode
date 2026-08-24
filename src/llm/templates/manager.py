@@ -212,10 +212,7 @@ _TEMPLATES: dict[str, PrdTemplate] = {
 
 def list_templates() -> list[dict[str, str]]:
     """列出所有可用模板"""
-    return [
-        {"name": t.name, "description": t.description}
-        for t in _TEMPLATES.values()
-    ]
+    return [{"name": t.name, "description": t.description} for t in _TEMPLATES.values()]
 
 
 def get_template(name: str = "default") -> PrdTemplate:

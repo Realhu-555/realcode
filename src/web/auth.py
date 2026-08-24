@@ -30,4 +30,5 @@ def get_user_id(x_api_key: str = Header(default="", alias="X-API-Key")) -> str:
 
     # Key 经过哈希作为 user_id（不存明文）
     import hashlib
+
     return hashlib.sha256(key.encode()).hexdigest()[:16]

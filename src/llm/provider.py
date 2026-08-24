@@ -54,7 +54,9 @@ class LLMProvider:
         """把注册表价格同步给 cost_tracker（保留 default 兜底）"""
         pricing = {mid: cfg.pricing for mid, cfg in self.registry.models.items()}
         if pricing:
-            pricing.setdefault("default", pricing.get("deepseek-v4-pro", {"input": 0.27, "output": 1.10}))
+            pricing.setdefault(
+                "default", pricing.get("deepseek-v4-pro", {"input": 0.27, "output": 1.10})
+            )
             cost_tracker.pricing = pricing
 
     # ── 客户端工厂 ──

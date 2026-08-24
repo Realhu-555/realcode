@@ -31,14 +31,16 @@ class ToolTracker:
         self.invocations: list[ToolInvocation] = []
 
     def record(self, tool_id: str, agent: str, params: dict, result: Any, error: str | None = None):
-        self.invocations.append(ToolInvocation(
-            tool_id=tool_id,
-            agent=agent,
-            params=params,
-            success=(error is None),
-            result=result,
-            error=error,
-        ))
+        self.invocations.append(
+            ToolInvocation(
+                tool_id=tool_id,
+                agent=agent,
+                params=params,
+                success=(error is None),
+                result=result,
+                error=error,
+            )
+        )
 
     def summary(self) -> dict:
         return {
@@ -94,7 +96,9 @@ async def call_tool(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
 
     try:
         result = await tool.execute(ctx, **kwargs)
-        tracker.record(tool_id, agent, kwargs, result.data if result.success else None, result.error)
+        tracker.record(
+            tool_id, agent, kwargs, result.data if result.success else None, result.error
+        )
         return result
     except Exception as e:
         tracker.record(tool_id, agent, kwargs, None, str(e))
@@ -107,6 +111,7 @@ def call_tool_sync(tool_id: str, agent: str, state: dict, **kwargs) -> Any:
         asyncio.get_running_loop()  # 无事件循环时抛异常，走 except 分支
         # 已在事件循环中 → 不能 asyncio.run()
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(lambda: asyncio.run(call_tool(tool_id, agent, state, **kwargs)))
             return future.result(timeout=30)

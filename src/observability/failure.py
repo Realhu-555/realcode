@@ -14,11 +14,11 @@ from typing import Any
 class FailureInfo:
     """结构化失败信息"""
 
-    stage: str                       # ContentStage 字符串：strategy/generating/review...
-    node: str                        # 出错的 Agent 节点：celve/gongzhonghao/zhihu/...
-    error_type: str                  # llm_call / tool_call / timeout / unknown
-    message: str                     # 错误消息
-    tool_name: str | None = None     # 涉及的工具（tool_call 时）
+    stage: str  # ContentStage 字符串：strategy/generating/review...
+    node: str  # 出错的 Agent 节点：celve/gongzhonghao/zhihu/...
+    error_type: str  # llm_call / tool_call / timeout / unknown
+    message: str  # 错误消息
+    tool_name: str | None = None  # 涉及的工具（tool_call 时）
     trace_snippet: str | None = None  # 轨迹片段（关键上下文）
 
     def to_dict(self) -> dict[str, Any]:

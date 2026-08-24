@@ -1,4 +1,4 @@
-﻿"""QGIS 引擎 — 通过常驻 worker 子进程调用 PyQGIS，接口与 GisEngine 对齐。
+"""QGIS 引擎 — 通过常驻 worker 子进程调用 PyQGIS，接口与 GisEngine 对齐。
 
 - 主进程（项目 venv）不依赖 QGIS，安全校验（路径白名单/文件名净化）留在主进程；
 - worker（QGIS 自带 Python）只做 GIS 运算，stdin/stdout JSON-lines 通信；
@@ -37,9 +37,7 @@ def _find_qgis_prefix() -> str:
     for c in candidates:
         if c and os.path.isdir(os.path.join(c, "python", "qgis", "core")):
             return c
-    raise GisEngineError(
-        "未找到 QGIS 安装（设置 QGIS_PREFIX_PATH 指向 apps/qgis-ltr 目录）"
-    )
+    raise GisEngineError("未找到 QGIS 安装（设置 QGIS_PREFIX_PATH 指向 apps/qgis-ltr 目录）")
 
 
 class QgsEngine:
@@ -127,9 +125,7 @@ class QgsEngine:
         if result.get("layer") is not None:
             self._layer = result["layer"]
         result["outputs"] = list(self.outputs)
-        result["output_paths"] = [
-            str((self.out_dir / o).resolve()) for o in self.outputs
-        ]
+        result["output_paths"] = [str((self.out_dir / o).resolve()) for o in self.outputs]
         return result
 
     # ── 工具实现（签名与 GisEngine 完全一致）──
@@ -151,9 +147,7 @@ class QgsEngine:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         resolved = _check_input_path(other_path, self._roots)
-        return self._merge(
-            self._call("overlay", {"other_path": str(resolved), "how": how})
-        )
+        return self._merge(self._call("overlay", {"other_path": str(resolved), "how": how}))
 
     def choropleth(
         self,
@@ -256,9 +250,7 @@ class QgsEngine:
     def transform_coords(self, target_crs: str) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
-        return self._merge(
-            self._call("transform_coords", {"target_crs": target_crs})
-        )
+        return self._merge(self._call("transform_coords", {"target_crs": target_crs}))
 
     def render_map(self, output: str = "map.png") -> dict:
         if self._layer is None:

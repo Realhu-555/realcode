@@ -76,6 +76,7 @@ async def index():
 # WebSocket
 # ════════════════════════════════════════════════════════════
 
+
 class ConnectionManager:
     def __init__(self):
         self.active: dict[str, WebSocket] = {}
@@ -149,17 +150,22 @@ async def ws_endpoint(ws: WebSocket):
 
 
 async def _push_progress(project_id: str, agent: str, status: str, detail: str = ""):
-    await ws_manager.broadcast(project_id, {
-        "type": "progress", "project_id": project_id,
-        "agent": agent, "status": status, "detail": detail, "timestamp": time.time(),
-    })
+    await ws_manager.broadcast(
+        project_id,
+        {
+            "type": "progress",
+            "project_id": project_id,
+            "agent": agent,
+            "status": status,
+            "detail": detail,
+            "timestamp": time.time(),
+        },
+    )
 
 
 # ════════════════════════════════════════════════════════════
 # Pipeline trace
 # ════════════════════════════════════════════════════════════
-
-
 
 
 @app.get("/health")
@@ -171,6 +177,7 @@ async def health():
 async def list_models(user_id: str = Depends(get_user_id)):
     """列出可用模型（前端模型选择下拉）"""
     from src.llm.models import load_registry
+
     registry = load_registry()
     return {
         "models": registry.list_models(),
@@ -182,6 +189,7 @@ async def list_models(user_id: str = Depends(get_user_id)):
 # GIS 智能操作平台（SPEC v1.2）
 # ════════════════════════════════════════════════════════════
 
+
 class GisBuildRequest(BaseModel):
     user_request: str
     data_file: str | None = None
@@ -190,6 +198,7 @@ class GisBuildRequest(BaseModel):
 
 class GisAssistantRequest(BaseModel):
     """工具调用版 GIS 助手请求"""
+
     user_request: str
     data_file: str | None = None
     model_preference: str | None = None
@@ -230,6 +239,7 @@ async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
         req.model_preference,
     )
     return {"project_id": project_id, **result}
+
 
 @app.post("/api/v1/gis-assistant/run")
 async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get_user_id)):
@@ -394,6 +404,7 @@ async def gis_permission(
 # GIS helpers
 # ════════════════════════════════════════════════════════════
 
+
 def _build_gis_agents() -> dict:
     return {
         "plan": PlanAgent(),
@@ -479,7 +490,9 @@ def _run_gis_assistant_sync(
     传入 session（GisSession）时复用引擎状态与对话历史，实现多轮连续对话。
     """
     try:
-        engine = session.engine if session is not None else create_gis_engine(allowed_roots=["data"])
+        engine = (
+            session.engine if session is not None else create_gis_engine(allowed_roots=["data"])
+        )
         agent = GisToolAgent(
             engine=engine,
             max_steps=12,
@@ -536,8 +549,7 @@ def _run_gis_sync(
     agents = _build_gis_agents()
     if loop is not None:
         agents = {
-            name: _GisProgressAgent(name, agent, project_id, loop)
-            for name, agent in agents.items()
+            name: _GisProgressAgent(name, agent, project_id, loop) for name, agent in agents.items()
         }
     graph = create_gis_graph(
         agents,
@@ -614,7 +626,9 @@ async def _run_gis_ws(
             model_preference,
             loop,
         )
-        await ws_manager.broadcast(project_id, {"type": "gis_result", "project_id": project_id, **result})
+        await ws_manager.broadcast(
+            project_id, {"type": "gis_result", "project_id": project_id, **result}
+        )
     except Exception as exc:
         await ws_manager.broadcast(
             project_id,
@@ -625,6 +639,7 @@ async def _run_gis_ws(
 # ════════════════════════════════════════════════════════════
 # Helpers
 # ════════════════════════════════════════════════════════════
+
 
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
@@ -639,6 +654,7 @@ async def spa_fallback(full_path: str):
 
 def start():
     import uvicorn
+
     uvicorn.run("src.web.server:app", host="0.0.0.0", port=8080, reload=True)
 
 

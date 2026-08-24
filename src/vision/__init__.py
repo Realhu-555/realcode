@@ -81,10 +81,10 @@ async def describe_images(
         return (
             "（图片已上传，但未配置视觉模型。两种启用方式：\n"
             "1. 免费方案：去 https://openrouter.ai/keys 注册，获取 Key 后加到 .env：\n"
-            '   OPENROUTER_API_KEY=sk-or-v1-...\n'
+            "   OPENROUTER_API_KEY=sk-or-v1-...\n"
             "2. OCR 方案：pip install easyocr，然后 .env 设置 OCR_BACKEND=easyocr\n"
             "3. 官方方案：去 https://platform.xiaomimimo.com/ 注册，获取 Key 后加到 .env：\n"
-            '   MIMO_API_KEY=sk-...'
+            "   MIMO_API_KEY=sk-..."
         )
 
     if model == "easyocr":
@@ -103,13 +103,18 @@ async def describe_images(
         try:
             response = client.chat.completions.create(
                 model=model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"{prompt}\n\n（第 {i}/{len(image_data_urls)} 张图片）"},
-                        {"type": "image_url", "image_url": {"url": url}},
-                    ],
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"{prompt}\n\n（第 {i}/{len(image_data_urls)} 张图片）",
+                            },
+                            {"type": "image_url", "image_url": {"url": url}},
+                        ],
+                    }
+                ],
                 temperature=0.3,
                 max_tokens=1024,
             )
@@ -139,13 +144,16 @@ async def _ocr_easyocr(image_data_urls: list[str], product_name: str) -> str:
         try:
             _, b64_data = url.split(",", 1)
             from PIL import Image
+
             img = Image.open(io.BytesIO(base64.b64decode(b64_data)))
             import tempfile
+
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
                 img.save(f)
                 tmp = f.name
             results = reader.readtext(tmp)
             import os as _os
+
             _os.unlink(tmp)
 
             if results:
@@ -156,5 +164,9 @@ async def _ocr_easyocr(image_data_urls: list[str], product_name: str) -> str:
         except Exception as e:
             descriptions.append(f"### 图片 {i}\n（OCR 失败: {e}）")
 
-    suffix = f"\n以上是从「{product_name}」相关图片中提取的信息，请结合这些内容制定策略。" if product_name else ""
+    suffix = (
+        f"\n以上是从「{product_name}」相关图片中提取的信息，请结合这些内容制定策略。"
+        if product_name
+        else ""
+    )
     return "\n\n".join(descriptions) + suffix

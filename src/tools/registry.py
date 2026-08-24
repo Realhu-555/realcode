@@ -21,11 +21,7 @@ class ToolRegistry:
 
     def build_descriptions(self, agent_tool_ids: list[str]) -> list[ToolDescription]:
         """为指定 Agent 生成工具描述列表（注入 system prompt）"""
-        return [
-            self._tools[tid].description
-            for tid in agent_tool_ids
-            if tid in self._tools
-        ]
+        return [self._tools[tid].description for tid in agent_tool_ids if tid in self._tools]
 
     def build_openai_tools(self, agent_tool_ids: list[str]) -> list[dict]:
         """生成 OpenAI/DeepSeek 原生 function calling 格式的 tools 参数"""
@@ -35,14 +31,16 @@ class ToolRegistry:
             if tool is None:
                 continue
             desc = tool.description
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": desc.name,
-                    "description": desc.description,
-                    "parameters": desc.parameters,
-                },
-            })
+            result.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": desc.name,
+                        "description": desc.description,
+                        "parameters": desc.parameters,
+                    },
+                }
+            )
         return result
 
     def get(self, tool_id: str) -> Tool | None:

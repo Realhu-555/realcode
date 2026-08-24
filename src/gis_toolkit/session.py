@@ -47,7 +47,9 @@ class GisSession:
         """刷新活跃时间"""
         self.last_active = time.time()
 
-    def append_round(self, messages: list[dict], user_request: str, final: str, result: dict) -> None:
+    def append_round(
+        self, messages: list[dict], user_request: str, final: str, result: dict
+    ) -> None:
         """本轮结束后追加历史：rounds 记录展示数据，图层快照。
 
         对话原文全量保留（上限 SESSION_MESSAGE_CAP），是否压缩由 agent 的
@@ -134,7 +136,9 @@ class GisSessionStore:
         self._sessions: dict[str, dict[str, GisSession]] = {}  # user_id -> sid -> session
 
     # ── 生命周期 ──
-    def get_or_create(self, session_id: str | None = None, user_id: str = "anonymous") -> tuple[str, GisSession]:
+    def get_or_create(
+        self, session_id: str | None = None, user_id: str = "anonymous"
+    ) -> tuple[str, GisSession]:
         """按 session_id 复用会话；不存在则新建"""
         user_map = self._sessions.setdefault(user_id, {})
         if session_id and session_id in user_map:

@@ -1,4 +1,4 @@
-﻿"""GIS 基准任务集评测器测试 — 检查函数 + run_one 汇总逻辑"""
+"""GIS 基准任务集评测器测试 — 检查函数 + run_one 汇总逻辑"""
 
 from pathlib import Path
 
@@ -17,6 +17,7 @@ def _result(tools, outputs=None):
 
 
 # ── 检查函数 ─────────────────────────────────────────
+
 
 def test_tool_called():
     ok, _ = bench._tool_called(_result(["load_data", "choropleth"]), "choropleth")
@@ -48,7 +49,9 @@ def test_file_and_png_checks(tmp_path):
 
 def test_csv_checks(tmp_path):
     engine = GisEngine(out_dir=str(tmp_path), allowed_roots=[str(tmp_path), "data"])
-    (engine.out_dir / "s.csv").write_text("province,gdp\n北京,100\n上海,200\n", encoding="utf-8-sig")
+    (engine.out_dir / "s.csv").write_text(
+        "province,gdp\n北京,100\n上海,200\n", encoding="utf-8-sig"
+    )
     assert bench._csv_rows(engine, "s.csv", 2)[0] is True
     assert bench._csv_rows(engine, "s.csv", 3)[0] is False
     assert bench._csv_columns(engine, "s.csv", ["province", "gdp"])[0] is True
@@ -66,6 +69,7 @@ def test_buffer_area_grew(tmp_path):
 
 
 # ── run_one 汇总逻辑 ─────────────────────────────────
+
 
 def test_run_one_all_pass(tmp_path, monkeypatch):
     def fake_run(self, request, data_file=None):

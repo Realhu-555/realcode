@@ -62,10 +62,16 @@ def test_session_engine_keeps_layer_between_rounds(tmp_path):
     agent.llm = FakeLLM(
         [
             {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
-            {"content": None, "tool_calls": [_tc("c2", "finish", {"outputs": [], "summary": "ok"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c2", "finish", {"outputs": [], "summary": "ok"})],
+            },
             # 第二轮：不再 load，直接 inspect
             {"content": None, "tool_calls": [_tc("c3", "inspect_data", {})]},
-            {"content": None, "tool_calls": [_tc("c4", "finish", {"outputs": [], "summary": "ok"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c4", "finish", {"outputs": [], "summary": "ok"})],
+            },
         ]
     )
 
@@ -97,13 +103,18 @@ def test_new_session_starts_fresh(tmp_path):
     agent.llm = FakeLLM(
         [
             {"content": None, "tool_calls": [_tc("c1", "load_data", {"path": csv})]},
-            {"content": None, "tool_calls": [_tc("c2", "finish", {"outputs": [], "summary": "ok"})]},
+            {
+                "content": None,
+                "tool_calls": [_tc("c2", "finish", {"outputs": [], "summary": "ok"})],
+            },
         ]
     )
     agent.run("加载数据", session=sess)
 
     # 新会话（无 session）→ 直接 inspect 应报"没有图层"
-    fresh = GisToolAgent(engine=GisEngine(out_dir=str(out), allowed_roots=[str(tmp_path)]), max_steps=12)
+    fresh = GisToolAgent(
+        engine=GisEngine(out_dir=str(out), allowed_roots=[str(tmp_path)]), max_steps=12
+    )
     fresh.llm = FakeLLM(
         [
             {"content": None, "tool_calls": [_tc("c3", "inspect_data", {})]},
@@ -123,7 +134,14 @@ def test_store_persist_list_and_detail(tmp_path):
         [],
         "把 gdp_demo.csv 做分级设色图",
         "已完成",
-        {"steps": 2, "outputs": ["map.png"], "trajectory": [{"step": 1, "tool": "load_data", "args": {}, "result": {"status": "ok"}}], "timed_out": False},
+        {
+            "steps": 2,
+            "outputs": ["map.png"],
+            "trajectory": [
+                {"step": 1, "tool": "load_data", "args": {}, "result": {"status": "ok"}}
+            ],
+            "timed_out": False,
+        },
     )
     store.save("u1", sess)
 
@@ -157,7 +175,9 @@ def test_store_restore_from_persistence(tmp_path):
     db = str(tmp_path / "sessions.json")
     store1 = GisSessionStore(db_path=db, ttl=3600)
     sid, sess = store1.get_or_create(user_id="u1")
-    sess.append_round([], "分析数据", "完成", {"steps": 1, "outputs": [], "trajectory": [], "timed_out": False})
+    sess.append_round(
+        [], "分析数据", "完成", {"steps": 1, "outputs": [], "trajectory": [], "timed_out": False}
+    )
     store1.save("u1", sess)
 
     store2 = GisSessionStore(db_path=db, ttl=3600)

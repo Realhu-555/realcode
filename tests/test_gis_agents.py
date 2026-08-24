@@ -20,13 +20,16 @@ GIS_STATE = {
 
 # ── gis_common 解析工具 ────────────────────────────────
 
+
 def test_parse_ask_user():
     assert parse_ask_user("[ASK_USER]请提供省份字段名[/ASK_USER]") == "请提供省份字段名"
     assert parse_ask_user("没有追问，直接输出方案") is None
 
 
 def test_extract_block_with_and_without_marker():
-    assert extract_block("a\n---SCRIPT_START---\ncode\n---SCRIPT_END---\nb", SCRIPT_PATTERN) == "code"
+    assert (
+        extract_block("a\n---SCRIPT_START---\ncode\n---SCRIPT_END---\nb", SCRIPT_PATTERN) == "code"
+    )
     assert extract_block("裸文本", SCRIPT_PATTERN) == "裸文本"
 
 
@@ -43,6 +46,7 @@ def test_parse_pass_fail():
 
 
 # ── PlanAgent ─────────────────────────────────────────
+
 
 class TestPlanAgent:
     @patch("src.agents.gis_plan.LLMProvider")
@@ -70,6 +74,7 @@ class TestPlanAgent:
 
 # ── DesignAgent ───────────────────────────────────────
 
+
 class TestDesignAgent:
     @patch("src.agents.gis_design.LLMProvider")
     def test_run_returns_tech_plan(self, mock_llm_cls: MagicMock):
@@ -84,6 +89,7 @@ class TestDesignAgent:
 
 
 # ── CodegenAgent ──────────────────────────────────────
+
 
 class TestCodegenAgent:
     @patch("src.agents.gis_codegen.LLMProvider")
@@ -100,15 +106,18 @@ class TestCodegenAgent:
 
 # ── CheckerAgent ──────────────────────────────────────
 
+
 class TestCheckerAgent:
     @patch("src.agents.gis_checker.LLMProvider")
     def test_run_returns_report(self, mock_llm_cls: MagicMock):
         from src.agents.gis_checker import CheckerAgent
 
-        mock_llm_cls.return_value.chat.return_value = (
-            "---CHECK_REPORT_START---\n- ✅ choropleth.png 存在\n整体结论: PASS\n---CHECK_REPORT_END---"
-        )
-        state = {**GIS_STATE, "exec_log": "CRS: EPSG:4326\nROWS: 31", "artifacts": ["choropleth.png"]}
+        mock_llm_cls.return_value.chat.return_value = "---CHECK_REPORT_START---\n- ✅ choropleth.png 存在\n整体结论: PASS\n---CHECK_REPORT_END---"
+        state = {
+            **GIS_STATE,
+            "exec_log": "CRS: EPSG:4326\nROWS: 31",
+            "artifacts": ["choropleth.png"],
+        }
         result = CheckerAgent().run(state)
         assert "整体结论: PASS" in result["check_report"]
         assert result["current_stage"] == "check"

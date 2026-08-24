@@ -120,7 +120,9 @@ class ModelRegistry:
         return "deepseek-v4-pro" if "deepseek-v4-pro" in self.models else next(iter(self.models))
 
 
-def _parse_models(data: dict[str, Any]) -> tuple[dict[str, ModelConfig], dict[str, str], dict[str, list[str]]]:
+def _parse_models(
+    data: dict[str, Any],
+) -> tuple[dict[str, ModelConfig], dict[str, str], dict[str, list[str]]]:
     """从 YAML dict 解析出三件套"""
     models: dict[str, ModelConfig] = {}
     for mid, cfg in (data.get("models") or {}).items():

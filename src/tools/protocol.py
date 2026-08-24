@@ -13,9 +13,10 @@ from typing import Any, Protocol, runtime_checkable
 
 class ToolKind(Enum):
     """工具分类"""
-    SEARCH = "search"   # 搜索类（网络搜索、知识库查询）
-    READ = "read"       # 读取类（读取内容、文件）
-    WRITE = "write"     # 写入类（保存、导出）
+
+    SEARCH = "search"  # 搜索类（网络搜索、知识库查询）
+    READ = "read"  # 读取类（读取内容、文件）
+    WRITE = "write"  # 写入类（保存、导出）
 
 
 @dataclass
@@ -25,9 +26,10 @@ class ToolDescription:
     这段描述会被注入到 Agent 的 system prompt 中，
     Agent 只能看到它有权限使用的工具描述。
     """
-    name: str                          # "web_search"
-    description: str                   # "搜索互联网获取竞品信息和行业趋势"
-    parameters: dict[str, Any]         # JSON Schema 格式的参数定义
+
+    name: str  # "web_search"
+    description: str  # "搜索互联网获取竞品信息和行业趋势"
+    parameters: dict[str, Any]  # JSON Schema 格式的参数定义
 
 
 @dataclass
@@ -37,6 +39,7 @@ class ToolContext:
     所有工具通过同一个上下文对象获取资源，
     不各自 import config / get_db / read_file。
     """
+
     session_id: str
     working_dir: str
     project_state: dict[str, Any] = field(default_factory=dict)
@@ -46,6 +49,7 @@ class ToolContext:
 @dataclass
 class ToolResult:
     """工具执行结果"""
+
     success: bool
     data: Any
     error: str | None = None

@@ -13,6 +13,7 @@ from src.llm.provider import LLMProvider
 
 # ── 注册表（AC1）──
 
+
 def test_registry_loads_models():
     registry = load_registry()
     assert registry.get("deepseek-v4-pro") is not None
@@ -42,6 +43,7 @@ def test_registry_model_config_pricing():
 
 # ── 路由（AC2/AC3/AC5）──
 
+
 def test_resolve_chain_default():
     p = LLMProvider()
     chain = p._resolve_chain(None, "celve")
@@ -63,6 +65,7 @@ def test_resolve_chain_unknown_falls_back():
 
 # ── Failover（AC4）──
 
+
 class _FakeLLM(LLMProvider):
     """模拟主模型失败、备用成功的 Provider"""
 
@@ -83,8 +86,8 @@ def test_failover_switches_to_backup():
     p = _FakeLLM(fail_first=1)
     result = p.chat([{"role": "user", "content": "hi"}], agent_type="celve")
     assert result == "备用模型返回的结果"
-    assert p.calls[0] == "deepseek-v4-pro"   # 先试主模型
-    assert len(p.calls) >= 2                 # 然后切了备用
+    assert p.calls[0] == "deepseek-v4-pro"  # 先试主模型
+    assert len(p.calls) >= 2  # 然后切了备用
 
 
 def test_failover_all_fail_raises():
@@ -98,6 +101,7 @@ def test_failover_all_fail_raises():
 def test_failover_records_events():
     """failover 事件记入成本统计（可追溯）"""
     from src.observability.cost_tracker import cost_tracker
+
     cost_tracker.reset()
     p = _FakeLLM(fail_first=1)
     p.chat([{"role": "user", "content": "hi"}], agent_type="celve")

@@ -71,16 +71,11 @@ class GisToolAgent:
         if not demo_dir.is_dir():
             return ""
         allowed = {".csv", ".geojson", ".json", ".zip"}
-        files = sorted(
-            p for p in demo_dir.iterdir() if p.is_file() and p.suffix.lower() in allowed
-        )
+        files = sorted(p for p in demo_dir.iterdir() if p.is_file() and p.suffix.lower() in allowed)
         if not files:
             return ""
         lines = "\n".join(f"- {p.as_posix()}（演示数据集）" for p in files)
-        return (
-            "引擎工作目录中可用的数据文件（用户未显式提供时可直接 load_data 使用）：\n"
-            + lines
-        )
+        return "引擎工作目录中可用的数据文件（用户未显式提供时可直接 load_data 使用）：\n" + lines
 
     def run(
         self,
@@ -173,7 +168,12 @@ class GisToolAgent:
                 messages[1:],
                 user_request,
                 final,
-                {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
+                {
+                    "steps": steps_used,
+                    "outputs": outputs,
+                    "trajectory": trajectory,
+                    "timed_out": timed_out,
+                },
             )
             self._maybe_roll_summary(session)
         self._save_trace(user_request, final, outputs, trajectory)
@@ -297,7 +297,12 @@ class GisToolAgent:
                     messages[1:],
                     user_request,
                     final,
-                    {"steps": steps_used, "outputs": outputs, "trajectory": trajectory, "timed_out": timed_out},
+                    {
+                        "steps": steps_used,
+                        "outputs": outputs,
+                        "trajectory": trajectory,
+                        "timed_out": timed_out,
+                    },
                 )
                 self._maybe_roll_summary(session)
             self._save_trace(user_request, final, outputs, trajectory)
@@ -375,9 +380,7 @@ class GisToolAgent:
                 f"可先调用 inspect_data 查看字段与 CRS，再继续后续任务。\n\n用户请求: {user_request}"
             )
         elif data_file:
-            user_content = (
-                f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
-            )
+            user_content = f"数据文件已就绪: {data_file}。请先用 load_data 加载该文件，再用 inspect_data 查看。\n\n用户请求: {user_request}"
 
         messages: list[dict] = [{"role": "system", "content": system_content}]
         if session is not None and getattr(session, "messages", None):
@@ -387,9 +390,7 @@ class GisToolAgent:
 
     def _maybe_roll_summary(self, session) -> None:
         """会话历史超出 token 阈值时，用 LLM 生成滚动摘要并裁剪历史窗口"""
-        est_tokens = (
-            sum(len(str(m.get("content") or "")) for m in session.messages) // 3
-        )
+        est_tokens = sum(len(str(m.get("content") or "")) for m in session.messages) // 3
         if est_tokens <= COMPACT_THRESHOLD_TOKENS:
             return
         try:
