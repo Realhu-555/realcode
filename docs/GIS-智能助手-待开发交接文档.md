@@ -35,10 +35,11 @@
 ## 3. 当前状态（已完成，勿重做）
 
 - **Gate 1/2/3** ✅：QGIS 环境验证、`QgsEngine` 9 工具、引擎可切换（`GIS_ENGINE`）
+- **Gate 4** ✅：记忆系统收尾（lesson 向量化语义检索 + 主动压缩阈值，Marvis 2026-08-24 完成）
 - **Gate 6** ✅：要素编辑（事务式会话 start/add/update/update_geometry/delete/commit/rollback）+ 复制图层 + **危险操作审批（HITL）**端到端
 - **Gate 7** ✅：样式定制（`categorized` 分类设色、`set_labeling` 标注）+ 工程管理（`get_project_info` / `save_project`）
 - **工具共 32 个**：加载/查看（load_data, inspect_data, list_layers, field_statistics, unique_values, load_raster）、空间分析（buffer, overlay, join_by_location, voronoi, run_algorithm, transform_coords, get_crs, set_crs）、统计出图（choropleth, scatter_plot, summarize, categorized, render_map, set_labeling, export_geojson）、编辑（start_editing, add_features, update_features, update_geometry, delete_features, commit_edits, rollback_edits）、工程（duplicate_layer, get_project_info, save_project, finish）
-- **测试**：pytest 263 通过 / 2 失败；`scripts/smoke.py` 通过
+- **测试**：pytest 304 通过（`test_ocr_docker/test_sandbox/test_gis_sandbox` 环境类除外）；`scripts/smoke.py` 通过
 - **测试数据**：已扩充（见 `data/README.md`：`data/gis_base/` 行政区划/统计面/点线栅格、`data/gis_demo/` CSV）
 - **相关文档**：`SPEC-GIS智能操作平台.md`、`GIS-智能助手-工具调用设计.md`、`GIS-真实引擎接入方案.md`、`GIS-智能操作助手-操作能力规划.md`、`改进计划.md`、`GIS-助手工程化与上线方案.md`、`dsh-接入方案.md`、`GIS-3D城市可视化-最小演示方案.md`
 
@@ -52,13 +53,13 @@
 
 ## 5. 待开发任务（按优先级）
 
-### P1 — 记忆系统收尾（对应 Gate 4，文档需标记 ✅）
-- 现状：`agent.py` 已有滚动摘要压缩（`COMPACT_THRESHOLD_TOKENS=24000`、`HISTORY_WINDOW_MESSAGES=40`）和 `LongTermMemory`（lesson 保存 / `_build_ltm_hint`）
-- 待办：
-  1. 长期记忆向量化检索：把会话摘要/lesson 结构化提取后写入向量库，按相关性 top-k 注入提示（可用轻量方案，如本地 embedding + sqlite/faiss）
-  2. 主动压缩阈值：对话长度接近上限时**提前**触发摘要压缩，而不是爆了才压缩
-  3. 补齐测试：10+ 轮长对话不爆上下文；跨会话能召回历史结论与产物引用
-- 验收：长链对话稳定；跨会话召回可用；`Gate 4` 在文档标记 ✅
+### P1 — 记忆系统收尾 ✅（对应 Gate 4）
+- 现状：~~`agent.py` 已有滚动摘要压缩（`COMPACT_THRESHOLD_TOKENS=24000`、`HISTORY_WINDOW_MESSAGES=40`）和 `LongTermMemory`（lesson 保存 / `_build_ltm_hint`）~~（已完成，Marvis 2026-08-24）
+- 已完成：
+  1. 长期记忆向量化检索：`lesson_embeddings` 表 + 哈希 n-gram 特征向量（256 维）+ 余弦 top-k，`semantic_search_lessons`；`get_relevant_lessons` 语义优先、旧库文本回退
+  2. 主动压缩阈值：`COMPACT_WARN_RATIO=0.8`，估算 token 达 warn 阈值即提前滚动摘要
+  3. 补齐测试：`tests/test_memory_gate4.py` 11 项（向量写入/确定性/语义命中/排序/空库/旧库回退/压缩阈值/60 条长对话有界）
+- 验收：长链对话稳定；跨会话召回可用；`Gate 4` 在文档标记 ✅（已标记）
 
 ### P1 — 操作能力补强（操作型主线，用户高频需求）
 1. **字段计算 `calculate_field`**：对当前图层按表达式生成新列（四则运算、归一化、人均 = gdp/pop 等）；危险写操作进审批
