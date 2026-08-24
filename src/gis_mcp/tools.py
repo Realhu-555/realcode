@@ -351,6 +351,21 @@ def _delete_features(ids: list[int]) -> dict:
     return _get_manager().get().delete_features(ids=ids)
 
 
+def _calculate_field(expression: str, field_name: str, where: str | None = None) -> dict:
+    """按表达式生成新字段（列）。
+
+    Args:
+        expression: 计算表达式，如 'gdp / population'。
+        field_name: 新字段名（不可与现有字段重名）。
+        where: 可选条件表达式，只对满足条件的要素计算。
+    """
+    return (
+        _get_manager()
+        .get()
+        .calculate_field(expression=expression, field_name=field_name, where=where)
+    )
+
+
 def _commit_edits() -> dict:
     """提交编辑会话。"""
     return _get_manager().get().commit_edits()
@@ -436,6 +451,7 @@ _HANDLERS = {
     "update_features": _update_features,
     "update_geometry": _update_geometry,
     "delete_features": _delete_features,
+    "calculate_field": _calculate_field,
     "commit_edits": _commit_edits,
     "rollback_edits": _rollback_edits,
     "duplicate_layer": _duplicate_layer,
