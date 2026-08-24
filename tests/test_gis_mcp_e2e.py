@@ -62,14 +62,14 @@ def _error_text(result) -> str:
 
 
 def test_list_tools_has_thirty_two(tmp_path):
-    """stdio 客户端 list_tools 返回 33 个 gis_* 工具"""
+    """stdio 客户端 list_tools 返回 34 个 gis_* 工具"""
 
     async def _run(sess):
         tools = await sess.list_tools()
         return sorted(t.name for t in tools.tools)
 
     names = _with_session(_run, tmp_path / "out")
-    assert len(names) == 33
+    assert len(names) == 34
     assert all(n.startswith("gis_") for n in names)
 
 

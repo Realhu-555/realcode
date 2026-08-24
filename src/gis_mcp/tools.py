@@ -366,6 +366,32 @@ def _calculate_field(expression: str, field_name: str, where: str | None = None)
     )
 
 
+def _join_by_attribute(
+    other_path: str,
+    left_key: str,
+    right_key: str,
+    how: Literal["inner", "left"] = "inner",
+) -> dict:
+    """把 CSV/表按关键字段属性连接到当前图层。
+
+    Args:
+        other_path: 关联表文件路径（CSV / GeoJSON / zip）。
+        left_key: 当前图层用于连接的字段名。
+        right_key: 关联表中用于连接的字段名。
+        how: inner 只保留匹配行 / left 保留当前图层全部行。
+    """
+    return (
+        _get_manager()
+        .get()
+        .join_by_attribute(
+            other_path=other_path,
+            left_key=left_key,
+            right_key=right_key,
+            how=how,
+        )
+    )
+
+
 def _commit_edits() -> dict:
     """提交编辑会话。"""
     return _get_manager().get().commit_edits()
@@ -452,6 +478,7 @@ _HANDLERS = {
     "update_geometry": _update_geometry,
     "delete_features": _delete_features,
     "calculate_field": _calculate_field,
+    "join_by_attribute": _join_by_attribute,
     "commit_edits": _commit_edits,
     "rollback_edits": _rollback_edits,
     "duplicate_layer": _duplicate_layer,
