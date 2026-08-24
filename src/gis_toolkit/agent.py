@@ -19,7 +19,8 @@ from src.llm.provider import LLMProvider
 from src.utils.logger import agent_logger
 
 PRODUCT_TOOLS = {"choropleth", "scatter_plot", "render_map", "summarize", "export_geojson"}
-COMPACT_THRESHOLD_TOKENS = 24000  # 会话历史估算 token 超过该值触发滚动摘要
+COMPACT_THRESHOLD_TOKENS = 24000  # 会话历史估算 token 达到该值触发强制压缩
+COMPACT_WARN_RATIO = 0.8  # 达到阈值的 80% 即提前滚动摘要（主动压缩）
 HISTORY_WINDOW_MESSAGES = 40  # 发给 LLM 的最近消息条数（≈ 最近 5~10 轮）
 
 SYSTEM_PROMPT = """你是 GIS 智能助手，通过工具调用操作 GIS 引擎，完成用户的 GIS 分析任务。
@@ -389,9 +390,14 @@ class GisToolAgent:
         return messages
 
     def _maybe_roll_summary(self, session) -> None:
-        """会话历史超出 token 阈值时，用 LLM 生成滚动摘要并裁剪历史窗口"""
+        """会话历史超出 warn 阈值（阈值 × COMPACT_WARN_RATIO）时，用 LLM 生成滚动摘要并裁剪历史窗口。
+
+        提前压缩而非等硬阈值爆掉：估算 token 达到阈值的 80% 就主动摘要，
+        避免上下文一次性逼近/超过硬上限导致长对话质量劣化。
+        """
         est_tokens = sum(len(str(m.get("content") or "")) for m in session.messages) // 3
-        if est_tokens <= COMPACT_THRESHOLD_TOKENS:
+        warn_threshold = int(COMPACT_THRESHOLD_TOKENS * COMPACT_WARN_RATIO)
+        if est_tokens <= warn_threshold:
             return
         try:
             new_summary = self._roll_summary(session.summary, session.messages[-6:])
