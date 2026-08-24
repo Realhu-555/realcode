@@ -549,6 +549,48 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "rename_layer",
+            "description": "重命名当前图层（仅改图层名称，不影响底层数据文件）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "new_name": {"type": "string", "description": "新的图层名称"},
+                },
+                "required": ["new_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_layer",
+            "description": ("移除当前图层（丢弃其引用与编辑会话缓冲区）。危险操作，需人工审批。"),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_layer_inventory",
+            "description": (
+                "导出当前图层清单到 JSON 文件（名称/行数/字段/CRS/几何类型/范围/产物文件）。"
+                "用于交接与留档。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "output": {
+                        "type": "string",
+                        "description": "产物文件名，如 layer_inventory.json",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "categorized",
             "description": (
                 "对当前图层的分类列（文本/枚举，如地类、行政区）做分类设色图并保存 PNG，"

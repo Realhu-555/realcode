@@ -21,6 +21,7 @@ DANGEROUS_TOOLS: set[str] = {
     "delete_features",
     "calculate_field",
     "commit_edits",
+    "remove_layer",
     "overwrite_output",
 }
 

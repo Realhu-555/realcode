@@ -818,3 +818,67 @@ def test_join_by_attribute_errors(tmp_path):
     # how 非法
     with pytest.raises(GisEngineError, match="how 必须是 inner/left"):
         eng.join_by_attribute(str(stats), left_key="code", right_key="code", how="outer")
+
+
+# ── 图层管理增强：rename / remove / inventory ──────────
+
+
+def test_rename_layer(tmp_path):
+    """重命名当前图层（仅元数据，不改数据文件）"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    assert eng.list_layers()["layer"]["name"] == "pts"  # load 时取文件名
+    res = eng.rename_layer("行政点")
+    assert res["status"] == "ok"
+    assert "行政点" in res["message"]
+    assert eng.list_layers()["layer"]["name"] == "行政点"
+    with pytest.raises(GisEngineError, match="不能为空"):
+        eng.rename_layer("   ")
+
+
+def test_remove_layer(tmp_path):
+    """移除当前图层，图层与编辑会话状态清空"""
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    eng.start_editing()
+    assert eng.list_layers()["has_layer"] is True
+    res = eng.remove_layer()
+    assert res["status"] == "ok"
+    assert eng.list_layers()["has_layer"] is False
+    with pytest.raises(GisEngineError, match="无需移除"):
+        eng.remove_layer()
+
+
+def test_export_layer_inventory(tmp_path):
+    """导出图层清单 JSON（名称/行数/字段/CRS/几何类型/范围/产物）"""
+    import json
+
+    pts = tmp_path / "pts.csv"
+    pts.write_text("name,lon,lat\nA,116,39\n", encoding="utf-8")
+    eng = _engine(tmp_path)
+    eng.load_data(str(pts))
+    res = eng.export_layer_inventory("inv.json")
+    assert res["status"] == "ok"
+    assert res["inventory_file"] == "inv.json"
+    inv_path = tmp_path / "out" / "inv.json"
+    assert inv_path.exists()
+    data = json.loads(inv_path.read_text(encoding="utf-8"))
+    assert data["name"] == "pts"
+    assert data["rows"] == 1
+    assert "name" in data["columns"] and "lon" in data["columns"]
+    assert data["crs"] is not None
+    assert data["geometry_type"] is not None
+    assert data["bounds"] is not None
+    assert "outputs" in data
+    assert "exported_at" in data
+
+
+def test_remove_layer_approval_required():
+    """remove_layer 必须列入危险工具审批清单"""
+    from src.gis_toolkit.approval import DANGEROUS_TOOLS
+
+    assert "remove_layer" in DANGEROUS_TOOLS

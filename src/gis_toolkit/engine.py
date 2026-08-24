@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 import geopandas as gpd
@@ -96,6 +97,7 @@ class GisEngine:
         self._roots = [Path(r).resolve() for r in (allowed_roots or ["data"])]
         self.outputs: list[str] = []
         self._layer: gpd.GeoDataFrame | None = None
+        self._layer_name: str | None = None  # 当前图层名称（load_data 时取文件名）
         self._editing: gpd.GeoDataFrame | None = None  # 编辑会话缓冲区
         self._raster: str | None = None  # 当前栅格文件路径（栅格状态与矢量状态并存）
         self._label_field: str | None = None  # 标注字段（Gate 7）
@@ -139,6 +141,7 @@ class GisEngine:
     def _summary(self, gdf: gpd.GeoDataFrame) -> dict:
         geom_col = gdf.geometry.name
         return {
+            "name": self._layer_name,
             "rows": int(len(gdf)),
             "columns": [str(c) for c in gdf.columns if c != geom_col],
             "crs": gdf.crs.to_string() if gdf.crs else None,
@@ -187,7 +190,57 @@ class GisEngine:
         """加载数据文件为当前图层（CSV 需含经纬度列；GeoJSON/zip 直接读取）"""
         gdf = self._load_any(path)
         self._layer = gdf
+        self._layer_name = Path(path).stem
         return self._result(f"已加载 {Path(path).name}，{len(gdf)} 行")
+
+    def rename_layer(self, new_name: str) -> dict:
+        """重命名当前图层（仅改名称元数据，不影响底层数据文件）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        new_name = str(new_name).strip()
+        if not new_name:
+            raise GisEngineError("图层名称不能为空")
+        self._layer_name = new_name
+        return self._result(f"当前图层已重命名为 {new_name}")
+
+    def remove_layer(self) -> dict:
+        """移除当前图层（丢弃其引用与编辑会话缓冲区）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，无需移除")
+        self._layer = None
+        self._layer_name = None
+        self._editing = None
+        return self._result("已移除当前图层")
+
+    def export_layer_inventory(self, output: str = "layer_inventory.json") -> dict:
+        """导出当前图层清单到 JSON 文件（名称/行数/字段/CRS/几何类型/范围/产物）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        gdf = self._layer
+        bounds = gdf.total_bounds.tolist() if len(gdf) else None
+        inventory = {
+            "name": self._layer_name,
+            "rows": int(len(gdf)),
+            "columns": [str(c) for c in gdf.columns if c != gdf.geometry.name],
+            "crs": gdf.crs.to_string() if gdf.crs else None,
+            "geometry_type": (
+                gdf.geometry.geom_type.mode().iloc[0]
+                if len(gdf) and gdf.geometry.notna().any()
+                else None
+            ),
+            "bounds": bounds,
+            "outputs": list(self.outputs),
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        fname = Path(output).name  # 只取文件名，防路径穿越
+        if not fname.endswith(".json"):
+            fname = f"{fname}.json"
+        fpath = self.out_dir / fname
+        fpath.write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.outputs.append(fname)
+        return self._result(
+            f"图层清单已导出到 {fname}", inventory_file=fname, inventory_name=self._layer_name
+        )
 
     def inspect_data(self) -> dict:
         """查看当前图层：字段、行数、CRS、范围、样例行"""
