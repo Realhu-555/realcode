@@ -38,7 +38,10 @@ class FakeLLM:
         self.calls.append(list(messages))
         if self.responses:
             return self.responses.pop(0)
-        return {"content": "会话摘要：已完成台风经济损失分析，产物 damage_map.png", "tool_calls": None}
+        return {
+            "content": "会话摘要：已完成台风经济损失分析，产物 damage_map.png",
+            "tool_calls": None,
+        }
 
     def _next(self):
         if not self.responses:
@@ -69,7 +72,9 @@ def _lesson(id_: str, text: str, agent_name: str = "gis_assistant:u") -> Lesson:
 def test_save_lesson_writes_embedding(tmp_path):
     """save_lesson 后 lesson_embeddings 表应存在该 lesson 的向量记录"""
     ltm = LongTermMemory(str(tmp_path / "m.db"))
-    ltm.save_lesson(_lesson("t1", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png"))
+    ltm.save_lesson(
+        _lesson("t1", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png")
+    )
     rows = ltm._get_lesson_embeddings("t1")
     assert rows is not None, "lesson_embeddings 应写入向量"
     emb = json.loads(rows)
@@ -94,7 +99,11 @@ def test_embed_deterministic(tmp_path):
 def test_semantic_search_hits_related_lesson(tmp_path):
     """查询无字面重合词的语义相关文本，应召回对应 lesson"""
     ltm = LongTermMemory(str(tmp_path / "m.db"))
-    ltm.save_lesson(_lesson("typhoon", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png"))
+    ltm.save_lesson(
+        _lesson(
+            "typhoon", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png"
+        )
+    )
     ltm.save_lesson(_lesson("gdp", "北京各区 GDP 分级设色图已生成，产物 gdp_choropleth.png"))
     hits = ltm.semantic_search_lessons("帮我分析广东台风造成的经济损失", limit=3)
     ids = [h.id for h in hits]
@@ -106,7 +115,11 @@ def test_semantic_search_hits_related_lesson(tmp_path):
 def test_get_relevant_lessons_semantic_hit(tmp_path):
     """get_relevant_lessons 升级后按语义召回（保持原签名）"""
     ltm = LongTermMemory(str(tmp_path / "m.db"))
-    ltm.save_lesson(_lesson("typhoon", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png"))
+    ltm.save_lesson(
+        _lesson(
+            "typhoon", "台风灾情分析完成：广东省受灾最重，经济损失约 120 亿，产物 damage_map.png"
+        )
+    )
     ltm.save_lesson(_lesson("gdp", "北京各区 GDP 分级设色图已生成，产物 gdp_choropleth.png"))
     hits = ltm.get_relevant_lessons("帮我分析广东台风造成的经济损失", limit=3)
     assert any(h.id == "typhoon" for h in hits)
@@ -127,7 +140,14 @@ def test_get_relevant_lessons_fallback_without_embedding(tmp_path):
     conn.execute(
         "INSERT OR REPLACE INTO lessons (id, project_id, agent_name, category, lesson, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        ("legacy", "p", "gis_assistant:u", "success", "缓冲分析结果已导出 buffer.geojson", "2026-01-01T00:00:00"),
+        (
+            "legacy",
+            "p",
+            "gis_assistant:u",
+            "success",
+            "缓冲分析结果已导出 buffer.geojson",
+            "2026-01-01T00:00:00",
+        ),
     )
     conn.commit()
     conn.close()
@@ -177,7 +197,13 @@ def test_long_conversation_messages_bounded(tmp_path):
     agent = _agent(tmp_path)
     import types
 
-    msgs = [{"role": "user", "content": f"第 {i} 轮问题" if i % 2 == 0 else {"content": f"第 {i} 轮结果"}} for i in range(60)]
+    msgs = [
+        {
+            "role": "user",
+            "content": f"第 {i} 轮问题" if i % 2 == 0 else {"content": f"第 {i} 轮结果"},
+        }
+        for i in range(60)
+    ]
     # 构造为真实消息形态
     msgs = []
     for i in range(60):
@@ -197,7 +223,10 @@ def test_long_conversation_tool_window_alignment(tmp_path):
     agent = _agent(tmp_path)
     import types
 
-    msgs = [{"role": "user", "content": "请求"}, {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]}]
+    msgs = [
+        {"role": "user", "content": "请求"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
+    ]
     for _ in range(45):
         msgs.append({"role": "tool", "tool_call_id": "c1", "content": "{}"})
     session = types.SimpleNamespace(messages=msgs, summary="")
