@@ -10,13 +10,13 @@ _GOOD_SCRIPT = (
     "import pandas as pd\n"
     "import geopandas as gpd\n"
     "import matplotlib.pyplot as plt\n"
-    "df = pd.DataFrame({\"province\": [\"A\", \"B\"], \"gdp\": [1, 2],"
-    " \"lon\": [116.4, 121.5], \"lat\": [39.9, 31.2]})\n"
-    "gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[\"lon\"], df[\"lat\"]), crs=\"EPSG:4326\")\n"
-    "print(\"CRS:\", gdf.crs.to_string())\n"
+    'df = pd.DataFrame({"province": ["A", "B"], "gdp": [1, 2],'
+    ' "lon": [116.4, 121.5], "lat": [39.9, 31.2]})\n'
+    'gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df["lon"], df["lat"]), crs="EPSG:4326")\n'
+    'print("CRS:", gdf.crs.to_string())\n'
     "fig, ax = plt.subplots()\n"
-    "gdf.plot(ax=ax, column=\"gdp\")\n"
-    "fig.savefig(\"choropleth.png\")\n"
+    'gdf.plot(ax=ax, column="gdp")\n'
+    'fig.savefig("choropleth.png")\n'
 )
 
 
@@ -43,6 +43,7 @@ def _fake_agents():
 
 
 # ── 上传端点 ──────────────────────────────────────────
+
 
 def test_upload_csv_ok(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "GIS_UPLOAD_DIR", tmp_path)
@@ -91,6 +92,7 @@ def test_upload_requires_api_key(monkeypatch, tmp_path):
 
 # ── 构建端点 ──────────────────────────────────────────
 
+
 def test_build_gis_pipeline(monkeypatch):
     monkeypatch.setattr(server, "_build_gis_agents", _fake_agents)
     resp = client.post(
@@ -131,11 +133,14 @@ def test_build_gis_with_data_schema(monkeypatch, tmp_path):
 
 # ── 工具调用版助手端点 ─────────────────────────────────
 
+
 def test_gis_assistant_run_ok(monkeypatch):
     def fake_sync(user_request, data_file, model_preference, session=None, user_id="x"):
         return {
             "stage": "done",
-            "trajectory": [{"step": 1, "tool": "choropleth", "args": {}, "result": {"status": "ok"}}],
+            "trajectory": [
+                {"step": 1, "tool": "choropleth", "args": {}, "result": {"status": "ok"}}
+            ],
             "outputs": ["choropleth.png"],
             "final": "完成",
             "steps": 1,
@@ -177,8 +182,9 @@ def test_gis_assistant_run_error_path(monkeypatch):
 
 def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
     """helper 层：GisToolAgent 异常时返回 error，不抛出"""
+
     class BoomAgent:
-        def __init__(self, engine, max_steps=12, model_id=None):
+        def __init__(self, engine, max_steps=12, model_id=None, approval_gate=None):
             self.engine = engine
 
         def run(self, request, data_file=None, session=None, ltm_hint=""):
@@ -191,6 +197,7 @@ def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
 
 
 # ── 产物文件访问端点 ─────────────────────────────────
+
 
 def test_gis_assistant_file_ok(monkeypatch, tmp_path):
     (tmp_path / "0123456789ab").mkdir()
@@ -228,19 +235,28 @@ def test_gis_assistant_file_requires_auth(monkeypatch, tmp_path):
 
 # ── 流式端点 ─────────────────────────────────────────
 
+
 def test_gis_assistant_stream_ok(monkeypatch):
     """SSE 端点按序推送事件：session_start 在前，工具事件居中，done 收尾"""
 
     class FakeAgent:
-        def __init__(self, engine, max_steps=12, model_id=None):
+        def __init__(self, engine, max_steps=12, model_id=None, approval_gate=None):
             self.engine = engine
 
-        def run_stream(self, user_request, data_file=None, session=None, ltm_hint="", on_event=None):
+        def run_stream(
+            self, user_request, data_file=None, session=None, ltm_hint="", on_event=None
+        ):
             for ev in [
                 {"type": "text_delta", "delta": "开始"},
                 {"type": "tool_call", "step": 1, "tool": "load_data", "args": {}},
                 {"type": "tool_result", "step": 1, "tool": "load_data", "result": {"status": "ok"}},
-                {"type": "done", "final": "完成", "outputs": ["map.png"], "steps": 1, "timed_out": False},
+                {
+                    "type": "done",
+                    "final": "完成",
+                    "outputs": ["map.png"],
+                    "steps": 1,
+                    "timed_out": False,
+                },
             ]:
                 if on_event:
                     on_event(ev)
