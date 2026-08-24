@@ -255,6 +255,19 @@ def _load_layer(path: str) -> QgsVectorLayer:
     return layer
 
 
+def _load_table(path: str) -> QgsVectorLayer:
+    """按后缀加载属性表：CSV → 无几何 delimitedtext；其余 → ogr（不要求经纬度列）"""
+    name = os.path.splitext(os.path.basename(path))[0]
+    if path.lower().endswith(".csv"):
+        uri = f"file:///{path.replace(os.sep, '/')}?delimiter=,&geomType=none&encoding=UTF-8"
+        layer = QgsVectorLayer(uri, name, "delimitedtext")
+    else:
+        layer = QgsVectorLayer(path, name, "ogr")
+    if not layer.isValid():
+        raise RuntimeError(f"无法加载 {path}，QGIS 表无效")
+    return layer
+
+
 # ── 工具实现 ──
 
 
@@ -576,6 +589,31 @@ def tool_join_by_location(other_path: str, predicate: str = "intersects") -> dic
         raise RuntimeError("空间连接失败：结果图层无效")
     STATE["layer"] = result
     return _result(f"空间连接完成（predicate={predicate}），结果 {result.featureCount()} 行")
+
+
+def tool_join_by_attribute(
+    other_path: str, left_key: str, right_key: str, how: str = "inner"
+) -> dict:
+    layer = _require_layer()
+    other = _load_table(other_path)
+    params = {
+        "INPUT": layer,
+        "FIELD": left_key,
+        "INPUT_2": other,
+        "FIELD_2": right_key,
+        "OUTPUT": "memory:",
+        "DISCARD_NONMATCHING": how == "inner",
+    }
+    try:
+        result = processing.run("native:joinattributesbyfieldvalue", params)["OUTPUT"]
+    except Exception as exc:
+        raise RuntimeError(f"属性连接失败（检查连接字段是否存在于两侧图层）: {exc}") from exc
+    if not result.isValid():
+        raise RuntimeError("属性连接失败：结果图层无效")
+    STATE["layer"] = result
+    return _result(
+        f"属性连接完成（{left_key} = {right_key}, how={how}），结果 {result.featureCount()} 行"
+    )
 
 
 def tool_voronoi() -> dict:
@@ -1015,6 +1053,7 @@ HANDLERS = {
     "export_geojson": tool_export_geojson,
     "save_layer": tool_save_layer,
     "join_by_location": tool_join_by_location,
+    "join_by_attribute": tool_join_by_attribute,
     "voronoi": tool_voronoi,
     "get_crs": tool_get_crs,
     "set_crs": tool_set_crs,

@@ -219,6 +219,28 @@ class QgsEngine:
             )
         )
 
+    def join_by_attribute(
+        self,
+        other_path: str,
+        left_key: str,
+        right_key: str,
+        how: str = "inner",
+    ) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        resolved = _check_input_path(other_path, self._roots)
+        return self._merge(
+            self._call(
+                "join_by_attribute",
+                {
+                    "other_path": str(resolved),
+                    "left_key": left_key,
+                    "right_key": right_key,
+                    "how": how,
+                },
+            )
+        )
+
     def voronoi(self) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
