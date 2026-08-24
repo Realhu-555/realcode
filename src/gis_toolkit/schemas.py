@@ -210,6 +210,40 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "join_by_attribute",
+            "description": (
+                "把 CSV/表按关键字段属性连接到当前图层：按字段值相等关系（如行政区"
+                "编码、主键）把另一张表的属性并入当前图层，结果成为新的当前图层。"
+                "常用于把统计表挂到地理要素上。连接键值需存在（不匹配行按 how 取舍）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "other_path": {
+                        "type": "string",
+                        "description": "关联表文件路径（CSV / GeoJSON / zip），须在 data 白名单内",
+                    },
+                    "left_key": {
+                        "type": "string",
+                        "description": "当前图层用于连接的字段名",
+                    },
+                    "right_key": {
+                        "type": "string",
+                        "description": "关联表中用于连接的字段名",
+                    },
+                    "how": {
+                        "type": "string",
+                        "enum": ["inner", "left"],
+                        "description": "连接方式：inner 只保留匹配行（默认）/ left 保留当前图层全部行",
+                    },
+                },
+                "required": ["other_path", "left_key", "right_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "voronoi",
             "description": (
                 "对当前点图层生成泰森多边形（Voronoi），结果成为新的当前图层。"

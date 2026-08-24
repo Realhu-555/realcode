@@ -745,3 +745,76 @@ def test_choropleth_points_overlay_base_map(tmp_path):
     assert res["status"] == "ok"
     assert (tmp_path / "out" / "overlay.png").is_file()
     assert "底图" in res["message"]
+
+
+# ── join_by_attribute（属性连接）──────────────────────
+
+
+def test_join_by_attribute_basic(tmp_path):
+    """属性连接：按关键字段把关联表并入当前图层（inner 默认）"""
+    layer = tmp_path / "regions.csv"
+    layer.write_text("code,name,lon,lat\nA,东区,1,1\nB,西区,2,2\n", encoding="utf-8")
+    stats = tmp_path / "stats.csv"
+    stats.write_text("code,gdp\nA,100\nB,200\n", encoding="utf-8")
+
+    eng = _engine(tmp_path)
+    eng.load_data(str(layer))
+    res = eng.join_by_attribute(str(stats), left_key="code", right_key="code")
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == 2
+    assert "gdp" in res["layer"]["columns"]
+    assert res["layer"]["columns"][-1] == "gdp"
+
+
+def test_join_by_attribute_left_keeps_all(tmp_path):
+    """how=left：保留当前图层全部行，未匹配行属性为空"""
+    layer = tmp_path / "regions.csv"
+    layer.write_text("code,name,lon,lat\nA,东区,1,1\nB,西区,2,2\n", encoding="utf-8")
+    stats = tmp_path / "stats.csv"
+    stats.write_text("code,gdp\nA,100\n", encoding="utf-8")
+
+    eng = _engine(tmp_path)
+    eng.load_data(str(layer))
+    res = eng.join_by_attribute(str(stats), left_key="code", right_key="code", how="left")
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == 2
+
+
+def test_join_by_attribute_inner_drops_unmatched(tmp_path):
+    """how=inner：只保留匹配行"""
+    layer = tmp_path / "regions.csv"
+    layer.write_text("code,name,lon,lat\nA,东区,1,1\nB,西区,2,2\n", encoding="utf-8")
+    stats = tmp_path / "stats.csv"
+    stats.write_text("code,gdp\nA,100\n", encoding="utf-8")
+
+    eng = _engine(tmp_path)
+    eng.load_data(str(layer))
+    res = eng.join_by_attribute(str(stats), left_key="code", right_key="code")
+    assert res["status"] == "ok"
+    assert res["layer"]["rows"] == 1
+
+
+def test_join_by_attribute_errors(tmp_path):
+    """错误分支：未加载图层 / 左表缺字段 / 关联表缺字段 / how 非法"""
+    layer = tmp_path / "regions.csv"
+    layer.write_text("code,name,lon,lat\nA,东区,1,1\n", encoding="utf-8")
+    stats = tmp_path / "stats.csv"
+    stats.write_text("code,gdp\nA,100\n", encoding="utf-8")
+
+    # 未加载图层
+    eng = _engine(tmp_path)
+    with pytest.raises(GisEngineError, match="先 load_data"):
+        eng.join_by_attribute(str(stats), left_key="code", right_key="code")
+
+    # 当前图层缺少连接字段
+    eng.load_data(str(layer))
+    with pytest.raises(GisEngineError, match="当前图层缺少连接字段"):
+        eng.join_by_attribute(str(stats), left_key="nope", right_key="code")
+
+    # 关联表缺少连接字段
+    with pytest.raises(GisEngineError, match="关联表缺少连接字段"):
+        eng.join_by_attribute(str(stats), left_key="code", right_key="nope")
+
+    # how 非法
+    with pytest.raises(GisEngineError, match="how 必须是 inner/left"):
+        eng.join_by_attribute(str(stats), left_key="code", right_key="code", how="outer")

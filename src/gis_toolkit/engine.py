@@ -413,6 +413,41 @@ class GisEngine:
         self._layer = result
         return self._result(f"空间连接完成（predicate={predicate}），结果 {len(result)} 行")
 
+    def join_by_attribute(
+        self,
+        other_path: str,
+        left_key: str,
+        right_key: str,
+        how: str = "inner",
+    ) -> dict:
+        """把 CSV/表按关键字段属性连接到当前图层（结果成为新的当前图层）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        if how not in {"inner", "left"}:
+            raise GisEngineError(f"how 必须是 inner/left，收到: {how}")
+        resolved = self._check_input(other_path)
+        if resolved.suffix.lower() == ".csv":
+            other = pd.read_csv(resolved)
+        else:
+            gdf = gpd.read_file(resolved)
+            other = (
+                gdf.drop(columns=[gdf.geometry.name]) if gdf.geometry.name in gdf.columns else gdf
+            )
+        if left_key not in self._layer.columns:
+            raise GisEngineError(
+                f"当前图层缺少连接字段 {left_key}（可用: {list(self._layer.columns)}）"
+            )
+        if right_key not in other.columns:
+            raise GisEngineError(f"关联表缺少连接字段 {right_key}（可用: {list(other.columns)}）")
+        result = self._layer.merge(other, left_on=left_key, right_on=right_key, how=how)
+        geom_col = result.geometry.name
+        if geom_col not in result.columns or result[geom_col].isna().all():
+            raise GisEngineError("属性连接失败：结果缺少有效几何列")
+        self._layer = result
+        return self._result(
+            f"属性连接完成（{left_key} = {right_key}, how={how}），结果 {len(result)} 行"
+        )
+
     def voronoi(self) -> dict:
         """对当前点图层生成泰森多边形（结果成为新的当前图层）"""
         if self._layer is None:
