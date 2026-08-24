@@ -351,6 +351,22 @@ class QgsEngine:
             raise GisEngineError("当前没有图层，请先 load_data")
         return self._merge(self._call("rollback_edits"))
 
+    def rename_layer(self, new_name: str) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        return self._merge(self._call("rename_layer", {"new_name": new_name}))
+
+    def remove_layer(self) -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，无需移除")
+        return self._merge(self._call("remove_layer"))
+
+    def export_layer_inventory(self, output: str = "layer_inventory.json") -> dict:
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(output)
+        return self._merge(self._call("export_layer_inventory", {"output": name}))
+
     def duplicate_layer(self) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")

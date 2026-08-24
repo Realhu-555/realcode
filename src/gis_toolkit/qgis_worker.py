@@ -14,6 +14,8 @@ import io
 import json
 import os
 import sys
+from datetime import datetime
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -213,6 +215,7 @@ def _geometry_type(layer: QgsVectorLayer) -> str:
 
 def _summary(layer: QgsVectorLayer) -> dict:
     return {
+        "name": layer.name(),
         "rows": int(layer.featureCount()),
         "columns": _field_names(layer),
         "crs": _crs_str(layer),
@@ -945,6 +948,55 @@ def tool_rollback_edits() -> dict:
     return _result("已回滚编辑，修改已丢弃")
 
 
+def tool_rename_layer(new_name: str) -> dict:
+    """重命名当前图层（仅改 QGIS 图层名，不影响底层数据文件）"""
+    layer = _require_layer()
+    new_name = str(new_name).strip()
+    if not new_name:
+        raise RuntimeError("图层名称不能为空")
+    layer.setName(new_name)
+    return _result(f"当前图层已重命名为 {new_name}")
+
+
+def tool_remove_layer() -> dict:
+    """移除当前图层（丢弃引用，危险操作由主进程审批）"""
+    layer = STATE.get("layer")
+    if layer is None:
+        raise RuntimeError("当前没有图层，无需移除")
+    STATE["layer"] = None
+    return _result("已移除当前图层")
+
+
+def tool_export_layer_inventory(output: str = "layer_inventory.json") -> dict:
+    """导出当前图层清单到 JSON 文件（名称/行数/字段/CRS/几何类型/范围/产物）"""
+    layer = _require_layer()
+    bounds = layer.extent()
+    inventory = {
+        "name": layer.name(),
+        "rows": int(layer.featureCount()),
+        "columns": _field_names(layer),
+        "crs": _crs_str(layer),
+        "geometry_type": _geometry_type(layer),
+        "bounds": [
+            bounds.xMinimum(),
+            bounds.yMinimum(),
+            bounds.xMaximum(),
+            bounds.yMaximum(),
+        ],
+        "outputs": STATE.get("outputs", []),
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    fname = os.path.basename(output)  # 只取文件名，防路径穿越
+    if not fname.endswith(".json"):
+        fname = f"{fname}.json"
+    out_dir = Path(STATE["out_dir"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fpath = out_dir / fname
+    fpath.write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATE.setdefault("outputs", []).append(fname)
+    return _result(f"图层清单已导出到 {fname}", inventory_file=fname, inventory_name=layer.name())
+
+
 def tool_duplicate_layer() -> dict:
     layer = _require_layer()
     new_layer = QgsVectorLayerUtils.duplicateLayer(layer, layer.name() + "_copy")
@@ -1072,6 +1124,9 @@ HANDLERS = {
     "calculate_field": tool_calculate_field,
     "commit_edits": tool_commit_edits,
     "rollback_edits": tool_rollback_edits,
+    "rename_layer": tool_rename_layer,
+    "remove_layer": tool_remove_layer,
+    "export_layer_inventory": tool_export_layer_inventory,
     "duplicate_layer": tool_duplicate_layer,
     "categorized": tool_categorized,
     "set_labeling": tool_set_labeling,
