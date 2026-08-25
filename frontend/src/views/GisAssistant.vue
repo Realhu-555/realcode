@@ -99,7 +99,16 @@ function scrollToBottom() {
   })
 }
 
-onMounted(loadSessions)
+onMounted(async () => {
+  loadSessions()
+  // 加载用户设置：新会话默认权限等以设置页为准
+  try {
+    userSettings.value = await getUserSettings()
+    permissionMode.value = userSettings.value?.permission_mode ?? "ask"
+  } catch {
+    // 设置加载失败时保持默认 ask，不阻塞使用
+  }
+})
 
 function formatTime(ts: number): string {
   if (!ts) return ""
@@ -479,6 +488,7 @@ function newConversation() {
   error.value = ""
   dataFile.value = ""
   fileName.value = ""
+  permissionMode.value = userSettings.value?.permission_mode ?? "ask"
   message.info("已开启新对话")
 }
 

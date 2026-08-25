@@ -25,7 +25,13 @@ SESSION_MESSAGE_CAP = 200  # 持久化历史上限（超出丢弃最旧轮次，
 class GisSession:
     """单次 GIS 对话会话：引擎状态 + 对话历史 + 展示轮次"""
 
-    def __init__(self, session_id: str, out_dir: Path, title: str = "新会话") -> None:
+    def __init__(
+        self,
+        session_id: str,
+        out_dir: Path,
+        title: str = "新会话",
+        permission_mode: str = "ask",
+    ) -> None:
         self.session_id = session_id
         self.out_dir = Path(out_dir)
         self.engine = create_gis_engine(
@@ -33,7 +39,7 @@ class GisSession:
             out_dir=str(self.out_dir),
             allowed_roots=list(settings.gis_allowed_roots) or ["data"],
         )
-        self.approval_gate = ApprovalGate()  # HITL：危险操作审批门（默认 ask）
+        self.approval_gate = ApprovalGate(mode=permission_mode)  # HITL：危险操作审批门
         self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
         self.summary: str = ""  # 滚动摘要（超出上下文阈值时由 agent 生成）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）
@@ -137,9 +143,12 @@ class GisSessionStore:
 
     # ── 生命周期 ──
     def get_or_create(
-        self, session_id: str | None = None, user_id: str = "anonymous"
+        self,
+        session_id: str | None = None,
+        user_id: str = "anonymous",
+        default_mode: str = "ask",
     ) -> tuple[str, GisSession]:
-        """按 session_id 复用会话；不存在则新建"""
+        """按 session_id 复用会话；不存在则新建（新建时使用 default_mode 作为审批模式）"""
         user_map = self._sessions.setdefault(user_id, {})
         if session_id and session_id in user_map:
             sess = user_map[session_id]
@@ -153,7 +162,7 @@ class GisSessionStore:
         sid = uuid.uuid4().hex[:12]
         out_dir = Path("data/gis_toolkit_out") / sid
         out_dir.mkdir(parents=True, exist_ok=True)
-        sess = GisSession(sid, out_dir)
+        sess = GisSession(sid, out_dir, permission_mode=default_mode)
         user_map[sid] = sess
         self._persist(user_id)
         self._cleanup(user_id)

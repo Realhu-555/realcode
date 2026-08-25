@@ -364,9 +364,12 @@ async def build_gis(req: GisBuildRequest, user_id: str = Depends(get_user_id)):
 async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get_user_id)):
     """运行工具调用版 GIS 助手；带 session_id 时复用会话（引擎状态 + 对话历史）"""
     project_id = uuid.uuid4().hex[:12]
-    session_id, session = gis_sessions.get_or_create(req.session_id, user_id)
+    user_settings = usettings.get_settings(user_id)
+    session_id, session = gis_sessions.get_or_create(
+        req.session_id, user_id, default_mode=user_settings["permission_mode"]
+    )
     if not req.model_preference:
-        req.model_preference = usettings.get_settings(user_id)["model_id"]
+        req.model_preference = user_settings["model_id"]
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _thread_pool,
@@ -395,9 +398,12 @@ async def run_gis_assistant_stream(
     session_start → text_delta / tool_call / tool_result → done / error。
     前端用 fetch + ReadableStream 解析（EventSource 无法携带 X-API-Key）。
     """
-    sid, session = gis_sessions.get_or_create(session_id, user_id)
+    user_settings = usettings.get_settings(user_id)
+    sid, session = gis_sessions.get_or_create(
+        session_id, user_id, default_mode=user_settings["permission_mode"]
+    )
     if not model_preference:
-        model_preference = usettings.get_settings(user_id)["model_id"]
+        model_preference = user_settings["model_id"]
     events: queue.Queue = queue.Queue()
 
     def _runner() -> None:
