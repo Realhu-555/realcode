@@ -21,7 +21,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GDP_CSV = PROJECT_ROOT / "data" / "gis_demo" / "gdp_demo.csv"
 
 
-def _server_params(out_root: Path) -> StdioServerParameters:
+def _server_params(
+    out_root: Path, allowed_roots: list[Path] | None = None
+) -> StdioServerParameters:
     return StdioServerParameters(
         command=sys.executable,
         args=[
@@ -30,17 +32,17 @@ def _server_params(out_root: Path) -> StdioServerParameters:
             "--out-root",
             str(out_root),
             "--allowed-roots",
-            str(PROJECT_ROOT / "data"),
+            *(str(p) for p in (allowed_roots or [PROJECT_ROOT / "data"])),
         ],
         cwd=str(PROJECT_ROOT),
     )
 
 
-def _with_session(coro, out_root: Path):
+def _with_session(coro, out_root: Path, allowed_roots: list[Path] | None = None):
     """在独立 asyncio 事件循环中启动 stdio 子进程会话并执行 coro(session)"""
 
     async def _run():
-        params = _server_params(out_root)
+        params = _server_params(out_root, allowed_roots)
         async with (
             stdio_client(params) as (read, write),
             ClientSession(read, write) as sess,
@@ -61,15 +63,15 @@ def _error_text(result) -> str:
     return "".join(c.text for c in result.content if hasattr(c, "text"))
 
 
-def test_list_tools_has_thirty_two(tmp_path):
-    """stdio 客户端 list_tools 返回 39 个 gis_* 工具"""
+def test_list_tools_full_toolset(tmp_path):
+    """stdio 客户端 list_tools 返回 43 个 gis_* 工具（41 schema + 2 审批控制）"""
 
     async def _run(sess):
         tools = await sess.list_tools()
         return sorted(t.name for t in tools.tools)
 
     names = _with_session(_run, tmp_path / "out")
-    assert len(names) == 39
+    assert len(names) == 43
     assert all(n.startswith("gis_") for n in names)
 
 
@@ -189,3 +191,44 @@ def test_inspect_without_layer_fails(tmp_path):
         assert "没有图层" in _error_text(r)
 
     _with_session(_run, tmp_path / "out")
+
+
+def test_htil_approval_flow_via_stdio(tmp_path):
+    """端到端 HITL：stdio 会话中危险工具挂起 → gis_approve 批准后执行"""
+
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    gdf = gpd.GeoDataFrame(
+        {"name": ["A"], "val": [1]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
+    )
+    src = data_dir / "poly.geojson"
+    gdf.to_file(src, driver="GeoJSON")
+
+    async def _run(sess):
+        r = await sess.call_tool("gis_load_data", {"path": str(src)})
+        payload = _payload(r)
+        assert payload["status"] == "ok"
+
+        # 危险工具 → pending_approval，不执行
+        r = await sess.call_tool("gis_remove_layer", {})
+        payload = _payload(r)
+        assert payload["status"] == "pending_approval"
+        approval_id = payload["approval_id"]
+        assert approval_id
+
+        # 未批准：图层仍在
+        r = await sess.call_tool("gis_list_layers", {})
+        assert _payload(r)["has_layer"] is True
+
+        # 批准 → 执行移除
+        r = await sess.call_tool("gis_approve", {"approval_id": approval_id, "approve": True})
+        assert _payload(r)["status"] == "ok"
+
+        # 已移除
+        r = await sess.call_tool("gis_list_layers", {})
+        assert _payload(r)["has_layer"] is False
+
+    _with_session(_run, tmp_path / "out", allowed_roots=[tmp_path / "data"])

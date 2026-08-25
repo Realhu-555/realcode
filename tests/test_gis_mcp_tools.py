@@ -7,8 +7,10 @@ from mcp.server.fastmcp import FastMCP
 from src.gis_mcp import tools
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 
-EXPECTED_TOOL_NAMES = [f"gis_{s['function']['name']}" for s in TOOL_SCHEMAS]
-EXPECTED_TOOL_COUNT = 39
+EXPECTED_SCHEMA_COUNT = 41
+HITL_TOOL_NAMES = ["gis_approve", "gis_permission_mode"]
+EXPECTED_TOOL_NAMES = [f"gis_{s['function']['name']}" for s in TOOL_SCHEMAS] + HITL_TOOL_NAMES
+EXPECTED_TOOL_COUNT = len(EXPECTED_TOOL_NAMES)  # 41 schema 工具 + 2 审批控制 = 43
 
 
 @pytest.fixture()
@@ -23,8 +25,8 @@ def mcp_server(tmp_path) -> FastMCP:
 
 
 def test_tool_schema_source_has_nine():
-    """TOOL_SCHEMAS 来源必须恰好 9 个工具（防 schema 源变化导致漏注册）"""
-    assert len(TOOL_SCHEMAS) == EXPECTED_TOOL_COUNT
+    """TOOL_SCHEMAS 来源必须恰好 39 个工具（防 schema 源变化导致漏注册）"""
+    assert len(TOOL_SCHEMAS) == EXPECTED_SCHEMA_COUNT
 
 
 async def test_registers_all_nine_gis_tools(mcp_server):
@@ -101,3 +103,124 @@ def test_resolve_out_root_run_dir(tmp_path, monkeypatch):
     assert Path(run_dir).name.startswith("run-")
     assert Path(run_dir).is_dir()
     assert tools.resolve_out_root(str(tmp_path / "custom")) == str(tmp_path / "custom")
+
+
+# ── P3：MCP 入口 HITL 审批同步（危险工具进人工审批）──────────
+
+
+def _htil_gdf(tmp_path):
+    """生成可编辑 GeoJSON 点图层并返回路径（放进白名单 data/）"""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    gdf = gpd.GeoDataFrame(
+        {"name": ["A"], "val": [1]}, geometry=[box(0, 0, 10, 10)], crs="EPSG:4326"
+    )
+    src = data_dir / "poly.geojson"
+    gdf.to_file(src, driver="GeoJSON")
+    return str(src)
+
+
+async def _htil_call(mcp, name, args):
+    """调用 FastMCP 工具并解析 JSON 文本返回"""
+    result = await mcp.call_tool(name, args)
+    items = result if isinstance(result, list) else getattr(result, "content", [result])
+    text = "".join(getattr(c, "text", "") for c in items)
+    import json as _json
+
+    return _json.loads(text)
+
+
+def _htil_server(tmp_path, mode: str):
+    """独立 FastMCP + 指定权限模式"""
+    tools.init_engine_manager(
+        out_root=str(tmp_path / "out"),
+        allowed_roots=[str(tmp_path / "data")],
+        permission_mode=mode,
+    )
+    mcp = FastMCP("htil")
+    tools.register_tools(mcp)
+    return mcp
+
+
+async def test_mcp_htil_ask_pending_then_approve(tmp_path):
+    """ask 模式：危险工具挂起 pending_approval 不执行，gis_approve(True) 后执行"""
+    mcp = _htil_server(tmp_path, "ask")
+    r = await _htil_call(mcp, "gis_load_data", {"path": _htil_gdf(tmp_path)})
+    assert r["status"] == "ok"
+
+    r = await _htil_call(mcp, "gis_remove_layer", {})
+    assert r["status"] == "pending_approval"
+    assert r["approval_id"]
+
+    # 未批准前图层仍在
+    snap = await _htil_call(mcp, "gis_list_layers", {})
+    assert snap["has_layer"] is True
+
+    # 批准后执行移除
+    r2 = await _htil_call(mcp, "gis_approve", {"approval_id": r["approval_id"], "approve": True})
+    assert r2["status"] == "ok"
+    snap2 = await _htil_call(mcp, "gis_list_layers", {})
+    assert snap2["has_layer"] is False
+
+
+async def test_mcp_htil_ask_reject(tmp_path):
+    """ask 模式：gis_approve(False) 拒绝，危险操作不执行"""
+    mcp = _htil_server(tmp_path, "ask")
+    await _htil_call(mcp, "gis_load_data", {"path": _htil_gdf(tmp_path)})
+
+    r = await _htil_call(mcp, "gis_remove_layer", {})
+    assert r["status"] == "pending_approval"
+
+    r2 = await _htil_call(mcp, "gis_approve", {"approval_id": r["approval_id"], "approve": False})
+    assert r2["status"] == "rejected"
+
+    snap = await _htil_call(mcp, "gis_list_layers", {})
+    assert snap["has_layer"] is True  # 未被移除
+
+
+async def test_mcp_htil_readonly_rejects(tmp_path):
+    """readonly 模式：危险工具直接拒绝，不生成审批"""
+    mcp = _htil_server(tmp_path, "readonly")
+    await _htil_call(mcp, "gis_load_data", {"path": _htil_gdf(tmp_path)})
+
+    r = await _htil_call(mcp, "gis_remove_layer", {})
+    assert r["status"] == "rejected"
+    assert r["approval_id"] is None
+    snap = await _htil_call(mcp, "gis_list_layers", {})
+    assert snap["has_layer"] is True
+
+
+async def test_mcp_htil_auto_executes(tmp_path):
+    """auto 模式：危险工具直接执行，无需审批"""
+    mcp = _htil_server(tmp_path, "auto")
+    await _htil_call(mcp, "gis_load_data", {"path": _htil_gdf(tmp_path)})
+
+    r = await _htil_call(mcp, "gis_remove_layer", {})
+    assert r["status"] == "ok"
+    snap = await _htil_call(mcp, "gis_list_layers", {})
+    assert snap["has_layer"] is False
+
+
+async def test_mcp_htil_permission_mode_switch(tmp_path):
+    """gis_permission_mode：查询与切换权限模式"""
+    mcp = _htil_server(tmp_path, "ask")
+    r = await _htil_call(mcp, "gis_permission_mode", {})
+    assert r["mode"] == "ask"
+
+    r = await _htil_call(mcp, "gis_permission_mode", {"mode": "auto"})
+    assert r["mode"] == "auto"
+
+    r = await _htil_call(mcp, "gis_permission_mode", {})
+    assert r["mode"] == "auto"
+
+
+async def test_mcp_htil_non_dangerous_untouched(tmp_path):
+    """非危险工具不受审批影响（ask 模式下直接执行）"""
+    mcp = _htil_server(tmp_path, "ask")
+    r = await _htil_call(mcp, "gis_load_data", {"path": _htil_gdf(tmp_path)})
+    assert r["status"] == "ok"
+    r = await _htil_call(mcp, "gis_inspect_data", {})
+    assert r["status"] == "ok"

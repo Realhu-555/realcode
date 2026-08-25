@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GIS 3D 城市可视化</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Microsoft YaHei", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .panel {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    background: rgba(255,255,255,.92); border-radius: 8px; padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.18); font-size: 13px; max-width: 240px;
+  }
+  .panel h1 { font-size: 15px; margin: 0 0 6px; }
+  .panel p { margin: 4px 0; line-height: 1.5; }
+  .legend { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .legend-bar { width: 140px; height: 10px; border-radius: 3px;
+    background: linear-gradient(90deg, #2c7bb6, #abd9e9, #ffffbf, #fdae61, #d7191c); }
+  .hint { color: #b26a00; font-size: 12px; }
+  .toolbar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    display: flex; gap: 8px; }
+  .toolbar button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer;
+    background: #1f6feb; color: #fff; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  .toolbar button:hover { background: #1758c4; }
+</style>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <h1 id="panel-title">3D 建筑</h1>
+  <p>数据：OpenStreetMap © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OSM contributors</a>（ODbL）</p>
+  <p>拉伸字段：<code>height_m</code>（缺失按 10m 兜底）</p>
+  <div class="legend">
+    <span>低</span><div class="legend-bar"></div><span>高</span>
+  </div>
+  <p class="hint">⚠ 建筑高度为估算值，仅用于可视化演示，非测绘数据。</p>
+</div>
+
+<div class="toolbar">
+  <button id="btn-reset">重置视角</button>
+  <button id="btn-rotate">旋转城市</button>
+  <button id="btn-flatten">俯视 / 倾斜</button>
+</div>
+
+<!-- 数据加载：优先 fetch 相对路径（http:// 服务下可开箱即用）；
+     file:// 直接打开时浏览器会拦截 fetch，此时给出使用静态服务器的提示 -->
+<script>
+(function () {
+  var map = null;
+  var center = [116.32, 39.99];
+  // 支持 ?data=<文件名>.geojson 指定要展示的 3D 数据（默认中关村示例）
+  var params = new URLSearchParams(location.search);
+  var buildingsUrl = (params.get("data") || "zhongguancun_buildings.geojson").replace(/\.\.\//g, "");
+  var dataName = buildingsUrl.replace(/\.geojson$/i, "");
+
+  fetch(buildingsUrl)
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (fc) { initMap(fc); })
+    .catch(function (e) {
+      var box = document.getElementById("map");
+      box.innerHTML =
+        '<div style="padding:20px;font-size:14px;line-height:1.8">' +
+        "<b>加载建筑数据失败：</b>" + e.message +
+        "<br>请确认数据文件存在于 /3d-demo/ 目录，并通过本地静态服务器打开本页" +
+        "（file:// 下浏览器会拦截 fetch）：" +
+        "<br><code>python -m http.server 8650</code> 后访问 " +
+        "<code>http://127.0.0.1:8650/frontend/3d-demo/</code>" +
+        "</div>";
+    });
+
+  function boundsOf(fc) {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    (fc.features || []).forEach(function (f) {
+      var g = f.geometry; if (!g) return;
+      var rings = [];
+      if (g.type === "Polygon") rings = g.coordinates;
+      else if (g.type === "MultiPolygon") g.coordinates.forEach(function (p) { rings = rings.concat(p); });
+      rings.forEach(function (ring) {
+        ring.forEach(function (c) {
+          if (c[0] < minX) minX = c[0];
+          if (c[0] > maxX) maxX = c[0];
+          if (c[1] < minY) minY = c[1];
+          if (c[1] > maxY) maxY = c[1];
+        });
+      });
+    });
+    if (!isFinite(minX)) return null;
+    return [[minX, minY], [maxX, maxY]];
+  }
+
+  function initMap(buildings) {
+    var bounds = boundsOf(buildings);
+    if (bounds) {
+      center = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2];
+    }
+    document.getElementById("panel-title").textContent = dataName + " · 3D 建筑";
+
+    map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          base: {
+            type: "raster",
+            // 高德路网瓦片（国内可达，web mercator 与 OSM 同系）
+            tiles: [
+              "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
+            ],
+            tileSize: 256,
+            attribution: "© 高德地图"
+          }
+        },
+        layers: [{ id: "base", type: "raster", source: "base" }]
+      },
+      center: center,
+      zoom: 14.4,
+      pitch: 60,
+      bearing: -20,
+      maxPitch: 85
+    });
+
+    // 高度颜色：低→高 渐变色带（低蓝 → 高红）
+    var stops = [];
+    var colors = ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"];
+    var maxH = 80, step = maxH / (colors.length - 1);
+    colors.forEach(function (c, i) { stops.push([Math.round(i * step), c]); });
+
+    map.on("load", function () {
+      map.addSource("buildings", { type: "geojson", data: buildings });
+      map.addLayer({
+        id: "buildings-3d",
+        type: "fill-extrusion",
+        source: "buildings",
+        paint: {
+          // height_m 缺失/非法时按 10m 兜底，保证任何数据都能出 3D
+          "fill-extrusion-height": ["coalesce", ["number", ["get", "height_m"], 10], 10],
+          "fill-extrusion-base": 0,
+          "fill-extrusion-color": [
+            "interpolate", ["linear"],
+            ["coalesce", ["number", ["get", "height_m"], 10], 10],
+            ...stops
+          ],
+          "fill-extrusion-opacity": 0.82
+        }
+      });
+      if (bounds) {
+        map.fitBounds(bounds, { padding: 40, duration: 800 });
+      } else {
+        map.jumpTo({ center: center, zoom: 14 });
+      }
+    });
+
+    document.getElementById("btn-reset").onclick = function () {
+      map.flyTo({ center: center, zoom: 14.4, pitch: 60, bearing: -20, duration: 1200 });
+    };
+    document.getElementById("btn-rotate").onclick = function () {
+      map.rotateTo(map.getBearing() + 60, { duration: 1500 });
+    };
+    document.getElementById("btn-flatten").onclick = function () {
+      map.easeTo({ pitch: map.getPitch() > 20 ? 0 : 60, duration: 900 });
+    };
+  }
+})();
+</script>
+</body>
+</html>

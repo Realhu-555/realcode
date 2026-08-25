@@ -13,9 +13,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
+import urllib.request
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -1240,6 +1243,182 @@ def tool_save_project(path: str = "gis_project.qgz") -> dict:
     return _result(f"已保存工程 {os.path.basename(path)}")
 
 
+# ── P3：3D 城市可视化工具 ──
+
+
+def _project_root() -> Path:
+    """worker 输出目录 data/gis_toolkit_out → 项目根"""
+    return Path(STATE["out_dir"]).resolve().parents[1]
+
+
+def _field_index(layer: QgsVectorLayer, lower_name: str) -> int:
+    for i in range(layer.fields().count()):
+        if layer.fields()[i].name().lower() == lower_name:
+            return i
+    return -1
+
+
+def _qgis_estimate_height(layer: QgsVectorLayer, feature: QgsFeature) -> float:
+    """按字段估算建筑高度（演示用，非测绘）：height/height_m → levels×3 → 类型默认"""
+    attrs = feature.attributes()
+    for key, mult in (("height", 1.0), ("height_m", 1.0), ("building:levels", 3.0)):
+        idx = _field_index(layer, key)
+        if idx >= 0 and idx < len(attrs) and attrs[idx] is not None:
+            m = re.match(r"\s*([\d.]+)", str(attrs[idx]))
+            if m:
+                return float(m.group(1)) * mult
+    building = ""
+    idx = _field_index(layer, "building")
+    if idx >= 0 and idx < len(attrs):
+        building = str(attrs[idx] or "").lower()
+    if building in ("garage", "carport"):
+        return 4.0
+    if building in ("shed", "greenhouse", "roof"):
+        return 3.0
+    return 10.0
+
+
+def tool_download_osm_buildings(
+    city: str, south: float, west: float, north: float, east: float
+) -> dict:
+    """按 bbox 从 Overpass 下载建筑轮廓，估算高度，存 data/gis_3d/<city>_buildings.geojson"""
+    if north <= south or east <= west:
+        raise RuntimeError("bbox 无效：要求 north>south、east>west")
+    query = f'[out:json][timeout:60];(way["building"]({south},{west},{north},{east}););out geom;'
+    req = urllib.request.Request(
+        "https://overpass-api.de/api/interpreter",
+        data=urlencode({"data": query}).encode("utf-8"),
+        headers={
+            "User-Agent": "gis-3d-demo/0.1 (educational demo)",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    features = []
+    height_direct = levels_used = default_used = 0
+    for el in payload.get("elements", []):
+        if el.get("type") != "way":
+            continue
+        ring = [(p["lon"], p["lat"]) for p in (el.get("geometry") or [])]
+        if len(ring) < 3:
+            continue
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+        tags = el.get("tags") or {}
+        if tags.get("height"):
+            height_direct += 1
+        elif tags.get("building:levels"):
+            levels_used += 1
+        else:
+            default_used += 1
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "osm_id": el["id"],
+                    "building": tags.get("building"),
+                    "height_m": _estimate_height_osm(tags),
+                },
+                "geometry": {"type": "Polygon", "coordinates": [ring]},
+            }
+        )
+    if not features:
+        raise RuntimeError("该范围内没有建筑要素，请调整 bbox")
+    fc = {"type": "FeatureCollection", "features": features}
+    out_dir = _project_root() / "data" / "gis_3d"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{re.sub(r'[^\\w.\\-]', '_', str(city))}_buildings.geojson"
+    out_path = out_dir / fname
+    with out_path.open("w", encoding="utf-8") as fh:
+        json.dump(fc, fh, ensure_ascii=False)
+    return {
+        "status": "ok",
+        "message": f"已下载 {len(features)} 栋建筑 → {out_path.resolve()}",
+        "file_path": str(out_path.resolve()),
+        "stats": {
+            "total": len(features),
+            "height_direct": height_direct,
+            "levels_used": levels_used,
+            "default_used": default_used,
+        },
+        "note": "建筑高度为估算值，仅用于可视化演示，非测绘数据（© OpenStreetMap contributors, ODbL）",
+    }
+
+
+def _estimate_height_osm(tags: dict) -> float:
+    """OSM 标签高度估算（与 geopandas 引擎对齐）"""
+    raw = tags.get("height")
+    if raw:
+        m = re.match(r"\s*([\d.]+)", str(raw))
+        if m:
+            return float(m.group(1))
+    lv = tags.get("building:levels")
+    if lv:
+        m = re.match(r"\s*([\d.]+)", str(lv))
+        if m:
+            return float(m.group(1)) * 3.0
+    building = (tags.get("building") or "").lower()
+    if building in ("garage", "carport"):
+        return 4.0
+    if building in ("shed", "greenhouse", "roof"):
+        return 3.0
+    return 10.0
+
+
+def tool_render_3d(output: str = "render_3d") -> dict:
+    """把当前图层导出为 3D 预览 GeoJSON（补齐 height_m），挂载 /3d-demo/ 并返回 URL"""
+    src = _require_layer()
+    dst_dir = _project_root() / "src" / "web" / "static" / "3d-demo"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{re.sub(r'[^\\w.\\-]', '_', str(output))}.geojson"
+    out_path = dst_dir / fname
+    crs = src.crs().authid() or "EPSG:4326"
+    mem = QgsVectorLayer(f"Polygon?crs={crs}", "render3d", "memory")
+    dp = mem.dataProvider()
+    out_fields = QgsFields()
+    for i in range(src.fields().count()):
+        fld = src.fields()[i]
+        if fld.name().lower() == "height_m":
+            continue
+        out_fields.append(fld)
+    if out_fields.indexOf("height_m") < 0:
+        out_fields.append(QgsField("height_m", QVariant.Double))
+    dp.addAttributes(out_fields)
+    mem.updateFields()
+    new_features = []
+    for f in src.getFeatures():
+        nf = QgsFeature(out_fields)
+        nf.setGeometry(f.geometry())
+        attrs = []
+        for i in range(src.fields().count()):
+            fld = src.fields()[i]
+            if fld.name().lower() == "height_m":
+                continue
+            attrs.append(f.attributes()[i] if i < len(f.attributes()) else None)
+        nf.setAttributes(attrs)
+        nf.setAttribute("height_m", _qgis_estimate_height(src, f))
+        new_features.append(nf)
+    dp.addFeatures(new_features)
+    mem.updateExtents()
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GeoJSON"
+    options.fileEncoding = "utf-8"
+    err, _, _, msg = QgsVectorFileWriter.writeAsVectorFormatV3(
+        mem, str(out_path), QgsCoordinateTransformContext(), options
+    )
+    if err != QgsVectorFileWriter.NoError:
+        raise RuntimeError(f"3D 导出失败: {err} {msg}")
+    url = f"http://localhost:8080/3d-demo/?data={fname}"
+    return {
+        "status": "ok",
+        "message": f"已生成 3D 预览 → {url}",
+        "3d_preview_url": url,
+        "note": "建筑高度为估算值，仅用于可视化演示，非测绘数据",
+    }
+
+
 HANDLERS = {
     "load_data": tool_load_data,
     "inspect_data": tool_inspect_data,
@@ -1250,6 +1429,8 @@ HANDLERS = {
     "summarize": tool_summarize,
     "export_geojson": tool_export_geojson,
     "save_layer": tool_save_layer,
+    "download_osm_buildings": tool_download_osm_buildings,
+    "render_3d": tool_render_3d,
     "join_by_location": tool_join_by_location,
     "join_by_attribute": tool_join_by_attribute,
     "voronoi": tool_voronoi,

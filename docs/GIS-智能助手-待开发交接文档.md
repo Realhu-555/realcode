@@ -38,8 +38,8 @@
 - **Gate 4** ✅：记忆系统收尾（lesson 向量化语义检索 + 主动压缩阈值，Marvis 2026-08-24 完成）
 - **Gate 6** ✅：要素编辑（事务式会话 start/add/update/update_geometry/delete/commit/rollback）+ 复制图层 + **危险操作审批（HITL）**端到端
 - **Gate 7** ✅：样式定制（`categorized` 分类设色、`set_labeling` 标注）+ 工程管理（`get_project_info` / `save_project`）
-- **工具共 32 个**：加载/查看（load_data, inspect_data, list_layers, field_statistics, unique_values, load_raster）、空间分析（buffer, overlay, join_by_location, voronoi, run_algorithm, transform_coords, get_crs, set_crs）、统计出图（choropleth, scatter_plot, summarize, categorized, render_map, set_labeling, export_geojson）、编辑（start_editing, add_features, update_features, update_geometry, delete_features, commit_edits, rollback_edits）、工程（duplicate_layer, get_project_info, save_project, finish）
-- **测试**：pytest 304 通过（`test_ocr_docker/test_sandbox/test_gis_sandbox` 环境类除外）；`scripts/smoke.py` 通过
+- **工具共 41 个**：加载/查看（load_data, inspect_data, list_layers, field_statistics, unique_values, load_raster）、空间分析（buffer, overlay, join_by_location, join_by_attribute, voronoi, run_algorithm, transform_coords, get_crs, set_crs）、统计出图（choropleth, scatter_plot, summarize, categorized, render_map, layout_map, set_labeling, export_geojson）、编辑（start_editing, add_features, update_features, update_geometry, delete_features, commit_edits, rollback_edits, calculate_field, rename_layer, remove_layer, export_layer_inventory）、工程（duplicate_layer, get_project_info, save_project, finish）、3D（download_osm_buildings, render_3d）
+- **测试**：pytest 356 通过（`test_ocr_docker/test_sandbox/test_gis_sandbox` 环境类除外）；`scripts/smoke.py` 通过
 - **测试数据**：已扩充（见 `data/README.md`：`data/gis_base/` 行政区划/统计面/点线栅格、`data/gis_demo/` CSV）
 - **相关文档**：`SPEC-GIS智能操作平台.md`、`GIS-智能助手-工具调用设计.md`、`GIS-真实引擎接入方案.md`、`GIS-智能操作助手-操作能力规划.md`、`改进计划.md`、`GIS-助手工程化与上线方案.md`、`dsh-接入方案.md`、`GIS-3D城市可视化-最小演示方案.md`
 
@@ -78,8 +78,11 @@
 - 前端体验回归：流式输出、会话管理、审批卡片、权限模式切换
 - 按 `docs/部署指南.md` 做一次干净环境部署验证
 
-### P3 — 3D 城市可视化（所有 Gate 结束后再做，方案已定稿）
-- 按 `docs/GIS-3D城市可视化-最小演示方案.md` 的阶段 0/1/2 实施：OSM 建筑下载 + MapLibre 拉伸预览 + 接为 agent 工具
+### P3 — 3D 城市可视化 ✅（阶段 1/2 完成，方案见 `docs/GIS-3D城市可视化-最小演示方案.md`）
+- 阶段 1（OSM 建筑下载）：`download_osm_buildings` 通过 Overpass API 拉取指定 bbox 建筑轮廓，高度估算（height 字段 > building:levels > 建筑类型兜底），输出 `data/gis_3d/<city>_buildings.geojson`（Marvis 2026-08-25 完成）
+- 阶段 2（MapLibre 拉伸预览）：`render_3d` 将当前图层补齐 `height_m` 导出到 `src/web/static/3d-demo/`，返回 `http://localhost:8080/3d-demo/?data=<name>.geojson`；前端 `index.html` 支持 `?data=` 动态加载 + 自适应范围（Marvis 2026-08-25 完成）
+- 已同步 MCP 双入口：`gis_download_osm_buildings` / `gis_render_3d` 注册进 `src/gis_mcp/tools.py`（43 工具）
+- 验收：对话输入城市范围 → 下载真实建筑 → 浏览器 3D 预览；单测 `tests/test_gis_3d_tools.py` 11 项覆盖
 
 ### P3 — MCP/dsh 双入口同步
 - 确保 `src/gis_mcp` 与自研 Agent 使用同一套 32+ 工具 schema；把 HITL 审批（`approval_gate`）同步到 dsh/MCP 入口（见 `docs/dsh-接入方案.md`）

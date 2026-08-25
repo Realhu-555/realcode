@@ -730,4 +730,52 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "download_osm_buildings",
+            "description": (
+                "从 OpenStreetMap（Overpass API）按经纬度范围下载建筑轮廓，生成带 "
+                "height_m（高度估算）字段的 GeoJSON 并保存到 data/gis_3d/。"
+                "height_m 估算策略：height 字段优先 → building:levels×3 → 默认 10 米；"
+                "数据仅用于可视化演示，非测绘数据（ODbL 许可，需署名 © OpenStreetMap contributors）。"
+                "下载后可接着用 load_data 加载，再 render_3d 出 3D 预览。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "城市/区域名，用于生成文件名（如 zhongguancun）",
+                    },
+                    "south": {"type": "number", "description": "范围南纬（如 39.97）"},
+                    "west": {"type": "number", "description": "范围西经（如 116.30）"},
+                    "north": {"type": "number", "description": "范围北纬（如 40.01）"},
+                    "east": {"type": "number", "description": "范围东经（如 116.34）"},
+                },
+                "required": ["city", "south", "west", "north", "east"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_3d",
+            "description": (
+                "把当前图层生成为 3D 城市预览：导出为 GeoJSON（带 height_m 高度字段，"
+                "估算策略：height 优先 → building:levels×3 → 默认 10 米），挂载到 "
+                "/3d-demo/ 演示页，返回可访问的 3D 预览 URL。用于『给当前数据出 3D 城市视角』。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "output": {
+                        "type": "string",
+                        "description": "预览数据文件名（不含扩展名，默认 render_3d）",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
 ]

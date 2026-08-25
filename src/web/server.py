@@ -6,6 +6,7 @@
 import asyncio
 import json
 import queue
+import shutil
 import threading
 import time
 import uuid
@@ -46,6 +47,16 @@ app = FastAPI(title="GIS 智能操作助手", version="1.1.0")
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")))
+
+# P3 阶段1：3D 演示页（frontend/3d-demo → static/3d-demo 同步后挂载）
+_3D_DEMO_SRC = Path(__file__).resolve().parents[2] / "frontend" / "3d-demo"
+_3D_DEMO_DST = static_dir / "3d-demo"
+if _3D_DEMO_SRC.exists():
+    _3D_DEMO_DST.mkdir(parents=True, exist_ok=True)
+    for _f in _3D_DEMO_SRC.iterdir():
+        if _f.is_file():
+            shutil.copy2(_f, _3D_DEMO_DST / _f.name)
+app.mount("/3d-demo", StaticFiles(directory=str(_3D_DEMO_DST), html=True), name="3d-demo")
 
 # GIS 上传限制（SPEC v1.2 Task 4）
 GIS_UPLOAD_DIR = Path("data/gis_uploads")

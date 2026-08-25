@@ -13,6 +13,7 @@ from pathlib import Path
 
 import geopandas as gpd
 import matplotlib
+import requests
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -64,6 +65,63 @@ def _jsonable(obj):
     if hasattr(obj, "tolist"):  # numpy ??
         return obj.tolist()
     return str(obj)
+
+
+# 3D 演示静态目录（后端启动时同步 frontend/3d-demo → src/web/static/3d-demo 并挂载 /3d-demo）
+_3D_STATIC_DIR = Path("src/web/static/3d-demo")
+_OSM_DATA_DIR = Path("data/gis_3d")
+_OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
+_OVERPASS_HEADERS = {
+    "User-Agent": "gis-3d-demo/0.1 (educational demo)",
+    "Accept": "application/json",
+}
+
+
+def _estimate_height(tags: dict) -> float:
+    """OSM 建筑高度估算：height 优先 → building:levels×3 → 按类型默认（演示用，非测绘）"""
+    raw = tags.get("height")
+    if raw:
+        m = re.match(r"\s*([\d.]+)", str(raw))
+        if m:
+            return float(m.group(1))
+    lv = tags.get("building:levels")
+    if lv:
+        m = re.match(r"\s*([\d.]+)", str(lv))
+        if m:
+            return float(m.group(1)) * 3.0
+    building = (tags.get("building") or "").lower()
+    if building in ("garage", "carport"):
+        return 4.0
+    if building in ("shed", "greenhouse", "roof"):
+        return 3.0
+    return 10.0
+
+
+def _apply_height_field(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """为 3D 预览补齐 height_m 字段：已有 height_m/height 直接用，levels×3，否则默认 10"""
+    out = gdf.copy()
+    cols = {str(c).lower(): c for c in out.columns}
+    values: list[float] = []
+    for _, row in out.iterrows():
+        h: float | None = None
+        src = None
+        if "height_m" in cols:
+            src = cols["height_m"]
+        elif "height" in cols:
+            src = cols["height"]
+        if src is not None and pd.notna(row.get(src)) and str(row[src]).strip():
+            m = re.match(r"\s*([\d.]+)", str(row[src]))
+            if m:
+                h = float(m.group(1))
+        if h is None and "building:levels" in cols:
+            lv = cols["building:levels"]
+            if pd.notna(row.get(lv)) and str(row[lv]).strip():
+                m = re.match(r"\s*([\d.]+)", str(row[lv]))
+                if m:
+                    h = float(m.group(1)) * 3.0
+        values.append(h if h is not None else 10.0)
+    out["height_m"] = values
+    return out
 
 
 def _check_input_path(path: str, roots: list[Path]) -> Path:
@@ -642,6 +700,109 @@ class GisEngine:
         plt.close(fig)
         self.outputs.append(output)
         return self._result(f"已保存地图 {output}", size_bytes=out.stat().st_size)
+
+    # ── 3D 城市可视化（P3）──────────────────
+    def download_osm_buildings(
+        self,
+        city: str,
+        south: float,
+        west: float,
+        north: float,
+        east: float,
+    ) -> dict:
+        """按 bbox 从 Overpass 下载建筑轮廓，估算高度，存 data/gis_3d/<city>_buildings.geojson"""
+        if north <= south or east <= west:
+            raise GisEngineError("bbox 无效：要求 north>south、east>west")
+        query = (
+            f'[out:json][timeout:60];(way["building"]({south},{west},{north},{east}););out geom;'
+        )
+        try:
+            resp = requests.post(
+                _OVERPASS_ENDPOINT,
+                data={"data": query},
+                headers=_OVERPASS_HEADERS,
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise GisEngineError(f"请求 Overpass 失败: {exc}") from exc
+        if resp.status_code != 200:
+            raise GisEngineError(f"Overpass 返回 HTTP {resp.status_code}")
+        payload = resp.json()
+        features: list[dict] = []
+        height_direct = levels_used = default_used = 0
+        for el in payload.get("elements", []):
+            if el.get("type") != "way":
+                continue
+            ring = [(p["lon"], p["lat"]) for p in (el.get("geometry") or [])]
+            if len(ring) < 3:
+                continue
+            if ring[0] != ring[-1]:
+                ring.append(ring[0])
+            tags = el.get("tags") or {}
+            if tags.get("height"):
+                height_direct += 1
+            elif tags.get("building:levels"):
+                levels_used += 1
+            else:
+                default_used += 1
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "osm_id": el["id"],
+                        "building": tags.get("building"),
+                        "height_m": _estimate_height(tags),
+                    },
+                    "geometry": {"type": "Polygon", "coordinates": [ring]},
+                }
+            )
+        if not features:
+            raise GisEngineError("该范围内没有建筑要素，请调整 bbox")
+        fc = {"type": "FeatureCollection", "features": features}
+        out_dir = _OSM_DATA_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fname = f"{_sanitize_filename(city)}_buildings.geojson"
+        out_path = out_dir / fname
+        with out_path.open("w", encoding="utf-8") as fh:
+            json.dump(fc, fh, ensure_ascii=False)
+        return {
+            "status": "ok",
+            "message": f"已下载 {len(features)} 栋建筑 → {out_path.resolve()}",
+            "outputs": list(self.outputs),
+            "output_paths": self._output_paths(),
+            "file_path": str(out_path.resolve()),
+            "stats": {
+                "total": len(features),
+                "height_direct": height_direct,
+                "levels_used": levels_used,
+                "default_used": default_used,
+            },
+            "note": "建筑高度为估算值，仅用于可视化演示，非测绘数据（© OpenStreetMap contributors, ODbL）",
+        }
+
+    def render_3d(self, output: str = "render_3d") -> dict:
+        """把当前图层导出为 3D 预览 GeoJSON（补齐 height_m），挂载 /3d-demo/ 并返回 URL"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        out = self._apply_height_3d()
+        dst = _3D_STATIC_DIR / f"{_sanitize_filename(output)}.geojson"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with dst.open("w", encoding="utf-8") as fh:
+            json.dump(out, fh, ensure_ascii=False)
+        url = f"http://localhost:8080/3d-demo/?data={dst.name}"
+        return {
+            "status": "ok",
+            "message": f"已生成 3D 预览 → {url}",
+            "outputs": list(self.outputs) + [dst.name],
+            "output_paths": self._output_paths() + [str(dst.resolve())],
+            "3d_preview_url": url,
+            "note": "建筑高度为估算值，仅用于可视化演示，非测绘数据",
+        }
+
+    def _apply_height_3d(self) -> dict:
+        """把当前图层（含估算 height_m）转成 GeoJSON dict"""
+        gdf = _apply_height_field(self._layer)
+        return json.loads(gdf.to_json())
 
     # ── 底图叠加 / 排版要素（Gate 8）──────────────
     def _draw_basemap(self, ax) -> None:

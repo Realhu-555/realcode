@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import datetime
+import functools
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +21,7 @@ from typing import Literal
 import mapclassify  # noqa: F401  (prewarm)
 from mcp.server.fastmcp import FastMCP
 
+from src.gis_toolkit.approval import DANGEROUS_TOOLS, ApprovalGate
 from src.gis_toolkit.engine import GisEngine, create_gis_engine
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
 from src.utils.config import settings
@@ -29,6 +31,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 默认产物目录 / 输入白名单从 settings 读取（.env 可覆盖，见 src/utils/config.py）
 DEFAULT_OUT_ROOT = settings.gis_out_root
 DEFAULT_ALLOWED_ROOTS = list(settings.gis_allowed_roots) or [str(_PROJECT_ROOT / "data")]
+# 权限模式从 settings 读取（.env 可覆盖，默认 ask）
+DEFAULT_PERMISSION_MODE = getattr(settings, "gis_permission_mode", "ask")
+# MCP 审批超时（秒）：对话式确认可能跨多个来回，放宽到 10 分钟
+MCP_APPROVAL_TTL_SECONDS = 600
 
 
 def resolve_out_root(out_root: str | None = None) -> str:
@@ -62,16 +68,24 @@ def _warmup_matplotlib() -> None:
 
 
 class EngineManager:
-    """Gate 1：全局单引擎、懒加载；预留多会话扩展（未来按 session_id 维护引擎实例）"""
+    """Gate 1：全局单引擎、懒加载；预留多会话扩展（未来按 session_id 维护引擎实例）
+
+    Gate 8+/P3：增加会话级 HITL 审批门（ApprovalGate），危险工具（编辑/删除/覆盖）
+    在 ask 模式下挂起为 pending_approval，由 gis_approve / gis_reject 人工确认后执行。
+    """
 
     def __init__(
         self,
         out_root: str | None = None,
         allowed_roots: list[str] | None = None,
+        permission_mode: str = "ask",
     ) -> None:
         self._out_root = out_root or DEFAULT_OUT_ROOT
         self._allowed_roots = allowed_roots or list(DEFAULT_ALLOWED_ROOTS)
         self._engine: GisEngine | None = None
+        self.approval_gate = ApprovalGate(mode=permission_mode, ttl=MCP_APPROVAL_TTL_SECONDS)
+        # 挂起的审批请求: approval_id -> (handler, kwargs)，approve 后重放执行
+        self._pending: dict[str, tuple] = {}
         # 多会话扩展预留：self._engines: dict[str, GisEngine] = {}
 
     def get(self) -> GisEngine:
@@ -85,6 +99,14 @@ class EngineManager:
             self._engine = engine
         return self._engine
 
+    def remember_pending(self, approval_id: str, fn, kwargs: dict) -> None:
+        """记录待审批执行（approval_id -> handler + 参数），供 approve 后重放"""
+        self._pending[approval_id] = (fn, dict(kwargs))
+
+    def pop_pending(self, approval_id: str) -> tuple | None:
+        """取走并移除待审批执行记录；不存在返回 None"""
+        return self._pending.pop(approval_id, None)
+
 
 _manager: EngineManager | None = None
 
@@ -92,16 +114,88 @@ _manager: EngineManager | None = None
 def init_engine_manager(
     out_root: str | None = None,
     allowed_roots: list[str] | None = None,
+    permission_mode: str | None = None,
 ) -> None:
     """初始化（或重置）全局引擎管理器；不传参时使用默认 data/ 白名单与输出目录"""
     global _manager
-    _manager = EngineManager(out_root=out_root, allowed_roots=allowed_roots)
+    _manager = EngineManager(
+        out_root=out_root,
+        allowed_roots=allowed_roots,
+        permission_mode=permission_mode or DEFAULT_PERMISSION_MODE,
+    )
 
 
 def _get_manager() -> EngineManager:
     if _manager is None:
         raise RuntimeError("EngineManager 未初始化，请先调用 init_engine_manager()")
     return _manager
+
+
+def _guarded(name: str, fn):
+    """危险工具守卫（P3 HITL 同步）：按权限模式放行 / 挂起 / 拒绝。
+
+    - readonly：直接拒绝（不执行）；
+    - auto：放行执行；
+    - ask（默认）：挂起为 pending_approval，由 gis_approve / gis_reject 人工确认。
+
+    functools.wraps 使 inspect.signature 跟随原 handler，FastMCP 仍能提取
+    原工具的参数 schema（否则 wrapper 的 *args/**kwargs 会破坏参数校验）。
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        manager = _get_manager()
+        res = manager.approval_gate.check(name, kwargs)
+        if res is None:
+            return fn(*args, **kwargs)
+        if res["status"] == "pending_approval":
+            manager.remember_pending(res["approval_id"], fn, kwargs)
+        return res
+
+    return wrapper
+
+
+def _approve(approval_id: str, approve: bool = True) -> dict:
+    """人工审批挂起的危险操作（approve=True 批准执行，False 拒绝）。
+
+    Args:
+        approval_id: 危险工具返回的审批请求 ID。
+        approve: True 批准并执行，False 拒绝。
+    """
+    manager = _get_manager()
+    action = "approve" if approve else "reject"
+    result = manager.approval_gate.resolve(approval_id, action)
+    if not result.get("ok"):
+        return result
+    if not approve:
+        return {
+            "ok": True,
+            "approval_id": approval_id,
+            "status": "rejected",
+            "message": "已拒绝执行该操作",
+        }
+    pending = manager.pop_pending(approval_id)
+    if pending is None:
+        return {
+            "ok": True,
+            "approval_id": approval_id,
+            "status": "approved",
+            "message": "已批准，但执行记录已失效，操作未执行",
+        }
+    fn, kwargs = pending
+    return fn(**kwargs)
+
+
+def _permission_mode(mode: str | None = None) -> dict:
+    """查看或切换权限模式（readonly 只读拒绝 / auto 自动放行 / ask 人工审批）。
+
+    Args:
+        mode: 可选。不传则返回当前模式；传 readonly/auto/ask 则切换会话级权限模式。
+    """
+    gate = _get_manager().approval_gate
+    if mode is not None:
+        gate.set_mode(mode)
+    return {"status": "ok", "mode": gate.mode}
 
 
 # ── 9 个工具 handler（签名即 MCP 参数 schema，与 TOOL_SCHEMAS 一致）───────────
@@ -499,6 +593,34 @@ def _save_project(path: str = "gis_project.qgz") -> dict:
     return _get_manager().get().save_project(path=path)
 
 
+def _download_osm_buildings(
+    city: str, south: float, west: float, north: float, east: float
+) -> dict:
+    """从 OpenStreetMap Overpass 下载指定范围建筑轮廓并估算高度。
+
+    Args:
+        city: 城市名/区域标识，用于生成文件名（如 beijing_chaoyang）。
+        south: 范围南纬（-90~90）。
+        west: 范围西经（-180~180）。
+        north: 范围北纬（-90~90）。
+        east: 范围东经（-180~180）。
+    """
+    return (
+        _get_manager()
+        .get()
+        .download_osm_buildings(city=city, south=south, west=west, north=north, east=east)
+    )
+
+
+def _render_3d(output: str | None = None) -> dict:
+    """把当前图层导出为 3D 城市预览（写入静态目录并返回浏览器访问 URL）。
+
+    Args:
+        output: 预览文件名（不含扩展名），如 beijing_3d。
+    """
+    return _get_manager().get().render_3d(output=output)
+
+
 def _finish(outputs: list[str], summary: str) -> dict:
     """任务完成：声明产出文件清单与结论。
 
@@ -549,17 +671,37 @@ _HANDLERS = {
     "set_labeling": _set_labeling,
     "get_project_info": _get_project_info,
     "save_project": _save_project,
+    "download_osm_buildings": _download_osm_buildings,
+    "render_3d": _render_3d,
     "finish": _finish,
 }
 
 
 def register_tools(mcp: FastMCP) -> None:
-    """表驱动注册：遍历 TOOL_SCHEMAS，映射为 gis_* MCP 工具（只暴露这 9 个）"""
+    """表驱动注册：遍历 TOOL_SCHEMAS，映射为 gis_* MCP 工具（只暴露这 9 个）
+
+    危险工具（编辑/删除/覆盖，见 DANGEROUS_TOOLS）自动套 HITL 审批守卫；
+    另注册审批控制工具 gis_approve / gis_permission_mode（不入 TOOL_SCHEMAS）。
+    """
     for schema in TOOL_SCHEMAS:
         fn = schema["function"]
         name = fn["name"]
+        handler = _HANDLERS[name]
+        if name in DANGEROUS_TOOLS:
+            handler = _guarded(name, handler)
         mcp.add_tool(
-            _HANDLERS[name],
+            handler,
             name=f"gis_{name}",
             description=fn["description"],
         )
+    # HITL 审批控制工具（独立于 TOOL_SCHEMAS，单独注册）
+    mcp.add_tool(
+        _approve,
+        name="gis_approve",
+        description="人工审批挂起的危险操作（approve=True 批准执行，False 拒绝）",
+    )
+    mcp.add_tool(
+        _permission_mode,
+        name="gis_permission_mode",
+        description="查看或切换权限模式（readonly 只读拒绝 / auto 自动放行 / ask 人工审批）",
+    )

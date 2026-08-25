@@ -430,6 +430,31 @@ class QgsEngine:
         self.outputs.append(name)
         return self._merge(result)
 
+    def download_osm_buildings(
+        self,
+        city: str,
+        south: float,
+        west: float,
+        north: float,
+        east: float,
+    ) -> dict:
+        """按 bbox 从 Overpass 下载建筑轮廓（估算高度），存 data/gis_3d/"""
+        return self._merge(
+            self._call(
+                "download_osm_buildings",
+                {"city": city, "south": south, "west": west, "north": north, "east": east},
+            )
+        )
+
+    def render_3d(self, output: str = "render_3d") -> dict:
+        """把当前图层导出为 3D 预览 GeoJSON，挂载 /3d-demo/ 并返回 URL"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(output)
+        result = self._call("render_3d", {"output": name})
+        self.outputs.append(f"{name}.geojson")
+        return self._merge(result)
+
     def finish(self, outputs: list[str] | None = None, summary: str = "") -> dict:
         """任务完成：声明产出文件与结论（与 GisEngine 同逻辑）"""
         declared = [o for o in (outputs or []) if (self.out_dir / o).is_file()]
