@@ -31,14 +31,18 @@ SYSTEM_PROMPT = """你是 GIS 智能助手，通过工具调用操作 GIS 引擎
 3. 出图用 choropleth（分级设色）/ scatter_plot（散点）；统计用 summarize；空间操作用 buffer / overlay；
 4. 产物一律写相对文件名（如 choropleth.png / summary.csv），引擎会保存到输出目录；
 5. 工具返回 status=error 时，根据 error 信息修正参数后重试，不要重复同样的错误；
-6. 全部产物完成后再调用 finish(outputs=[...], summary="...") 声明产出，结束任务。
-7. finish 的 summary 必须主动给出关键分析结论和具体数值（分组统计值、趋势变化、Top 名单、异常点），
-   不要只说"数据已导出/详见 CSV"——把 CSV 里的核心数字直接写进总结。
+6. 当前图层在会话中持续保留，不要重复 load_data 相同数据；确需其他数据时才重新加载；
+7. 任务全部完成后，最后一步必须调用 finish(outputs=[...], summary="...") 收尾并汇报，禁止不调 finish 直接结束；
+8. finish 的 summary 就是给用户的最终汇报，必须包含：
+   - 做了什么（关键步骤）；
+   - 具体结论和数字（分组统计值、Top 名单、趋势、异常点）——数字必须来自工具返回，禁止编造；
+   - 产物清单（文件名）；
+   不要只说"数据已导出/详见 CSV"，把核心数字直接写进汇报。
 
 约束：
 - 只能使用工具返回的信息，禁止编造数据或字段；
 - 不要臆造数据文件路径，只能使用用户提供或已存在的文件；
-- 步数有限，避免无意义的重复调用。"""
+- 步数有限（12 步），先规划顺序：加载 → 查看 → 分析/出图 → 汇总 → finish，避免无意义的重复调用。"""
 
 
 class GisToolAgent:
@@ -77,6 +81,20 @@ class GisToolAgent:
             return ""
         lines = "\n".join(f"- {p.as_posix()}（演示数据集）" for p in files)
         return "引擎工作目录中可用的数据文件（用户未显式提供时可直接 load_data 使用）：\n" + lines
+
+    @staticmethod
+    def _ending_fallback(outputs: list[str], trajectory: list[dict]) -> str:
+        """任务未正常收尾（超时 / 未调用 finish）时的兜底汇报，避免空回复"""
+        ok_steps = [t for t in trajectory if (t.get("result") or {}).get("status") == "ok"]
+        parts: list[str] = []
+        if ok_steps:
+            names = ", ".join(dict.fromkeys(str(t["tool"]) for t in ok_steps))
+            parts.append(f"本次共执行 {len(ok_steps)} 步工具调用（{names}）。")
+        if outputs:
+            parts.append("已生成产物：" + ", ".join(outputs))
+        if not parts:
+            parts.append("任务未完成（未生成可下载产物），请补充说明后重试。")
+        return " ".join(parts)
 
     def run(
         self,
@@ -163,6 +181,9 @@ class GisToolAgent:
                 break
         else:
             timed_out = True
+
+        if not final.strip():
+            final = self._ending_fallback(outputs, trajectory)
 
         if session is not None:
             session.append_round(
@@ -289,6 +310,9 @@ class GisToolAgent:
                 break
         else:
             timed_out = True
+
+        if not final.strip():
+            final = self._ending_fallback(outputs, trajectory)
 
         if error is not None:
             self._emit(on_event, {"type": "error", "error": error})
