@@ -78,6 +78,13 @@ watch([messages, running], async () => {
   if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
 })
 
+/** 滚动到底部（rAF 让出渲染帧，避免流式高频更新时失效） */
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
+  })
+}
+
 onMounted(loadSessions)
 
 function formatTime(ts: number): string {
@@ -269,10 +276,26 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
         item.result = ev.result
         item.status = ev.result.status === "ok" ? "ok" : ev.result.status === "error" ? "error" : "other"
       }
+      // 即时预览：出图工具产出的 PNG 直接挂图，不等任务结束
+      const outs = (ev.result as { outputs?: string[] } | undefined)?.outputs ?? []
+      for (const name of outs) {
+        if (!/\.png$/i.test(name)) continue
+        if (msg.items.some((x) => x.kind === "artifact" && x.name === name)) continue
+        void (async () => {
+          try {
+            const url = await objectUrlFor(name, sessionId.value)
+            msg.items.push({ kind: "artifact", name, url, ext: undefined })
+            scrollToBottom()
+          } catch {
+            // 产物获取失败忽略
+          }
+        })()
+      }
       break
     }
     case "done":
       for (const name of ev.outputs) {
+        if (msg.items.some((x) => x.kind === "artifact" && x.name === name)) continue
         void (async () => {
           try {
             const url = await objectUrlFor(name, sessionId.value)
@@ -289,11 +312,14 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
           }
         })()
       }
+      // 图片加载会改变内容高度，延迟再滚一次
+      setTimeout(scrollToBottom, 400)
       break
     case "error":
       msg.error = ev.error
       break
   }
+  scrollToBottom()
 }
 
 async function handleApproval(
@@ -521,7 +547,7 @@ function download(url: string, name: string) {
 
                   <!-- 图片产物 -->
                   <figure v-else-if="item.kind === 'artifact' && !item.ext" class="gis-artifact">
-                    <img :src="item.url" :alt="item.name" class="w-full block" />
+                    <img :src="item.url" :alt="item.name" class="w-full block" @load="scrollToBottom" />
                     <figcaption class="flex items-center justify-between gap-2">
                       <span class="truncate text-xs text-dim font-mono">{{ item.name }}</span>
                       <a class="gis-download-link shrink-0" @click="download(item.url!, item.name!)">下载</a>
