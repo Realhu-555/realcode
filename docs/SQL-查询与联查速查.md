@@ -1,89 +1,111 @@
-# SQL 速查 — 基础语句 / 查询操作 / 多表联查
+# SQL 速查 — 基础语句 / 查询操作 / 多表联查（通用版）
 
-> 用途：项目开发与数据排查时的 SQL 速查，示例全部基于本项目 `long_term_memory.db` 的真实表。
-> 版本：v1.0 ｜ 日期：2026-08-25 ｜ 适用：SQLite（其他数据库语法大同小异）。
+> 用途：通用的 SQL 速查手册，与具体业务无关，示例使用经典电商表（用户/订单/商品）。
+> 版本：v2.0（通用版）｜ 日期：2026-08-25 ｜ 适用：SQLite 语法为主，兼容大部分数据库（MySQL/PostgreSQL 差异处已注明）。
 
 ---
 
-## 0. 项目数据库说明
+## 0. 示例表（先建这三张表）
 
-本项目核心库为 `long_term_memory.db`（SQLite，已被 `.gitignore` 忽略，不入库）。当前表清单：
+```sql
+-- 用户表
+CREATE TABLE users (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  email      TEXT UNIQUE,
+  age        INTEGER,
+  city       TEXT,
+  created_at TIMESTAMP
+);
 
-| 表 | 关键字段 | 用途 |
-|---|---|---|
-| `lessons` | `id, project_id, agent_name, category, lesson, created_at` | GIS 任务经验（跨会话记忆） |
-| `lesson_embeddings` | `lesson_id, embedding, created_at` | lesson 的向量（n-gram 哈希 256 维） |
-| `user_preferences` | `key, value, confidence, updated_at` | 用户偏好（如 `settings:v1`） |
-| `user_models` | `id, user_key, label, provider, model, base_url, api_key, capabilities, created_at` | 用户自定义模型（Settings 模块） |
-| `projects` | `id, name, idea, status, quality_score, review_rounds, token_used, created_at` | 通用项目记录 |
-| `content_projects` | 营销内容项目字段 | 旧营销模块留存 |
+-- 订单表（user_id 关联 users.id）
+CREATE TABLE orders (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL,
+  product    TEXT,
+  amount     REAL,
+  status     TEXT,           -- pending / paid / shipped / cancelled
+  created_at TIMESTAMP
+);
 
-**连接方式（Windows）**
-
-Python（推荐）：
-```python
-import sqlite3
-con = sqlite3.connect(r"H:\ai-dev-platform\long_term_memory.db")
-con.row_factory = sqlite3.Row          # 让查询结果可按列名访问
-rows = con.execute("SELECT * FROM lessons LIMIT 5").fetchall()
-for r in rows:
-    print(r["id"], r["agent_name"], r["lesson"][:40])
+-- 商品表（订单明细也可关联，这里演示多对一）
+CREATE TABLE products (
+  id       INTEGER PRIMARY KEY,
+  name     TEXT,
+  category TEXT,
+  price    REAL,
+  stock    INTEGER
+);
 ```
 
-命令行（若装有 sqlite3）：
-```bash
-sqlite3 long_term_memory.db
-.tables            # 列表
-.schema lessons    # 查看建表语句
+示例数据（可自行插入，或用你自己的数据替换表名/字段）：
+
+```sql
+INSERT INTO users (name, email, age, city, created_at) VALUES
+  ('张三', 'zhangsan@example.com', 28, '北京', '2025-01-10 10:00:00'),
+  ('李四', 'lisi@example.com', 35, '上海', '2025-02-01 09:30:00'),
+  ('王五', 'wangwu@example.com', 22, '广州', '2025-02-20 14:00:00'),
+  ('赵六', 'zhaoliu@example.com', 40, '北京', '2025-03-05 11:00:00');
+
+INSERT INTO orders (user_id, product, amount, status, created_at) VALUES
+  (1, '键盘', 299.0, 'paid', '2025-03-01 10:00:00'),
+  (1, '鼠标', 129.0, 'shipped', '2025-03-10 12:00:00'),
+  (2, '显示器', 1299.0, 'paid', '2025-03-12 15:00:00'),
+  (3, '键盘', 299.0, 'cancelled', '2025-03-15 09:00:00'),
+  (4, '耳机', 499.0, 'paid', '2025-03-20 18:00:00');
 ```
 
 ---
 
 ## 1. 基础语句（DDL / DML）
 
-### 1.1 建表 / 删表
+### 1.1 建表 / 删表 / 改表
 
 ```sql
-CREATE TABLE IF NOT EXISTS lessons (
-  id TEXT PRIMARY KEY,
-  project_id TEXT,
-  agent_name TEXT NOT NULL,
-  category TEXT,                -- success / failure / preference / bug
-  lesson TEXT,
-  created_at TIMESTAMP
+-- 用途：新建表（IF NOT EXISTS 可重复执行不报错）
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
 );
 
-DROP TABLE IF EXISTS lessons;   -- 删除表（慎用）
-ALTER TABLE lessons ADD COLUMN score REAL;  -- 加列
+-- 用途：删除表
+-- ⚠ 危险：会连同数据一起删除，且不可恢复
+DROP TABLE IF EXISTS users;
+
+-- 用途：给表加一列
+ALTER TABLE users ADD COLUMN phone TEXT;
 ```
 
 ### 1.2 插入
 
 ```sql
--- 用途：插入一条 GIS 经验记录
-INSERT INTO lessons (id, project_id, agent_name, category, lesson, created_at)
-VALUES ('abc123', 'session1', 'gis_assistant:user1', 'success', 'GIS 任务完成：xxx', 1785600000.0);
+-- 用途：插入一条记录
+INSERT INTO users (name, email, age, city, created_at)
+VALUES ('张三', 'zs@example.com', 28, '北京', '2025-01-10 10:00:00');
 
--- 用途：一次插入多条（多值）
-INSERT INTO lessons (id, agent_name, category, lesson, created_at) VALUES
-  ('a1', 'gis_assistant:user1', 'success', 'xxx', 1785600000.0),
-  ('a2', 'gis_assistant:user1', 'bug', 'yyy', 1785600100.0);
+-- 用途：一次插入多条
+INSERT INTO users (name, email, age) VALUES
+  ('李四', 'ls@example.com', 35),
+  ('王五', 'ww@example.com', 22);
 
 -- 用途：不存在则插入、存在则更新（UPSERT）
--- ⚠ 注意：ON CONFLICT(id) 依赖主键 id；excluded 指代准备插入的新值
-INSERT INTO lessons (id, agent_name, category, lesson, created_at)
-VALUES ('abc123', 'gis_assistant:user1', 'success', '新内容', 1785600000.0)
-ON CONFLICT(id) DO UPDATE SET lesson = excluded.lesson;
+-- ⚠ 注意：ON CONFLICT(字段) 依赖唯一键/主键；excluded 代表「本次准备插入的新值」
+INSERT INTO users (id, name, email) VALUES (1, '张三改', 'zs@example.com')
+ON CONFLICT(id) DO UPDATE SET name = excluded.name;
 ```
 
 ### 1.3 更新 / 删除
 
 ```sql
--- 用途：按 id 更新类别
-UPDATE lessons SET category = 'preference' WHERE id = 'abc123';
--- 用途：删除创建时间早于阈值的历史记录（清理用）
-DELETE FROM lessons WHERE created_at < 1700000000.0;
--- ⚠ 危险：UPDATE / DELETE 不带 WHERE 会作用于全表，执行前先 SELECT COUNT(*) 确认
+-- 用途：按条件更新
+UPDATE users SET city = '深圳' WHERE id = 3;
+
+-- 用途：按条件删除
+DELETE FROM users WHERE age < 20;
+
+-- ⚠ 危险：不带 WHERE 会更新/删除全表，执行前先 SELECT COUNT(*) 确认影响行数
+SELECT COUNT(*) FROM users WHERE age < 20;   -- 先看有几条
+-- DELETE FROM users WHERE age < 20;         -- 确认无误后再执行
 ```
 
 ---
@@ -93,247 +115,289 @@ DELETE FROM lessons WHERE created_at < 1700000000.0;
 ### 2.1 基础过滤与排序
 
 ```sql
--- 用途：按用户+类别过滤，模糊匹配关键词，倒序取前 10 条（分页）
-SELECT id, agent_name, lesson FROM lessons
-WHERE agent_name = 'gis_assistant:user1'
-  AND category IN ('success', 'preference')
-  AND lesson LIKE '%缓冲区%'                    -- 模糊匹配
-  AND created_at BETWEEN 1700000000 AND 1800000000
-  AND lesson NOT LIKE '%失败%'
-ORDER BY created_at DESC                        -- 倒序
-LIMIT 10 OFFSET 0;                              -- 分页
-
--- 换行写法（等价的另一种格式，可读性更好）
-SELECT id, agent_name, lesson
-FROM lessons
-WHERE agent_name = 'gis_assistant:user1'
-ORDER BY created_at DESC
-LIMIT 10;
+-- 用途：按多个条件过滤 + 排序 + 分页
+SELECT id, name, age, city FROM users
+WHERE age >= 18
+  AND city IN ('北京', '上海')
+  AND name LIKE '张%'                    -- 模糊匹配：张开头
+  AND created_at BETWEEN '2025-01-01' AND '2025-12-31'
+ORDER BY age DESC                        -- 倒序（DESC），升序用 ASC（默认）
+LIMIT 10 OFFSET 0;                       -- 每页 10 条，第 1 页
 ```
 
-### 2.2 聚合与分组
+常用条件操作符：
 
 ```sql
--- 用途：统计每个用户每种类别的数量，只保留 >=3 的组
-SELECT agent_name, category, COUNT(*) AS cnt
-FROM lessons
-GROUP BY agent_name, category
-HAVING COUNT(*) >= 3                            -- 分组后过滤（HAVING）
+-- = / != / < / <= / > / >=         比较
+-- LIKE '%xx%'                       包含；LIKE 'xx%' 以 xx 开头；_ 匹配单个字符
+-- IN (1,2,3)                       在集合内
+-- BETWEEN a AND b                   闭区间
+-- IS NULL / IS NOT NULL             判空（不能用 = NULL）
+-- AND / OR / NOT                    逻辑
+```
+
+### 2.2 去重 / 别名 / 计算列
+
+```sql
+-- 用途：去重查看有哪些城市
+SELECT DISTINCT city FROM users;
+
+-- 用途：别名（AS）+ 计算列
+SELECT name, age AS 年龄, age + 10 AS age_10y_later FROM users;
+```
+
+### 2.3 聚合与分组
+
+```sql
+-- 用途：统计每个城市的人数（GROUP BY 分组 + COUNT 聚合）
+SELECT city, COUNT(*) AS cnt
+FROM users
+GROUP BY city
 ORDER BY cnt DESC;
 
--- 用途：全局统计（总数 / 用户数 / 首末时间 / 平均置信度）
+-- 用途：分组后过滤（HAVING，作用于分组结果）
+SELECT city, COUNT(*) AS cnt
+FROM users
+GROUP BY city
+HAVING COUNT(*) >= 2;
+
+-- 用途：常用聚合函数一起看
 SELECT
-  COUNT(*)        AS total,
-  COUNT(DISTINCT agent_name) AS users,
-  MIN(created_at) AS first_ts,
-  MAX(created_at) AS last_ts,
-  AVG(confidence) AS avg_conf
-FROM user_preferences;
+  COUNT(*)             AS total_rows,
+  COUNT(DISTINCT city) AS city_cnt,
+  MIN(age)             AS min_age,
+  MAX(age)             AS max_age,
+  AVG(age)             AS avg_age,
+  SUM(age)             AS sum_age
+FROM users;
 
--- ⚠ 注意：SELECT 列要么是分组列（agent_name/category），要么是聚合函数，否则其他数据库会报错
+-- ⚠ 注意：SELECT 的列要么是 GROUP BY 的分组列，要么是聚合函数
+--   MySQL 宽松允许，PostgreSQL/SQLite 严格会报错
 ```
 
-### 2.3 子查询
+### 2.4 子查询
 
 ```sql
--- 用途：找比「同用户平均创建时间」更晚的记录（相关子查询，内外层用别名 l 关联）
-SELECT * FROM lessons l
-WHERE l.created_at > (
-  SELECT AVG(created_at) FROM lessons
-  WHERE agent_name = l.agent_name
-);
+-- 用途：标量子查询——查「比平均年龄大」的用户
+SELECT name, age FROM users
+WHERE age > (SELECT AVG(age) FROM users);
 
--- 用途：EXISTS 存在性判断——只查有 settings:v1 偏好的用户
--- ⚠ 注意：EXISTS 性能优于 IN 大列表；value LIKE 里的 || 是 SQLite 字符串拼接
-SELECT * FROM lessons l
+-- 用途：IN 子查询——查「下过单的用户」（子查询返回一列值）
+SELECT name FROM users
+WHERE id IN (SELECT DISTINCT user_id FROM orders);
+
+-- 用途：EXISTS 存在性判断——查「有已支付订单的用户」
+-- ⚠ 注意：EXISTS 只判断存在与否，性能通常优于 IN 大列表
+SELECT name FROM users u
 WHERE EXISTS (
-  SELECT 1 FROM user_preferences p
-  WHERE p.key = 'settings:v1'
-    AND p.value LIKE '%' || l.agent_name || '%'
+  SELECT 1 FROM orders o
+  WHERE o.user_id = u.id AND o.status = 'paid'
 );
 ```
 
-### 2.4 窗口函数（排名 / 分组取前 N）
+### 2.5 窗口函数（分组排名 / 分组取前 N）
 
 ```sql
--- 用途：分组取前 N——每个用户最近一条 lesson（PARTITION BY 分组 + 窗口内排序）
--- 实现：子查询加行号列，外层过滤 rn=1
-SELECT id, agent_name, lesson, created_at FROM (
-  SELECT *,
-         ROW_NUMBER() OVER (PARTITION BY agent_name ORDER BY created_at DESC) AS rn
-  FROM lessons
+-- 用途：按金额排名（RANK 同值并列，跳号）
+SELECT id, user_id, amount,
+       RANK() OVER (ORDER BY amount DESC) AS rk
+FROM orders;
+
+-- 用途：分组取前 N——每个用户金额最高的订单（常用套路）
+-- 思路：窗口内按 user_id 分组排序给行号，外层过滤 rn=1
+SELECT * FROM (
+  SELECT o.*,
+         ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY amount DESC) AS rn
+  FROM orders o
 ) WHERE rn = 1;
 
--- 用途：排名（RANK）、分组累计（SUM OVER）、上一条时间（LAG）
-SELECT id, agent_name, created_at,
-       RANK()       OVER (ORDER BY created_at DESC) AS rk,
-       SUM(1)       OVER (PARTITION BY agent_name)  AS user_total,
-       LAG(created_at) OVER (ORDER BY created_at)   AS prev_ts
-FROM lessons;
+-- 用途：分组累计（SUM OVER）、取上一条（LAG）
+SELECT id, user_id, amount,
+       SUM(amount) OVER (PARTITION BY user_id)        AS user_total,
+       LAG(amount) OVER (ORDER BY id)                 AS prev_amount
+FROM orders;
 
--- ⚠ 注意：窗口函数不能直接用 WHERE 过滤（WHERE 先于窗口执行），要包一层子查询
+-- ⚠ 注意：窗口函数的结果不能用 WHERE 直接过滤（WHERE 先于窗口执行），需包一层子查询
 ```
 
-### 2.5 CASE 条件逻辑
+### 2.6 CASE 条件逻辑
 
 ```sql
--- 用途：按关键词把经验打标（bad / good / other）
-SELECT id, lesson,
+-- 用途：按状态打标签，用于统计/展示
+SELECT id, product, amount,
   CASE
-    WHEN lesson LIKE '%失败%' THEN 'bad'
-    WHEN lesson LIKE '%成功%' THEN 'good'
-    ELSE 'other'
-  END AS verdict
-FROM lessons;
+    WHEN status = 'paid'      THEN '已支付'
+    WHEN status = 'shipped'   THEN '已发货'
+    WHEN status = 'cancelled' THEN '已取消'
+    ELSE '处理中'
+  END AS status_label
+FROM orders;
+
+-- 用途：条件聚合——统计各状态下单量
+SELECT
+  SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END)      AS paid_cnt,
+  SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_cnt
+FROM orders;
 ```
 
 ---
 
 ## 3. 多表联查（JOIN）
 
-### 3.1 INNER JOIN（两边都匹配）
+### 3.1 INNER JOIN（两边都匹配才返回）
 
 ```sql
--- 用途：只取「两边都匹配」的行——lesson 必须存在对应向量才返回
-SELECT l.id, l.lesson, length(e.embedding) AS emb_len
-FROM lessons l
-INNER JOIN lesson_embeddings e ON l.id = e.lesson_id;
+-- 用途：用户 + 订单，只返回「有订单」的用户行
+-- 说明：JOIN 默认就是 INNER JOIN
+SELECT u.name, o.id AS order_id, o.product, o.amount
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id
+ORDER BY u.name, o.id;
 
--- 等价写法：JOIN 默认就是 INNER JOIN
-SELECT l.id, l.lesson
-FROM lessons l
-JOIN lesson_embeddings e ON l.id = e.lesson_id;
+-- 等价写法
+SELECT u.name, o.product
+FROM users u
+JOIN orders o ON u.id = o.user_id;
 ```
 
-### 3.2 LEFT JOIN（保留左表全部，右表可空）
+### 3.2 LEFT JOIN（保留左表全部，右表无匹配则为 NULL）
 
 ```sql
--- 用途：保留左表（lessons）全部行，右表没有匹配时列为 NULL
-SELECT l.id, l.agent_name, l.lesson,
-       CASE WHEN e.lesson_id IS NULL THEN '无向量' ELSE '有向量' END AS emb_status
-FROM lessons l
-LEFT JOIN lesson_embeddings e ON l.id = e.lesson_id;
+-- 用途：所有用户及其订单（没下过单的用户也会出现，订单列为 NULL）
+SELECT u.name, o.id AS order_id, o.product
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+ORDER BY u.id;
 ```
 
-**易错点**：过滤右表条件放 `WHERE` 会把 LEFT JOIN 变成 INNER 效果，应放 `ON`：
+**易错点**：过滤右表条件放 `WHERE` 会把 LEFT JOIN 变成内连接效果：
+
 ```sql
--- ❌ 错误：p.key 过滤放 WHERE，会把「没有该偏好的行」一并删掉（退化成内连接）
-LEFT JOIN user_preferences p ON l.agent_name = p.agent_name
-WHERE p.key = 'settings:v1';
+-- ❌ 错误：o.status 放 WHERE，会把「没订单/其他状态」的用户行删掉，退化成 INNER JOIN
+SELECT u.name, o.product
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE o.status = 'paid';
 
 -- ✅ 正确：过滤条件放 ON，先连接再保留左表全部行
-LEFT JOIN user_preferences p
-  ON l.agent_name = p.agent_name AND p.key = 'settings:v1';
+SELECT u.name, o.product
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id AND o.status = 'paid';
 ```
 
-### 3.3 RIGHT / FULL OUTER JOIN（SQLite 不支持，用 LEFT + UNION 模拟）
+### 3.3 RIGHT / FULL OUTER JOIN
 
 ```sql
--- 用途：RIGHT JOIN 效果 = 把右表当左表做 LEFT JOIN
-SELECT * FROM user_preferences p
-LEFT JOIN lessons l ON l.agent_name = p.agent_name;
+-- 用途：RIGHT JOIN（保留右表全部）——把两表交换位置用 LEFT JOIN 即可
+-- 示例：右表 orders 全部保留（等价于以 orders 为主表）
+SELECT u.name, o.product
+FROM orders o
+LEFT JOIN users u ON u.id = o.user_id;
 
--- 用途：FULL OUTER JOIN 效果 = 两个 LEFT JOIN 的并集（UNION 去重）
-SELECT l.id, p.key
-FROM lessons l
-LEFT JOIN user_preferences p ON l.agent_name = p.agent_name
+-- 用途：FULL OUTER JOIN（两边全保留）——SQLite/MySQL 不支持，用两个 LEFT JOIN 求并集
+SELECT u.name, o.product
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
 UNION
-SELECT l.id, p.key
-FROM user_preferences p
-LEFT JOIN lessons l ON l.agent_name = p.agent_name;
+SELECT u.name, o.product
+FROM orders o
+LEFT JOIN users u ON u.id = o.user_id;
+
+-- ⚠ 注意：PostgreSQL 原生支持 FULL OUTER JOIN，直接写即可
 ```
 
 ### 3.4 自连接（同一张表关联自己）
 
 ```sql
--- 用途：关联子查询取「同用户上一条记录」的时间
--- 思路：对每行 a，找 b 中同用户且时间更早的最大时间
-SELECT a.id AS cur, a.created_at,
-       (SELECT MAX(b.created_at) FROM lessons b
-        WHERE b.agent_name = a.agent_name AND b.created_at < a.created_at) AS prev_ts
-FROM lessons a;
+-- 用途：找「比自己年龄小」的用户组合（笛卡尔过滤）
+SELECT a.name AS elder, b.name AS younger
+FROM users a
+JOIN users b ON a.age > b.age
+ORDER BY a.age DESC;
+
+-- 用途：找每人的「上一条订单」（同表比时间）
+SELECT cur.id AS cur_order, cur.user_id,
+       (SELECT MAX(prev.created_at) FROM orders prev
+        WHERE prev.user_id = cur.user_id
+          AND prev.created_at < cur.created_at) AS prev_time
+FROM orders cur;
 ```
 
-### 3.5 UNION（纵向合并去重）与 UNION ALL
+### 3.5 UNION（纵向合并）与 UNION ALL
 
 ```sql
--- 用途：把两段查询结果上下合并
-SELECT agent_name, 'lesson' AS src FROM lessons
-UNION                                    -- 去重
-SELECT agent_name, 'pref'   AS src FROM user_preferences;
+-- 用途：把两段查询结果上下合并、去重
+SELECT name FROM users
+UNION                       -- 去重
+SELECT product FROM orders;
 
--- 用途：同上但不去重（更快）
-SELECT agent_name, 'lesson' AS src FROM lessons
-UNION ALL                                -- 不去重，更快
-SELECT agent_name, 'pref'   AS src FROM user_preferences;
+-- 用途：不去重合并（更快）
+SELECT city FROM users
+UNION ALL                   -- 不去重，保留重复行
+SELECT city FROM users;
 
--- ⚠ 注意：UNION 要求两段 SELECT 的列数和类型一致；UNION ALL 保留重复行
+-- ⚠ 注意：UNION 要求两段 SELECT 的列数一致、类型兼容
 ```
 
 ### 3.6 三表联查实战
 
 ```sql
--- 用途：汇总每个用户的自定义模型数、经验数、偏好配置
--- 说明：user_models 为主表，LEFT JOIN 补经验与偏好；HAVING 过滤有经验者
-SELECT m.user_key,
-       COUNT(DISTINCT m.id)               AS model_cnt,
-       COUNT(DISTINCT l.id)               AS lesson_cnt,
-       MAX(p.value)                       AS settings_json
-FROM user_models m
-LEFT JOIN lessons l ON l.agent_name = m.user_key
-LEFT JOIN user_preferences p ON p.key = 'settings:v1'
-GROUP BY m.user_key
-HAVING lesson_cnt >= 1
-ORDER BY lesson_cnt DESC;
+-- 场景：订单明细场景 users + orders + products 三表
+-- 假设订单表有 product_id（这里简化为 product 名字段，按需改列名）
+SELECT u.name          AS 用户,
+       o.id            AS 订单号,
+       o.product       AS 商品,
+       p.category      AS 商品类别,
+       o.amount        AS 金额,
+       o.status        AS 状态
+FROM orders o
+LEFT JOIN users u    ON u.id = o.user_id
+LEFT JOIN products p ON p.name = o.product
+WHERE o.status = 'paid'
+ORDER BY o.amount DESC;
+
+-- 用途：按用户聚合订单金额（JOIN + GROUP BY 组合）
+SELECT u.name, COUNT(o.id) AS order_cnt, SUM(o.amount) AS total_amount
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+GROUP BY u.id, u.name
+HAVING SUM(o.amount) >= 100
+ORDER BY total_amount DESC;
 ```
 
 ---
 
-## 4. 项目实操示例（可直接跑）
-
-### 4.1 查最近 10 条 GIS 经验
-
-```python
-import sqlite3
-con = sqlite3.connect(r"H:\ai-dev-platform\long_term_memory.db")
-con.row_factory = sqlite3.Row
-rows = con.execute(
-    "SELECT agent_name, category, substr(lesson, 1, 60) AS brief, created_at "
-    "FROM lessons ORDER BY created_at DESC LIMIT 10"
-).fetchall()
-for r in rows:
-    print(r["created_at"], r["agent_name"], r["brief"])
-```
-
-### 4.2 某个用户的所有偏好与模型
+## 4. 实用小技巧
 
 ```sql
--- 用途：纵向合并「偏好」和「模型」两类记录
-SELECT 'pref' AS kind, key, value FROM user_preferences
-WHERE key = 'settings:v1'
-UNION ALL
-SELECT 'model', id, label || ' @ ' || base_url FROM user_models
-WHERE user_key = 'gis_assistant:user1';
-```
+-- 用途：只看表结构（各数据库语法不同）
+-- SQLite:   .schema users
+-- MySQL:    DESCRIBE users;  或  SHOW CREATE TABLE users;
+-- PostgreSQL: \d users
 
-### 4.3 清理三个月前的旧经验（维护脚本常用）
+-- 用途：查询计划/性能排查（看是否走索引）
+-- SQLite:   EXPLAIN QUERY PLAN SELECT ...;
+-- MySQL:    EXPLAIN SELECT ...;
 
-```sql
--- 用途：删除三个月前的旧经验（维护任务）
--- ⚠ 注意：先 SELECT COUNT(*) 看影响行数，确认后执行
-SELECT COUNT(*) FROM lessons WHERE created_at < strftime('%s', 'now', '-3 months');
--- DELETE FROM lessons WHERE created_at < strftime('%s', 'now', '-3 months');
+-- 用途：事务包裹（批量写操作）
+-- SQLite:   BEGIN; ... COMMIT;   回滚用 ROLLBACK;
+-- MySQL/PostgreSQL: BEGIN; ... COMMIT; / ROLLBACK;
+
+-- 用途：限制影响行数（部分数据库支持，SQLite/MySQL 支持 LIMIT，PostgreSQL 用 UPDATE ... WHERE ... LIMIT 不支持，改用子查询）
+DELETE FROM orders WHERE status = 'cancelled' LIMIT 100;
 ```
 
 ---
 
 ## 5. 易错点清单
 
-1. `LEFT JOIN` 右表过滤条件放 `WHERE` → 变内连接（放 `ON`）；
-2. `GROUP BY` 后 SELECT 的列必须是分组列或聚合函数（MySQL 宽松，其他库报错）；
-3. `UPDATE` / `DELETE` 忘带 `WHERE` → 全表生效；
-4. SQLite 不支持 `RIGHT JOIN` / `FULL OUTER JOIN` / `SELECT DISTINCT ON`，用 LEFT + UNION 模拟；
-5. 字符串拼接用 `||`（SQLite），不是 `+`；
-6. 布尔值用 `1/0`，不是 `true/false`；
-7. 日期建议存时间戳（REAL/INTEGER），比较直接用数值，不要存字符串；
-8. 大批量删除/更新先 `BEGIN; ... COMMIT;` 包裹，或先 `SELECT COUNT(*)` 确认影响行数。
+1. `LEFT JOIN` 的右表过滤条件放 `WHERE` → 退化成内连接（应放 `ON`）；
+2. `GROUP BY` 后 SELECT 列必须是分组列或聚合函数（MySQL 宽松，PostgreSQL/SQLite 严格）；
+3. `UPDATE` / `DELETE` 忘带 `WHERE` → 全表生效，先 `SELECT COUNT(*)` 确认；
+4. 判空用 `IS NULL`，不是 `= NULL`；
+5. SQLite/MySQL 不支持 `FULL OUTER JOIN`、`RIGHT JOIN`（MySQL 8 才支持 RIGHT），用 LEFT + UNION 模拟；
+6. SQLite 字符串拼接用 `||`，MySQL 用 `CONCAT()`，PostgreSQL 用 `||` 或 `CONCAT()`；
+7. 窗口函数不能直接 `WHERE` 过滤，要包子查询；
+8. 日期字段建议统一存 `DATE`/`TIMESTAMP` 类型，别存字符串，否则比较大小会出错；
+9. 大表查询尽量在 `WHERE`/`JOIN ON` 的字段上建索引；
+10. 一条 SQL 里 `LIMIT` 和 `OFFSET` 过大时性能差，大数据量考虑游标/分页键。
