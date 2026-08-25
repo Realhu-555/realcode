@@ -882,3 +882,117 @@ def test_remove_layer_approval_required():
     from src.gis_toolkit.approval import DANGEROUS_TOOLS
 
     assert "remove_layer" in DANGEROUS_TOOLS
+
+
+# ── layout_map / load_basemap（Gate 8）──────────────
+
+
+def test_layout_map_basic(poly_a, tmp_path):
+    """layout_map 默认排版出图：产物落盘 + 尺寸正常"""
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    res = eng.layout_map()
+    assert res["status"] == "ok"
+    out = tmp_path / "out" / "layout_map.png"
+    assert out.exists()
+    assert res.get("size_bytes", 0) > 0
+    assert out.stat().st_size > 1000
+
+
+def test_layout_map_with_legend_and_elements(point_csv, tmp_path):
+    """layout_map 按字段生成图例 + 比例尺 + 指北针"""
+    eng = _engine(tmp_path, data_file=point_csv, allowed=[str(tmp_path)])
+    eng.load_data(point_csv)
+    res = eng.layout_map(
+        title="测试排版",
+        legend_column="province",
+        show_legend=True,
+        show_scalebar=True,
+        show_north_arrow=True,
+        output="layout_legend.png",
+    )
+    assert res["status"] == "ok"
+    assert (tmp_path / "out" / "layout_legend.png").exists()
+
+
+def test_layout_map_requires_layer(tmp_path):
+    """未加载图层时 layout_map 必须报错"""
+    eng = _engine(tmp_path)
+    with pytest.raises(GisEngineError):
+        eng.layout_map()
+
+
+def test_layout_map_bad_legend_column(poly_a, tmp_path):
+    """不存在的图例字段必须报错"""
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    with pytest.raises(GisEngineError):
+        eng.layout_map(legend_column="no_such_field")
+
+
+def _write_test_tif(path, width=8, height=8):
+    """写入 3 波段小 GeoTIFF 用作本地底图"""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    profile = {
+        "driver": "GTiff",
+        "width": width,
+        "height": height,
+        "count": 3,
+        "dtype": "uint8",
+        "crs": "EPSG:4326",
+        "transform": from_bounds(0, 0, 10, 10, width, height),
+    }
+    data = np.zeros((3, height, width), dtype="uint8")
+    data[0, :, :] = 200
+    data[1, :, :] = 200
+    data[2, :, :] = 200
+    with rasterio.open(path, "w", **profile) as dst:
+        dst.write(data)
+
+
+def test_load_basemap_local(poly_a, tmp_path):
+    """load_basemap(local) 加载本地 GeoTIFF，并在 render_map/layout_map 叠加不报错"""
+    tif = tmp_path / "base.tif"
+    _write_test_tif(tif)
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    res = eng.load_basemap(source="local", url=str(tif), name="底图")
+    assert res["status"] == "ok"
+    assert res["basemap"]["kind"] == "local"
+    # 叠加底图渲染不报错
+    eng.render_map(output="map_with_base.png")
+    eng.layout_map(output="layout_with_base.png")
+    assert (tmp_path / "out" / "map_with_base.png").exists()
+
+
+def test_load_basemap_xyz(poly_a, tmp_path):
+    """load_basemap(xyz) 记录在线瓦片配置（引擎不实际拉取）"""
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    res = eng.load_basemap(
+        source="xyz",
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        name="OSM",
+    )
+    assert res["status"] == "ok"
+    assert res["basemap"]["kind"] == "xyz"
+    assert res["basemap"]["url"]
+
+
+def test_load_basemap_bad_source(poly_a, tmp_path):
+    """未知底图来源必须报错"""
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    with pytest.raises(GisEngineError):
+        eng.load_basemap(source="foo", url="x")
+
+
+def test_load_basemap_local_missing_file(poly_a, tmp_path):
+    """本地底图文件不存在必须报错"""
+    eng = _engine(tmp_path, data_file=poly_a, allowed=[str(tmp_path)])
+    eng.load_data(poly_a)
+    with pytest.raises(GisEngineError):
+        eng.load_basemap(source="local", url=str(tmp_path / "no_such.tif"))

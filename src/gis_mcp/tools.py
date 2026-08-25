@@ -285,6 +285,38 @@ def _render_map(output: str = "map.png") -> dict:
     return _get_manager().get().render_map(output=output)
 
 
+def _layout_map(
+    title: str = "地图排版",
+    legend_column: str | None = None,
+    show_legend: bool = True,
+    show_scalebar: bool = True,
+    show_north_arrow: bool = True,
+    output: str = "layout_map.png",
+) -> dict:
+    """地图排版出图（标题/图例/比例尺/指北针）。
+
+    Args:
+        title: 版面标题。
+        legend_column: 生成图例的字段名（分类设色图例）。
+        show_legend: 是否显示图例。
+        show_scalebar: 是否显示比例尺。
+        show_north_arrow: 是否显示指北针。
+        output: 产物文件名，如 layout_map.png。
+    """
+    return (
+        _get_manager()
+        .get()
+        .layout_map(
+            title=title,
+            legend_column=legend_column,
+            show_legend=show_legend,
+            show_scalebar=show_scalebar,
+            show_north_arrow=show_north_arrow,
+            output=output,
+        )
+    )
+
+
 def _run_algorithm(
     algorithm: Literal["dissolve", "centroids", "convexhull"],
     params: dict | None = None,
@@ -305,6 +337,17 @@ def _load_raster(path: str) -> dict:
         path: 栅格文件路径。
     """
     return _get_manager().get().load_raster(path=path)
+
+
+def _load_basemap(source: Literal["xyz", "wms", "local"], url: str, name: str = "底图") -> dict:
+    """加载底图（xyz/wms 在线瓦片 / local 本地栅格）。
+
+    Args:
+        source: 底图来源（xyz/wms/local）。
+        url: xyz/wms 服务地址或本地栅格路径。
+        name: 底图名称。
+    """
+    return _get_manager().get().load_basemap(source=source, url=url, name=name)
 
 
 def _start_editing() -> dict:
@@ -485,8 +528,10 @@ _HANDLERS = {
     "unique_values": _unique_values,
     "transform_coords": _transform_coords,
     "render_map": _render_map,
+    "layout_map": _layout_map,
     "run_algorithm": _run_algorithm,
     "load_raster": _load_raster,
+    "load_basemap": _load_basemap,
     "start_editing": _start_editing,
     "add_features": _add_features,
     "update_features": _update_features,

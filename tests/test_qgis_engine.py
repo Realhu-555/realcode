@@ -430,3 +430,78 @@ def test_save_project(point_csv, qgis_engine):
     res = qgis_engine.save_project("test.qgz")
     assert res["status"] == "ok"
     assert (qgis_engine.out_dir / "test.qgz").is_file()
+
+
+# ── P2 Gate 8：layout_map / load_basemap ────────────────
+
+
+def test_layout_map_qgis(poly_a, qgis_engine):
+    """layout_map：QGIS 布局排版出图（标题/图例/比例尺/指北针）"""
+    qgis_engine.load_data(poly_a)
+    res = qgis_engine.layout_map(
+        title="QGIS 排版",
+        legend_column="name",
+        show_legend=True,
+        show_scalebar=True,
+        show_north_arrow=True,
+        output="layout.png",
+    )
+    assert res["status"] == "ok"
+    assert res["size_bytes"] > 0
+    assert (qgis_engine.out_dir / "layout.png").is_file()
+
+
+def test_layout_map_requires_layer(qgis_engine):
+    """未加载图层时 layout_map 报错"""
+    with pytest.raises(GisEngineError, match="当前没有图层"):
+        qgis_engine.layout_map()
+
+
+def test_layout_map_bad_legend_column(poly_a, qgis_engine):
+    """不存在的图例字段报错"""
+    qgis_engine.load_data(poly_a)
+    with pytest.raises(GisEngineError, match="图例字段不存在"):
+        qgis_engine.layout_map(legend_column="no_such_field")
+
+
+def test_load_basemap_local_qgis(poly_a, qgis_engine, tmp_path):
+    """load_basemap(local)：加载本地 GeoTIFF，排版与渲染叠加不报错"""
+    import numpy as np
+    import rasterio
+
+    tif = tmp_path / "base.tif"
+    with rasterio.open(
+        tif,
+        "w",
+        driver="GTiff",
+        width=8,
+        height=8,
+        count=3,
+        dtype="uint8",
+        crs="EPSG:4326",
+        transform=rasterio.transform.from_bounds(0, 0, 10, 10, 8, 8),
+    ) as dst:
+        dst.write(np.full((3, 8, 8), 200, dtype="uint8"))
+
+    qgis_engine.load_data(poly_a)
+    res = qgis_engine.load_basemap(source="local", url=str(tif), name="底图")
+    assert res["status"] == "ok"
+    assert res["basemap"]["kind"] == "local"
+    qgis_engine.layout_map(output="layout_base.png")
+    qgis_engine.render_map(output="map_base.png")
+    assert (qgis_engine.out_dir / "layout_base.png").is_file()
+    assert (qgis_engine.out_dir / "map_base.png").is_file()
+
+
+def test_load_basemap_bad_source_qgis(poly_a, qgis_engine):
+    """未知底图来源报错"""
+    qgis_engine.load_data(poly_a)
+    with pytest.raises(GisEngineError, match="未知底图来源"):
+        qgis_engine.load_basemap(source="foo", url="x")
+
+
+def test_load_basemap_local_missing_qgis(poly_a, qgis_engine, tmp_path):
+    """本地底图文件缺失报错"""
+    qgis_engine.load_data(poly_a)
+    with pytest.raises(GisEngineError, match="无效"):
+        qgis_engine.load_basemap(source="local", url=str(tmp_path / "no_such.tif"))

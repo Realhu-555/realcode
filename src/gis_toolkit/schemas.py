@@ -364,6 +364,44 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "layout_map",
+            "description": (
+                "地图排版出图：把当前图层按正式地图版面渲染（含标题、图例、比例尺、"
+                "指北针），导出 PNG。legend_column 传入字段时生成分类设色图例；"
+                "title 为版面标题。用于交付带完整地图要素的成果图。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "版面标题，如『某市人口分布图』，默认『地图排版』",
+                    },
+                    "legend_column": {
+                        "type": "string",
+                        "description": "生成图例的字段名（分类设色图例），省略则只显示当前图层",
+                    },
+                    "show_legend": {
+                        "type": "boolean",
+                        "description": "是否显示图例，默认 true",
+                    },
+                    "show_scalebar": {
+                        "type": "boolean",
+                        "description": "是否显示比例尺，默认 true",
+                    },
+                    "show_north_arrow": {
+                        "type": "boolean",
+                        "description": "是否显示指北针，默认 true",
+                    },
+                    "output": {"type": "string", "description": "产物文件名，如 layout_map.png"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_algorithm",
             "description": (
                 "运行白名单内的 Processing 空间算法，结果成为新的当前图层。"
@@ -407,6 +445,37 @@ TOOL_SCHEMAS: list[dict] = [
                     }
                 },
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_basemap",
+            "description": (
+                "加载底图用于叠加显示：source=xyz 时 url 为 XYZ 瓦片模板"
+                "（如 https://tile.openstreetmap.org/{z}/{x}/{y}.png），source=wms 时 url 为 WMS "
+                "服务地址，source=local 时 url 为本地栅格底图路径（GeoTIFF，须在 data 白名单内）。"
+                "底图加载后，render_map / layout_map 出图时自动叠加为背景。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["xyz", "wms", "local"],
+                        "description": "底图来源：xyz=在线瓦片 / wms=WMS 服务 / local=本地栅格",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "xyz/wms 的服务地址或 local 的本地栅格路径",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "底图名称（便于识别），默认『底图』",
+                    },
+                },
+                "required": ["source", "url"],
             },
         },
     },

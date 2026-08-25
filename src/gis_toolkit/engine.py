@@ -101,6 +101,7 @@ class GisEngine:
         self._editing: gpd.GeoDataFrame | None = None  # 编辑会话缓冲区
         self._raster: str | None = None  # 当前栅格文件路径（栅格状态与矢量状态并存）
         self._label_field: str | None = None  # 标注字段（Gate 7）
+        self._basemap: dict | None = None  # 底图状态（Gate 8：local 栅格 / xyz / wms 配置）
         self._base_map: gpd.GeoDataFrame | None = self._load_base_map()
         if data_file:
             self.load_data(data_file)
@@ -621,6 +622,7 @@ class GisEngine:
         fig, ax = plt.subplots(figsize=(10, 8))
         layer = self._layer
         geom_type = layer.geometry.geom_type.mode().iloc[0] if len(layer) else ""
+        self._draw_basemap(ax)
         try:
             if geom_type.startswith("Point"):
                 layer.plot(ax=ax, color="#e6550d", markersize=18, alpha=0.8)
@@ -640,6 +642,200 @@ class GisEngine:
         plt.close(fig)
         self.outputs.append(output)
         return self._result(f"已保存地图 {output}", size_bytes=out.stat().st_size)
+
+    # ── 底图叠加 / 排版要素（Gate 8）──────────────
+    def _draw_basemap(self, ax) -> None:
+        """把已加载底图叠加到坐标轴上（local 栅格用真实范围 imshow；xyz/wms 在线瓦片跳过）"""
+        if not self._basemap:
+            return
+        try:
+            if self._basemap.get("kind") == "local":
+                import rasterio
+
+                bpath = self._basemap["path"]
+                with rasterio.open(bpath) as src:
+                    window = src.read([1, 2, 3], out_dtype="uint8") if src.count >= 3 else None
+                if window is None:
+                    return
+
+                ext = self._basemap["extent"]
+                ax.imshow(
+                    window.transpose(1, 2, 0),
+                    extent=ext,
+                    origin="upper",
+                    interpolation="bilinear",
+                    zorder=0,
+                )
+        except Exception:
+            # 底图叠加失败不阻塞主体渲染
+            pass
+
+    @staticmethod
+    def _draw_scalebar(ax, layer) -> None:
+        """在左下角绘制比例尺条（按图层范围估算地面距离，仅用于可视化）"""
+        try:
+            bounds = layer.total_bounds  # minx, miny, maxx, maxy
+            span_x = bounds[2] - bounds[0]
+            # 地理坐标按 1°≈111km 折算为米；投影坐标视为米
+            crs_str = str(layer.crs or "")
+            is_geo = "4326" in crs_str or crs_str.lower().startswith("epsg:4")
+            meters_per_unit = 111320.0 if is_geo else 1.0
+            total_m = span_x * meters_per_unit
+            if total_m <= 0:
+                return
+            # 选取合适比例尺长度（1/2/5 系列）
+            target = total_m / 4
+            import math
+
+            mag = 10 ** math.floor(math.log10(max(target, 1)))
+            scale_len = mag * round(target / mag)
+            if scale_len < mag:
+                scale_len = mag
+            x0 = bounds[0] + span_x * 0.06
+            y0 = bounds[1] + (bounds[3] - bounds[1]) * 0.06
+            # 横向像素宽度按数据坐标折算
+            x1 = x0 + scale_len / meters_per_unit
+            ax.plot([x0, x1], [y0, y0], color="k", linewidth=2)
+            ax.plot([x0, x0], [y0 - span_x * 0.004, y0 + span_x * 0.004], color="k", linewidth=2)
+            ax.plot([x1, x1], [y0 - span_x * 0.004, y0 + span_x * 0.004], color="k", linewidth=2)
+            label = f"{scale_len / 1000:g} km" if scale_len >= 1000 else f"{scale_len:g} m"
+            ax.text((x0 + x1) / 2, y0 - span_x * 0.012, label, ha="center", fontsize=7)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _draw_north_arrow(ax) -> None:
+        """在右上角绘制指北针（向上箭头 + N 标注）"""
+        try:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+            cx = xlim[1] - (xlim[1] - xlim[0]) * 0.06
+            cy = ylim[1] - (ylim[1] - ylim[0]) * 0.1
+            r = (xlim[1] - xlim[0]) * 0.03
+            ax.annotate(
+                "",
+                xy=(cx, cy + r * 1.5),
+                xytext=(cx, cy - r * 0.5),
+                arrowprops=dict(arrowstyle="->", color="k", lw=1.6),
+            )
+            ax.text(cx, cy + r * 1.9, "N", ha="center", va="center", fontsize=10, fontweight="bold")
+        except Exception:
+            pass
+
+    def layout_map(
+        self,
+        title: str = "地图排版",
+        legend_column: str | None = None,
+        show_legend: bool = True,
+        show_scalebar: bool = True,
+        show_north_arrow: bool = True,
+        output: str = "layout_map.png",
+    ) -> dict:
+        """地图排版出图：标题 + 图例 + 比例尺 + 指北针（matplotlib 版，QGIS 引擎走 QgsLayout）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        out = self.out_dir / _sanitize_filename(output)
+        layer = self._layer
+        geom_type = layer.geometry.geom_type.mode().iloc[0] if len(layer) else ""
+        fig, ax = plt.subplots(figsize=(12, 9))
+        self._draw_basemap(ax)
+        try:
+            if legend_column:
+                if legend_column not in layer.columns:
+                    raise GisEngineError(
+                        f"图例字段不存在: {legend_column}（可用列: {list(layer.columns)}）"
+                    )
+                import matplotlib.cm as cm
+
+                cats = sorted({str(v) for v in layer[legend_column].dropna().unique()})
+                if not cats:
+                    raise GisEngineError(f"字段 {legend_column} 没有有效分类值")
+                cat_to_color = {c: cm.tab20(i % 20) for i, c in enumerate(cats)}
+                colors = layer[legend_column].astype(str).map(cat_to_color)
+                layer.plot(ax=ax, color=colors, edgecolor="#666666", linewidth=0.5, zorder=2)
+                if show_legend:
+                    handles = [
+                        plt.Line2D(
+                            [0],
+                            [0],
+                            marker="s",
+                            color="w",
+                            markerfacecolor=cat_to_color[c],
+                            markersize=8,
+                            label=c,
+                        )
+                        for c in cats
+                    ]
+                    ax.legend(
+                        handles=handles,
+                        loc="lower left",
+                        fontsize=8,
+                        title=legend_column,
+                        framealpha=0.9,
+                    )
+            else:
+                if geom_type.startswith("Point"):
+                    layer.plot(ax=ax, color="#e6550d", markersize=18, alpha=0.8, zorder=2)
+                elif geom_type.startswith("Line"):
+                    layer.plot(ax=ax, color="#3182bd", linewidth=1.2, zorder=2)
+                else:
+                    layer.plot(ax=ax, color="#c6dbef", edgecolor="#3182bd", linewidth=0.5, zorder=2)
+            if self._label_field:
+                self._draw_labels(ax, layer)
+            if show_scalebar:
+                self._draw_scalebar(ax, layer)
+            if show_north_arrow:
+                self._draw_north_arrow(ax)
+        except GisEngineError:
+            plt.close(fig)
+            raise
+        except Exception as exc:
+            plt.close(fig)
+            raise GisEngineError(f"排版出图失败: {exc}") from exc
+        ax.set_title(title, fontsize=14)
+        ax.set_axis_off()
+        fig.tight_layout()
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        self.outputs.append(output)
+        return self._result(f"已保存排版图 {output}", size_bytes=out.stat().st_size)
+
+    def load_basemap(self, source: str = "xyz", url: str = "", name: str = "底图") -> dict:
+        """加载底图：local=本地栅格（叠加渲染）/ xyz / wms（记录配置，QGIS 引擎下叠加）"""
+        if source == "local":
+            resolved = self._check_input(url)
+            try:
+                import rasterio
+
+                with rasterio.open(resolved) as src:
+                    bounds = [src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top]
+                    crs = str(src.crs) if src.crs else None
+            except GisEngineError:
+                raise
+            except Exception as exc:
+                raise GisEngineError(f"加载本地底图失败（需 GeoTIFF）: {exc}") from exc
+            self._basemap = {
+                "kind": "local",
+                "path": str(resolved.resolve()),
+                "extent": bounds,
+                "crs": crs,
+                "name": name or "底图",
+            }
+            return self._result(
+                f"已加载本地底图 {Path(url).name}（范围 {bounds}，CRS {crs}）",
+                basemap=self._basemap,
+            )
+        if source in ("xyz", "wms"):
+            if not url:
+                raise GisEngineError(f"{source.upper()} 底图需要 url 参数")
+            self._basemap = {"kind": source, "url": url, "name": name or "底图"}
+            note = "在线底图在 geopandas 引擎下仅记录配置，QGIS 引擎下渲染时自动叠加"
+            return self._result(
+                f"已记录 {source.upper()} 底图配置「{name or '底图'}」",
+                basemap=self._basemap,
+                note=note,
+            )
+        raise GisEngineError(f"未知底图来源: {source}（可选 xyz / wms / local）")
 
     def categorized(self, column: str, output: str = "categorized.png") -> dict:
         """对分类列做分类设色图（每个类别一种颜色）"""

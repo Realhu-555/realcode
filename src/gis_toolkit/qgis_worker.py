@@ -25,8 +25,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
-from PyQt5.QtCore import QSize, QVariant
-from PyQt5.QtGui import QColor, QImage
+from PyQt5.QtCore import QRectF, QSize, Qt, QVariant
+from PyQt5.QtGui import QColor, QFont, QImage
 from qgis import processing
 from qgis.analysis import QgsNativeAlgorithms
 from qgis.core import (
@@ -46,13 +46,23 @@ from qgis.core import (
     QgsFillSymbol,
     QgsGeometry,
     QgsGraduatedSymbolRenderer,
+    QgsLayoutExporter,
+    QgsLayoutItemLabel,
+    QgsLayoutItemLegend,
+    QgsLayoutItemMap,
+    QgsLayoutItemPicture,
+    QgsLayoutItemScaleBar,
+    QgsLayoutPoint,
+    QgsLayoutSize,
     QgsMapRendererParallelJob,
     QgsMapSettings,
     QgsPalLayerSettings,
+    QgsPrintLayout,
     QgsProject,
     QgsRasterLayer,
     QgsRendererCategory,
     QgsTextFormat,
+    QgsUnitTypes,
     QgsVectorFileWriter,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
@@ -140,6 +150,7 @@ def _init(out_dir: str) -> None:
     STATE["layer"] = None
     STATE["out_dir"] = os.path.abspath(out_dir)
     STATE["base_map"] = None
+    STATE["basemap"] = None  # Gate 8：底图（xyz/wms 瓦片层 / 本地栅格层）
     base_path = os.path.join(os.getcwd(), "data", "gis_base", "china_province.geojson")
     if os.path.isfile(base_path):
         base = QgsVectorLayer(base_path, "base", "ogr")
@@ -765,6 +776,141 @@ def tool_run_algorithm(algorithm: str, params: dict | None = None) -> dict:
     return _result(f"{label} 完成，结果 {result.featureCount()} 行")
 
 
+def _find_north_arrow_svg() -> str | None:
+    """定位 QGIS 内置指北针 SVG（供布局排版使用）"""
+    prefix = QgsApplication.prefixPath()
+    candidates = [
+        os.path.join(prefix, "svg", "arrows", "NorthArrow_01.svg"),
+        os.path.join(prefix, "svg", "north_arrow", "north_arrow_01.svg"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def tool_layout_map(
+    title: str = "地图排版",
+    legend_column: str | None = None,
+    show_legend: bool = True,
+    show_scalebar: bool = True,
+    show_north_arrow: bool = True,
+    output: str = "layout_map.png",
+) -> dict:
+    """地图排版出图：QgsLayout 布局（标题/图例/比例尺/指北针）导出 PNG"""
+    layer = _require_layer()
+    if legend_column:
+        if legend_column not in _field_names(layer):
+            raise RuntimeError(f"图例字段不存在: {legend_column}（可用列: {_field_names(layer)}）")
+        values = sorted(
+            {str(f[legend_column]) for f in layer.getFeatures() if f[legend_column] is not None}
+        )
+        renderer = QgsCategorizedSymbolRenderer(legend_column, [])
+        for i, v in enumerate(values):
+            sym = QgsFillSymbol.createSimple(
+                {
+                    "color": _TAB20_HEX[i % len(_TAB20_HEX)],
+                    "outline_color": "#666666",
+                    "outline_width": "0.3",
+                }
+            )
+            renderer.addCategory(QgsRendererCategory(v, sym, v))
+        layer.setRenderer(renderer)
+    out_path = os.path.join(STATE["out_dir"], output)
+    project = QgsProject.instance()
+    layout = QgsPrintLayout(project)
+    layout.initializeDefaults()
+    layout.setName("layout")
+    # 地图项（底图 + 当前图层）
+    map_item = QgsLayoutItemMap(layout)
+    map_item.setRect(QRectF(15, 20, 200, 150))
+    render_layers = [layer]
+    basemap = STATE.get("basemap")
+    if basemap and basemap.get("layer") is not None:
+        render_layers.insert(0, basemap["layer"])
+    map_item.setLayers(render_layers)
+    map_item.setExtent(layer.extent())
+    map_item.setFrameEnabled(False)
+    layout.addLayoutItem(map_item)
+    map_item.attemptMove(QgsLayoutPoint(15, 20, QgsUnitTypes.LayoutMillimeters))
+    map_item.attemptResize(QgsLayoutSize(200, 150, QgsUnitTypes.LayoutMillimeters))
+    # 标题
+    title_item = QgsLayoutItemLabel(layout)
+    title_item.setText(title)
+    tf = QFont("Microsoft YaHei", 14)
+    tf.setBold(True)
+    title_item.setFont(tf)
+    title_item.setHAlign(Qt.AlignHCenter)
+    layout.addLayoutItem(title_item)
+    title_item.attemptMove(QgsLayoutPoint(15, 4, QgsUnitTypes.LayoutMillimeters))
+    title_item.attemptResize(QgsLayoutSize(200, 14, QgsUnitTypes.LayoutMillimeters))
+    # 图例
+    if show_legend:
+        legend = QgsLayoutItemLegend(layout)
+        legend.setLinkedMap(map_item)
+        legend.updateLegend()
+        layout.addLayoutItem(legend)
+        legend.attemptMove(QgsLayoutPoint(222, 25, QgsUnitTypes.LayoutMillimeters))
+        legend.attemptResize(QgsLayoutSize(65, 130, QgsUnitTypes.LayoutMillimeters))
+    # 比例尺
+    if show_scalebar:
+        scalebar = QgsLayoutItemScaleBar(layout)
+        scalebar.setLinkedMap(map_item)
+        scalebar.setStyle("Single Box")
+        scalebar.setUnits(QgsUnitTypes.DistanceMeters)
+        scalebar.setNumberOfSegments(3)
+        scalebar.setUnitLabel("m")
+        scalebar.update()
+        layout.addLayoutItem(scalebar)
+        scalebar.attemptMove(QgsLayoutPoint(15, 178, QgsUnitTypes.LayoutMillimeters))
+    # 指北针
+    if show_north_arrow:
+        arrow_svg = _find_north_arrow_svg()
+        if arrow_svg:
+            arrow = QgsLayoutItemPicture(layout)
+            arrow.setPicturePath(arrow_svg)
+            arrow.setResizeMode(QgsLayoutItemPicture.ZoomResizeFrame)
+            layout.addLayoutItem(arrow)
+            arrow.attemptMove(QgsLayoutPoint(228, 168, QgsUnitTypes.LayoutMillimeters))
+            arrow.attemptResize(QgsLayoutSize(34, 34, QgsUnitTypes.LayoutMillimeters))
+    # 导出
+    exporter = QgsLayoutExporter(layout)
+    settings = QgsLayoutExporter.ImageExportSettings()
+    settings.dpi = 150
+    result = exporter.exportToImage(out_path, settings)
+    if result != QgsLayoutExporter.Success:
+        raise RuntimeError(f"布局导出失败（code={result}）")
+    return _result(f"已保存排版图 {output}", size_bytes=os.path.getsize(out_path))
+
+
+def tool_load_basemap(source: str, url: str, name: str = "底图") -> dict:
+    """加载底图：xyz/wms 在线瓦片（wms 提供器）/ local 本地栅格"""
+    basemap_name = name or "底图"
+    if source in ("xyz", "wms"):
+        layer_url = url
+        if source == "xyz":
+            # XYZ 瓦片走 QGIS WMS provider 的 type=xyz 约定
+            layer_url = f"url={url}&type=xyz&zmin=0&zmax=19&tileMatrixSet=default"
+        rlayer = QgsRasterLayer(layer_url, basemap_name, "wms")
+        if not rlayer.isValid():
+            raise RuntimeError(f"{source.upper()} 底图无效或无法访问: {url}")
+        STATE["basemap"] = {"kind": source, "url": url, "name": basemap_name, "layer": rlayer}
+        return _result(
+            f"已加载 {source.upper()} 底图「{basemap_name}」，出图时自动叠加",
+            basemap={"kind": source, "url": url, "name": basemap_name},
+        )
+    if source == "local":
+        rlayer = QgsRasterLayer(url, basemap_name)
+        if not rlayer.isValid():
+            raise RuntimeError(f"本地底图无效: {url}")
+        STATE["basemap"] = {"kind": "local", "path": url, "name": basemap_name, "layer": rlayer}
+        return _result(
+            f"已加载本地底图 {os.path.basename(url)}，出图时自动叠加",
+            basemap={"kind": "local", "path": url, "name": basemap_name},
+        )
+    raise RuntimeError(f"未知底图来源: {source}（可选 xyz / wms / local）")
+
+
 def tool_load_raster(path: str) -> dict:
     layer = QgsRasterLayer(path, os.path.basename(path), "gdal")
     if not layer.isValid():
@@ -1116,6 +1262,8 @@ HANDLERS = {
     "render_map": tool_render_map,
     "run_algorithm": tool_run_algorithm,
     "load_raster": tool_load_raster,
+    "load_basemap": tool_load_basemap,
+    "layout_map": tool_layout_map,
     "start_editing": tool_start_editing,
     "add_features": tool_add_features,
     "update_features": tool_update_features,

@@ -282,6 +282,33 @@ class QgsEngine:
         self.outputs.append(name)
         return self._merge(result)
 
+    def layout_map(
+        self,
+        title: str = "地图排版",
+        legend_column: str | None = None,
+        show_legend: bool = True,
+        show_scalebar: bool = True,
+        show_north_arrow: bool = True,
+        output: str = "layout_map.png",
+    ) -> dict:
+        """地图排版出图（QgsLayout：标题/图例/比例尺/指北针）"""
+        if self._layer is None:
+            raise GisEngineError("当前没有图层，请先 load_data")
+        name = _sanitize_filename(output)
+        result = self._call(
+            "layout_map",
+            {
+                "title": title,
+                "legend_column": legend_column,
+                "show_legend": show_legend,
+                "show_scalebar": show_scalebar,
+                "show_north_arrow": show_north_arrow,
+                "output": name,
+            },
+        )
+        self.outputs.append(name)
+        return self._merge(result)
+
     def run_algorithm(self, algorithm: str, params: dict | None = None) -> dict:
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
@@ -292,6 +319,10 @@ class QgsEngine:
     def load_raster(self, path: str) -> dict:
         resolved = _check_input_path(path, self._roots)
         return self._call("load_raster", {"path": str(resolved)})
+
+    def load_basemap(self, source: str = "xyz", url: str = "", name: str = "底图") -> dict:
+        """加载底图（xyz/wms 瓦片 / 本地栅格，委托 QGIS worker）"""
+        return self._merge(self._call("load_basemap", {"source": source, "url": url, "name": name}))
 
     def start_editing(self) -> dict:
         if self._layer is None:
