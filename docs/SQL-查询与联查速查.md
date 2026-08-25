@@ -60,15 +60,17 @@ ALTER TABLE lessons ADD COLUMN score REAL;  -- 加列
 ### 1.2 插入
 
 ```sql
+-- 用途：插入一条 GIS 经验记录
 INSERT INTO lessons (id, project_id, agent_name, category, lesson, created_at)
 VALUES ('abc123', 'session1', 'gis_assistant:user1', 'success', 'GIS 任务完成：xxx', 1785600000.0);
 
--- 批量插入（多值）
+-- 用途：一次插入多条（多值）
 INSERT INTO lessons (id, agent_name, category, lesson, created_at) VALUES
   ('a1', 'gis_assistant:user1', 'success', 'xxx', 1785600000.0),
   ('a2', 'gis_assistant:user1', 'bug', 'yyy', 1785600100.0);
 
--- 不存在才插入 / 存在则更新（UPSERT）
+-- 用途：不存在则插入、存在则更新（UPSERT）
+-- ⚠ 注意：ON CONFLICT(id) 依赖主键 id；excluded 指代准备插入的新值
 INSERT INTO lessons (id, agent_name, category, lesson, created_at)
 VALUES ('abc123', 'gis_assistant:user1', 'success', '新内容', 1785600000.0)
 ON CONFLICT(id) DO UPDATE SET lesson = excluded.lesson;
@@ -77,9 +79,11 @@ ON CONFLICT(id) DO UPDATE SET lesson = excluded.lesson;
 ### 1.3 更新 / 删除
 
 ```sql
+-- 用途：按 id 更新类别
 UPDATE lessons SET category = 'preference' WHERE id = 'abc123';
+-- 用途：删除创建时间早于阈值的历史记录（清理用）
 DELETE FROM lessons WHERE created_at < 1700000000.0;
--- 注意：UPDATE / DELETE 不带 WHERE 会作用于全表
+-- ⚠ 危险：UPDATE / DELETE 不带 WHERE 会作用于全表，执行前先 SELECT COUNT(*) 确认
 ```
 
 ---
@@ -89,6 +93,7 @@ DELETE FROM lessons WHERE created_at < 1700000000.0;
 ### 2.1 基础过滤与排序
 
 ```sql
+-- 用途：按用户+类别过滤，模糊匹配关键词，倒序取前 10 条（分页）
 SELECT id, agent_name, lesson FROM lessons
 WHERE agent_name = 'gis_assistant:user1'
   AND category IN ('success', 'preference')
@@ -97,19 +102,26 @@ WHERE agent_name = 'gis_assistant:user1'
   AND lesson NOT LIKE '%失败%'
 ORDER BY created_at DESC                        -- 倒序
 LIMIT 10 OFFSET 0;                              -- 分页
+
+-- 换行写法（等价的另一种格式，可读性更好）
+SELECT id, agent_name, lesson
+FROM lessons
+WHERE agent_name = 'gis_assistant:user1'
+ORDER BY created_at DESC
+LIMIT 10;
 ```
 
 ### 2.2 聚合与分组
 
 ```sql
--- 每个用户每种类别的 lesson 数量
+-- 用途：统计每个用户每种类别的数量，只保留 >=3 的组
 SELECT agent_name, category, COUNT(*) AS cnt
 FROM lessons
 GROUP BY agent_name, category
 HAVING COUNT(*) >= 3                            -- 分组后过滤（HAVING）
 ORDER BY cnt DESC;
 
--- 常用聚合
+-- 用途：全局统计（总数 / 用户数 / 首末时间 / 平均置信度）
 SELECT
   COUNT(*)        AS total,
   COUNT(DISTINCT agent_name) AS users,
@@ -117,19 +129,22 @@ SELECT
   MAX(created_at) AS last_ts,
   AVG(confidence) AS avg_conf
 FROM user_preferences;
+
+-- ⚠ 注意：SELECT 列要么是分组列（agent_name/category），要么是聚合函数，否则其他数据库会报错
 ```
 
 ### 2.3 子查询
 
 ```sql
--- 找出「比该用户平均时间晚」的 lesson
+-- 用途：找比「同用户平均创建时间」更晚的记录（相关子查询，内外层用别名 l 关联）
 SELECT * FROM lessons l
 WHERE l.created_at > (
   SELECT AVG(created_at) FROM lessons
   WHERE agent_name = l.agent_name
 );
 
--- EXISTS：只查有偏好记录的用户 lesson
+-- 用途：EXISTS 存在性判断——只查有 settings:v1 偏好的用户
+-- ⚠ 注意：EXISTS 性能优于 IN 大列表；value LIKE 里的 || 是 SQLite 字符串拼接
 SELECT * FROM lessons l
 WHERE EXISTS (
   SELECT 1 FROM user_preferences p
@@ -141,24 +156,28 @@ WHERE EXISTS (
 ### 2.4 窗口函数（排名 / 分组取前 N）
 
 ```sql
--- 每个用户最近一条 lesson（ROW_NUMBER 取分组内第 1 名）
+-- 用途：分组取前 N——每个用户最近一条 lesson（PARTITION BY 分组 + 窗口内排序）
+-- 实现：子查询加行号列，外层过滤 rn=1
 SELECT id, agent_name, lesson, created_at FROM (
   SELECT *,
          ROW_NUMBER() OVER (PARTITION BY agent_name ORDER BY created_at DESC) AS rn
   FROM lessons
 ) WHERE rn = 1;
 
--- 累计 / 排名
+-- 用途：排名（RANK）、分组累计（SUM OVER）、上一条时间（LAG）
 SELECT id, agent_name, created_at,
        RANK()       OVER (ORDER BY created_at DESC) AS rk,
        SUM(1)       OVER (PARTITION BY agent_name)  AS user_total,
        LAG(created_at) OVER (ORDER BY created_at)   AS prev_ts
 FROM lessons;
+
+-- ⚠ 注意：窗口函数不能直接用 WHERE 过滤（WHERE 先于窗口执行），要包一层子查询
 ```
 
 ### 2.5 CASE 条件逻辑
 
 ```sql
+-- 用途：按关键词把经验打标（bad / good / other）
 SELECT id, lesson,
   CASE
     WHEN lesson LIKE '%失败%' THEN 'bad'
@@ -175,16 +194,21 @@ FROM lessons;
 ### 3.1 INNER JOIN（两边都匹配）
 
 ```sql
--- lesson + 它的向量（有向量才算）
+-- 用途：只取「两边都匹配」的行——lesson 必须存在对应向量才返回
 SELECT l.id, l.lesson, length(e.embedding) AS emb_len
 FROM lessons l
 INNER JOIN lesson_embeddings e ON l.id = e.lesson_id;
+
+-- 等价写法：JOIN 默认就是 INNER JOIN
+SELECT l.id, l.lesson
+FROM lessons l
+JOIN lesson_embeddings e ON l.id = e.lesson_id;
 ```
 
 ### 3.2 LEFT JOIN（保留左表全部，右表可空）
 
 ```sql
--- 所有 lesson，没向量的也显示
+-- 用途：保留左表（lessons）全部行，右表没有匹配时列为 NULL
 SELECT l.id, l.agent_name, l.lesson,
        CASE WHEN e.lesson_id IS NULL THEN '无向量' ELSE '有向量' END AS emb_status
 FROM lessons l
@@ -193,11 +217,11 @@ LEFT JOIN lesson_embeddings e ON l.id = e.lesson_id;
 
 **易错点**：过滤右表条件放 `WHERE` 会把 LEFT JOIN 变成 INNER 效果，应放 `ON`：
 ```sql
--- 错误：会把没有该偏好的用户行删掉
+-- ❌ 错误：p.key 过滤放 WHERE，会把「没有该偏好的行」一并删掉（退化成内连接）
 LEFT JOIN user_preferences p ON l.agent_name = p.agent_name
 WHERE p.key = 'settings:v1';
 
--- 正确：先按条件连，再取全部左表行
+-- ✅ 正确：过滤条件放 ON，先连接再保留左表全部行
 LEFT JOIN user_preferences p
   ON l.agent_name = p.agent_name AND p.key = 'settings:v1';
 ```
@@ -205,11 +229,11 @@ LEFT JOIN user_preferences p
 ### 3.3 RIGHT / FULL OUTER JOIN（SQLite 不支持，用 LEFT + UNION 模拟）
 
 ```sql
--- RIGHT JOIN（保留右表全部）≈ 交换表顺序的 LEFT JOIN
+-- 用途：RIGHT JOIN 效果 = 把右表当左表做 LEFT JOIN
 SELECT * FROM user_preferences p
 LEFT JOIN lessons l ON l.agent_name = p.agent_name;
 
--- FULL OUTER JOIN（两边全保留）≈ 两个 LEFT JOIN 求并集
+-- 用途：FULL OUTER JOIN 效果 = 两个 LEFT JOIN 的并集（UNION 去重）
 SELECT l.id, p.key
 FROM lessons l
 LEFT JOIN user_preferences p ON l.agent_name = p.agent_name
@@ -222,7 +246,8 @@ LEFT JOIN lessons l ON l.agent_name = p.agent_name;
 ### 3.4 自连接（同一张表关联自己）
 
 ```sql
--- 每条 lesson 的「前一条」：找比它早的最新一条
+-- 用途：关联子查询取「同用户上一条记录」的时间
+-- 思路：对每行 a，找 b 中同用户且时间更早的最大时间
 SELECT a.id AS cur, a.created_at,
        (SELECT MAX(b.created_at) FROM lessons b
         WHERE b.agent_name = a.agent_name AND b.created_at < a.created_at) AS prev_ts
@@ -232,19 +257,24 @@ FROM lessons a;
 ### 3.5 UNION（纵向合并去重）与 UNION ALL
 
 ```sql
+-- 用途：把两段查询结果上下合并
 SELECT agent_name, 'lesson' AS src FROM lessons
 UNION                                    -- 去重
 SELECT agent_name, 'pref'   AS src FROM user_preferences;
 
+-- 用途：同上但不去重（更快）
 SELECT agent_name, 'lesson' AS src FROM lessons
 UNION ALL                                -- 不去重，更快
 SELECT agent_name, 'pref'   AS src FROM user_preferences;
+
+-- ⚠ 注意：UNION 要求两段 SELECT 的列数和类型一致；UNION ALL 保留重复行
 ```
 
 ### 3.6 三表联查实战
 
 ```sql
--- 每个用户的自定义模型 + 其成功 lesson 数量 + 是否有偏好设置
+-- 用途：汇总每个用户的自定义模型数、经验数、偏好配置
+-- 说明：user_models 为主表，LEFT JOIN 补经验与偏好；HAVING 过滤有经验者
 SELECT m.user_key,
        COUNT(DISTINCT m.id)               AS model_cnt,
        COUNT(DISTINCT l.id)               AS lesson_cnt,
@@ -278,6 +308,7 @@ for r in rows:
 ### 4.2 某个用户的所有偏好与模型
 
 ```sql
+-- 用途：纵向合并「偏好」和「模型」两类记录
 SELECT 'pref' AS kind, key, value FROM user_preferences
 WHERE key = 'settings:v1'
 UNION ALL
@@ -288,7 +319,10 @@ WHERE user_key = 'gis_assistant:user1';
 ### 4.3 清理三个月前的旧经验（维护脚本常用）
 
 ```sql
-DELETE FROM lessons WHERE created_at < strftime('%s', 'now', '-3 months');
+-- 用途：删除三个月前的旧经验（维护任务）
+-- ⚠ 注意：先 SELECT COUNT(*) 看影响行数，确认后执行
+SELECT COUNT(*) FROM lessons WHERE created_at < strftime('%s', 'now', '-3 months');
+-- DELETE FROM lessons WHERE created_at < strftime('%s', 'now', '-3 months');
 ```
 
 ---
