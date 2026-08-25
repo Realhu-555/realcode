@@ -73,7 +73,18 @@ export type GisStreamEvent =
       args: Record<string, unknown>
       message?: string
     }
-  | { type: "done"; final: string; outputs: string[]; steps: number; timed_out: boolean }
+  | {
+      type: "done"
+      final: string
+      outputs: string[]
+      steps: number
+      timed_out: boolean
+      audit_report?: {
+        verdict: "PASS" | "WARN" | "FAIL"
+        reasons?: string[]
+        rounds_used?: number
+      }
+    }
   | { type: "error"; error: string }
 
 /** 流式运行 GIS 助手（SSE）；事件按输出顺序实时回调 */

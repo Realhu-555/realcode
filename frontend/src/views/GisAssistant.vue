@@ -76,6 +76,11 @@ interface ChatMessage {
   content: string
   items: StreamItem[]
   error?: string
+  auditReport?: {
+    verdict: "PASS" | "WARN" | "FAIL"
+    reasons?: string[]
+    rounds_used?: number
+  }
 }
 const messages = ref<ChatMessage[]>([])
 
@@ -317,6 +322,9 @@ async function handleStreamEvent(msg: ChatMessage, ev: GisStreamEvent) {
       break
     }
     case "done":
+      if (ev.audit_report) {
+        msg.auditReport = ev.audit_report as ChatMessage["auditReport"]
+      }
       for (const name of ev.outputs) {
         if (msg.items.some((x) => x.kind === "artifact" && x.name === name)) continue
         void (async () => {
@@ -700,6 +708,31 @@ function download(url: string, name: string) {
                     <a class="gis-download-link ml-auto shrink-0" @click="download(item.url!, item.name!)">下载</a>
                   </div>
                 </template>
+
+                <!-- 结果审核徽标（done 事件携带 audit_report 时渲染） -->
+                <div
+                  v-if="m.auditReport"
+                  class="gis-audit-badge"
+                  :class="`gis-audit-${m.auditReport.verdict.toLowerCase()}`"
+                >
+                  <span class="gis-audit-dot" />
+                  <span class="font-semibold">{{ m.auditReport.verdict }}</span>
+                  <span
+                    v-if="m.auditReport.verdict !== 'PASS' && m.auditReport.rounds_used"
+                    class="text-[11px] opacity-80"
+                  >
+                    · 已尝试修正 {{ m.auditReport.rounds_used }} 轮
+                  </span>
+                  <details
+                    v-if="m.auditReport.verdict !== 'PASS' && m.auditReport.reasons?.length"
+                    class="gis-audit-details"
+                  >
+                    <summary class="cursor-pointer text-[11px] opacity-80">查看原因</summary>
+                    <ul class="mt-1 pl-4 list-disc text-[12px] opacity-90 space-y-0.5">
+                      <li v-for="(r, ri) in m.auditReport.reasons" :key="ri">{{ r }}</li>
+                    </ul>
+                  </details>
+                </div>
               </div>
             </div>
           </template>
@@ -1210,6 +1243,41 @@ function download(url: string, name: string) {
 .gis-msg-assistant {
   justify-content: flex-start;
   width: 100%;
+}
+/* 结果审核徽标 */
+.gis-audit-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  width: fit-content;
+}
+.gis-audit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.gis-audit-pass { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+.gis-audit-warn { color: #d97706; border-color: rgba(217, 119, 6, 0.4); }
+.gis-audit-fail { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.gis-audit-details {
+  margin-left: 2px;
+  color: inherit;
+}
+.gis-audit-details summary {
+  opacity: 0.85;
+}
+.gis-audit-details ul {
+  color: inherit;
+  opacity: 0.9;
 }
 .gis-user-text {
   max-width: 82%;
