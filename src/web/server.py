@@ -36,6 +36,7 @@ from src.agents.gis_plan import PlanAgent
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import _jsonable, create_gis_engine
 from src.gis_toolkit.session import GisSessionStore
+from src.gis_toolkit.user_settings import UserSettings, probe_model_connection
 from src.orchestrator.graph import create_gis_graph
 from src.orchestrator.long_term_memory import Lesson, LongTermMemory
 from src.orchestrator.state import GisProjectState
@@ -66,6 +67,7 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 GIS_TOOLKIT_OUT_DIR = Path("data/gis_toolkit_out")
 gis_sessions = GisSessionStore()
 ltm = LongTermMemory()
+usettings = UserSettings()  # 用户设置 + 自定义模型（Settings 模块）
 _GIS_TOOLKIT_MEDIA = {
     ".png": "image/png",
     ".csv": "text/csv; charset=utf-8",
@@ -186,14 +188,113 @@ async def health():
 
 @app.get("/api/v1/models")
 async def list_models(user_id: str = Depends(get_user_id)):
-    """列出可用模型（前端模型选择下拉）"""
+    """列出可用模型（内置注册表 ⊕ 用户自定义，前端模型选择下拉）"""
     from src.llm.models import load_registry
 
-    registry = load_registry()
+    user_key = f"settings:{user_id}"
+    registry = load_registry(user_key=user_key)
+    settings = usettings.get_settings(user_id)
     return {
         "models": registry.list_models(),
         "default": registry.default_model_id(),
+        "user_model_id": settings["model_id"],
     }
+
+
+# ════════════════════════════════════════════════════════════
+# Settings 设置模块（docs/GIS-智能助手-Settings模块设计文档.md）
+# ════════════════════════════════════════════════════════════
+
+
+class SettingsUpdate(BaseModel):
+    """用户标量设置更新（部分字段可选）"""
+
+    model_id: str | None = None
+    theme: str | None = None
+    permission_mode: str | None = None
+
+
+class ModelCreate(BaseModel):
+    """用户自定义模型新增"""
+
+    label: str
+    provider: str = "openai-compatible"
+    model: str
+    base_url: str
+    api_key: str | None = ""
+    capabilities: list[str] | None = None
+
+
+@app.get("/api/v1/settings")
+async def get_settings(user_id: str = Depends(get_user_id)):
+    """读取当前用户设置（默认模型 / 主题 / 权限模式）"""
+    return usettings.get_settings(user_id)
+
+
+@app.put("/api/v1/settings")
+async def put_settings(req: SettingsUpdate, user_id: str = Depends(get_user_id)):
+    """更新用户设置（合并写）；非法 model_id 拒绝 400"""
+    from src.llm.models import load_registry
+
+    registry = load_registry(user_key=f"settings:{user_id}")
+    known_ids = set(registry.models.keys())
+    try:
+        snapshot = usettings.save_settings(user_id, req.model_dump(), known_ids=known_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return snapshot
+
+
+@app.post("/api/v1/models", status_code=201)
+async def add_model(req: ModelCreate, user_id: str = Depends(get_user_id)):
+    """新增用户自定义模型（id 由服务端生成 slug）"""
+    try:
+        model = usettings.add_model(
+            user_id,
+            label=req.label,
+            model=req.model,
+            base_url=req.base_url,
+            api_key=req.api_key,
+            provider=req.provider,
+            capabilities=req.capabilities,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return model
+
+
+@app.delete("/api/v1/models/{model_id}")
+async def delete_model(model_id: str, user_id: str = Depends(get_user_id)):
+    """删除用户自定义模型；内置模型 403；删除当前默认时设置回退"""
+    from src.llm.models import load_registry
+
+    if load_registry().get(model_id) is not None:
+        raise HTTPException(status_code=403, detail="内置模型不可删除")
+    ok = usettings.delete_model(user_id, model_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    settings = usettings.get_settings(user_id)
+    if settings["model_id"] == model_id:
+        usettings.save_settings(user_id, {"model_id": load_registry().default_model_id()})
+    return {"ok": True}
+
+
+@app.post("/api/v1/models/{model_id}/test")
+async def test_model(model_id: str, user_id: str = Depends(get_user_id)):
+    """连通性测试（后台线程，避免阻塞事件循环）；失败返回 200 + ok:false"""
+    from src.llm.models import load_registry
+
+    registry = load_registry(user_key=f"settings:{user_id}")
+    cfg = registry.get(model_id)
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    loop = asyncio.get_running_loop()
+
+    def _run() -> dict:
+        return probe_model_connection(cfg.base_url or "", cfg.model, cfg.api_key)
+
+    result = await loop.run_in_executor(_thread_pool, _run)
+    return result
 
 
 # ════════════════════════════════════════════════════════════
@@ -257,6 +358,8 @@ async def run_gis_assistant(req: GisAssistantRequest, user_id: str = Depends(get
     """运行工具调用版 GIS 助手；带 session_id 时复用会话（引擎状态 + 对话历史）"""
     project_id = uuid.uuid4().hex[:12]
     session_id, session = gis_sessions.get_or_create(req.session_id, user_id)
+    if not req.model_preference:
+        req.model_preference = usettings.get_settings(user_id)["model_id"]
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _thread_pool,
@@ -286,6 +389,8 @@ async def run_gis_assistant_stream(
     前端用 fetch + ReadableStream 解析（EventSource 无法携带 X-API-Key）。
     """
     sid, session = gis_sessions.get_or_create(session_id, user_id)
+    if not model_preference:
+        model_preference = usettings.get_settings(user_id)["model_id"]
     events: queue.Queue = queue.Queue()
 
     def _runner() -> None:

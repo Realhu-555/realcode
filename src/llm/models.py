@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -70,10 +69,32 @@ class ModelConfig:
     input_price_per_m: float = 0.0
     output_price_per_m: float = 0.0
     capabilities: list[str] = field(default_factory=lambda: ["chat", "tools"])
+    is_custom: bool = False  # 用户自定义模型（user_models 表）标记
+    api_key_plain: str | None = None  # 用户自定义模型的明文 key（本地单机 MVP）
 
     @property
     def api_key(self) -> str:
+        if self.api_key_plain:
+            return self.api_key_plain
         return os.getenv(self.api_key_env or "", "") or "none"
+
+    @property
+    def has_key(self) -> bool:
+        """是否有可用 key（环境变量或用户自定义明文）"""
+        return bool(self.api_key_plain or self.api_key_env)
+
+    @property
+    def requires_key(self) -> bool:
+        """非本机地址且无 key 时，前端提示需配置 key"""
+        if self.has_key:
+            return False
+        try:
+            from urllib.parse import urlparse
+
+            host = (urlparse(self.base_url or "").hostname or "").lower()
+        except Exception:
+            host = ""
+        return host not in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
     @property
     def pricing(self) -> dict[str, float]:
@@ -83,7 +104,13 @@ class ModelConfig:
         return {
             "id": self.id,
             "label": self.label,
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
             "capabilities": self.capabilities,
+            "is_custom": self.is_custom,
+            "requires_key": self.requires_key,
+            "has_key": self.has_key,
         }
 
 
@@ -149,22 +176,75 @@ def _builtin_registry() -> ModelRegistry:
     return ModelRegistry(models, defaults, fallback)
 
 
-@lru_cache(maxsize=1)
-def load_registry() -> ModelRegistry:
-    """加载模型注册表（带缓存）。YAML 缺失/损坏时回退内置默认。"""
+_REGISTRY_CACHE: dict[str | None, ModelRegistry] = {}
+# 用户设置存储层（懒加载；测试可 monkeypatch 为隔离实例）
+_USER_SETTINGS: Any = None
+
+
+def _custom_model_config(custom: dict[str, Any]) -> ModelConfig:
+    """把 user_models 一行转成 ModelConfig"""
+    return ModelConfig(
+        id=custom["id"],
+        label=custom["label"],
+        provider=custom.get("provider", "openai-compatible"),
+        model=custom["model"],
+        base_url=custom["base_url"],
+        api_key_plain=custom.get("api_key"),
+        capabilities=list(custom.get("capabilities", ["chat", "tools"])),
+        is_custom=True,
+    )
+
+
+def load_registry(user_key: str | None = None) -> ModelRegistry:
+    """加载模型注册表：内置 models.yaml ⊕ 用户自定义 user_models（同名 id 用户优先）。
+
+    Args:
+        user_key: 用户归属键（`settings:{user_id}`）；None 时只加载内置注册表。
+
+    缓存策略：按 user_key 分别缓存；配置/自定义模型变更后调用 reload_registry() 失效。
+    YAML 缺失/损坏时回退内置默认。
+    """
+    if user_key in _REGISTRY_CACHE:
+        return _REGISTRY_CACHE[user_key]
+
     if yaml is None or not CONFIG_PATH.exists():
-        return _builtin_registry()
-    try:
-        data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-        models, defaults, fallback = _parse_models(data)
-        if not models:
-            return _builtin_registry()
-        return ModelRegistry(models, defaults, fallback)
-    except Exception:
-        return _builtin_registry()
+        base = _builtin_registry()
+    else:
+        try:
+            data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+            models, defaults, fallback = _parse_models(data)
+            base = (
+                _builtin_registry()
+                if not models
+                else ModelRegistry(models, defaults, fallback)
+            )
+        except Exception:
+            base = _builtin_registry()
+
+    if user_key:
+        try:
+            from src.gis_toolkit.user_settings import UserSettings
+
+            us = _USER_SETTINGS if _USER_SETTINGS is not None else UserSettings()
+            user_id = user_key.split(":", 1)[1] if ":" in user_key else user_key
+            custom = us.list_models(user_id)
+            if custom:
+                merged = dict(base.models)
+                for c in custom:
+                    merged[c["id"]] = _custom_model_config(c)
+                base = ModelRegistry(
+                    merged,
+                    dict(base.agent_defaults),
+                    dict(base.fallback_chains),
+                )
+        except Exception:
+            pass  # 用户模型叠加失败不回退整个注册表（保持内置可用）
+
+    _REGISTRY_CACHE[user_key] = base
+    return base
 
 
 def reload_registry() -> ModelRegistry:
     """强制重新加载（测试/热更新用）"""
-    load_registry.cache_clear()
+    _REGISTRY_CACHE.clear()
     return load_registry()
