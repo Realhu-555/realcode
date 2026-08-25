@@ -250,7 +250,9 @@ class GisEngine:
         gdf = self._load_any(path)
         self._layer = gdf
         self._layer_name = Path(path).stem
-        return self._result(f"已加载 {Path(path).name}，{len(gdf)} 行")
+        return self._result(
+            f"已加载 {Path(path).name}，{len(gdf)} 行", stats={"rows": int(len(gdf))}
+        )
 
     def rename_layer(self, new_name: str) -> dict:
         """重命名当前图层（仅改名称元数据，不影响底层数据文件）"""
@@ -485,12 +487,32 @@ class GisEngine:
         if agg not in {"sum", "mean", "count", "min", "max"}:
             raise GisEngineError(f"agg 必须是 sum/mean/count/min/max，收到: {agg}")
         df = self._layer.drop(columns=[self._layer.geometry.name])
+        stats: dict = {"rows": int(len(df)), "group_count": 1}
         if groupby:
             if groupby not in df.columns:
                 raise GisEngineError(f"分组列不存在: {groupby}（可用列: {list(df.columns)}）")
             out_df = df.groupby(groupby)[column].agg(agg).reset_index()
+            stats["group_count"] = int(len(out_df))
         else:
             out_df = pd.DataFrame({column: [getattr(df[column], agg)()]})
+        # stats：可核对关键数字（来自真实计算结果，供结果审核 L1 使用，禁止 LLM 生成）
+        value_col = column if column in out_df.columns else out_df.columns[-1]
+        if agg in {"sum", "mean"}:
+            stats["total"] = _jsonable(getattr(df[column], agg)())
+        elif agg == "count":
+            stats["total"] = int(df[column].count())
+        if len(out_df) and value_col in out_df.columns:
+            top = (
+                out_df.nlargest(3, value_col)
+                if str(out_df[value_col].dtype).startswith(("float", "int", "Int", "Float"))
+                else out_df.head(3)
+            )
+            stats["top3"] = [
+                {"k": str(r[groupby] if groupby else r[value_col]), "v": _jsonable(r[value_col])}
+                for _, r in top.iterrows()
+            ]
+        else:
+            stats["top3"] = []
         sort_col = sort_by or groupby or column
         if sort_col in out_df.columns:
             out_df = out_df.sort_values(sort_col, ascending=not desc)
@@ -498,7 +520,9 @@ class GisEngine:
         out_df.to_csv(out, index=False, encoding="utf-8-sig")
         self.outputs.append(output)
         return self._result(
-            f"已保存统计结果 {output}（{len(out_df)} 行，agg={agg}）", summary_rows=int(len(out_df))
+            f"已保存统计结果 {output}（{len(out_df)} 行，agg={agg}）",
+            summary_rows=int(len(out_df)),
+            stats=stats,
         )
 
     def export_geojson(self, output: str = "layer.geojson") -> dict:
@@ -636,6 +660,13 @@ class GisEngine:
             "min": _jsonable(desc["min"]),
             "max": _jsonable(desc["max"]),
             "missing": int(col.isna().sum()),
+            "stats": {
+                "count": int(desc["count"]),
+                "min": _jsonable(desc["min"]),
+                "max": _jsonable(desc["max"]),
+                "mean": _jsonable(desc["mean"]),
+                "sum": _jsonable(float(col.sum())),
+            },
         }
 
     def unique_values(self, column: str) -> dict:
@@ -652,6 +683,7 @@ class GisEngine:
             "count": len(values),
             "values": values[:50],
             "truncated": truncated,
+            "stats": {"count": len(values)},
         }
 
     def transform_coords(self, target_crs: str) -> dict:
