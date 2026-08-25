@@ -213,11 +213,7 @@ def load_registry(user_key: str | None = None) -> ModelRegistry:
         try:
             data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
             models, defaults, fallback = _parse_models(data)
-            base = (
-                _builtin_registry()
-                if not models
-                else ModelRegistry(models, defaults, fallback)
-            )
+            base = _builtin_registry() if not models else ModelRegistry(models, defaults, fallback)
         except Exception:
             base = _builtin_registry()
 
@@ -248,3 +244,14 @@ def reload_registry() -> ModelRegistry:
     """强制重新加载（测试/热更新用）"""
     _REGISTRY_CACHE.clear()
     return load_registry()
+
+
+def invalidate_registry(user_key: str | None = None) -> None:
+    """失效注册表缓存：user_key 为 None 时全部失效，否则仅失效指定用户的注册表。
+
+    用户自定义模型增删后调用，避免 load_registry 返回旧缓存导致 404。
+    """
+    if user_key is None:
+        _REGISTRY_CACHE.clear()
+    else:
+        _REGISTRY_CACHE.pop(user_key, None)

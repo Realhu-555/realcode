@@ -260,6 +260,10 @@ async def add_model(req: ModelCreate, user_id: str = Depends(get_user_id)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 新模型入库后失效该用户的注册表缓存（否则 test/run 仍走旧注册表 404）
+    from src.llm.models import invalidate_registry
+
+    invalidate_registry(f"settings:{user_id}")
     return model
 
 
@@ -273,6 +277,9 @@ async def delete_model(model_id: str, user_id: str = Depends(get_user_id)):
     ok = usettings.delete_model(user_id, model_id)
     if not ok:
         raise HTTPException(status_code=404, detail="模型不存在")
+    from src.llm.models import invalidate_registry
+
+    invalidate_registry(f"settings:{user_id}")
     settings = usettings.get_settings(user_id)
     if settings["model_id"] == model_id:
         usettings.save_settings(user_id, {"model_id": load_registry().default_model_id()})

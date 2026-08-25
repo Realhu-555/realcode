@@ -33,6 +33,16 @@ models:
     output_price_per_m: 0.00
     capabilities: [chat, tools]
 
+  # 本地 Ollama（OpenAI 兼容端点 /v1）；无 api_key_env = 本地无 key
+  ollama-local:
+    label: "Ollama 本地"
+    provider: openai-compatible
+    model: qwen2.5:7b
+    base_url: "http://localhost:11434/v1"
+    input_price_per_m: 0.0
+    output_price_per_m: 0.0
+    capabilities: [chat, tools]
+
 # Agent 默认模型路由
 agent_defaults:
   celve: deepseek-v4-pro
@@ -52,3 +62,5 @@ fallback_chains:
   deepseek-v4-pro: [minimax-2.7, openrouter-auto]
   minimax-2.7: [deepseek-v4-pro, openrouter-auto]
   openrouter-auto: [deepseek-v4-pro]
+  # 本地 Ollama 挂了自动走云端兜底
+  ollama-local: [deepseek-v4-pro]
