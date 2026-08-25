@@ -74,9 +74,10 @@
 - 验收：对话能产出带图例+比例尺的布局图；底图可加载叠加分析
 
 ### P2 — 工程化与上线（对齐 `docs/GIS-助手工程化与上线方案.md`）
-- 配置/密钥管理、结构化日志、健康检查完善
-- 前端体验回归：流式输出、会话管理、审批卡片、权限模式切换
-- 按 `docs/部署指南.md` 做一次干净环境部署验证
+- 配置管理（`src/utils/config.py` pydantic-settings + `.env`）✅、结构化日志（`src/utils/logger.py`）✅、健康检查（`/health`）✅
+- 前端体验：流式输出（SSE）、会话管理（list/detail/delete）、审批卡片（HITL）、权限模式切换（readonly/auto/ask）✅（`frontend/src/views/GisAssistant.vue`）
+- 部署验证（Marvis 2026-08-25 本地冒烟）：`scripts/smoke.py` PASSED；`uvicorn` 起服后 `/health` 200、`/` 200、`/api/v1/gis-assistant/sessions`（X-API-Key 认证）200、`/3d-demo/` 200
+- 待办：按 `docs/部署指南.md` 在干净环境做一次完整部署（依赖 LLM 密钥配置）
 
 ### P3 — 3D 城市可视化 ✅（阶段 1/2 完成，方案见 `docs/GIS-3D城市可视化-最小演示方案.md`）
 - 阶段 1（OSM 建筑下载）：`download_osm_buildings` 通过 Overpass API 拉取指定 bbox 建筑轮廓，高度估算（height 字段 > building:levels > 建筑类型兜底），输出 `data/gis_3d/<city>_buildings.geojson`（Marvis 2026-08-25 完成）
@@ -84,8 +85,9 @@
 - 已同步 MCP 双入口：`gis_download_osm_buildings` / `gis_render_3d` 注册进 `src/gis_mcp/tools.py`（43 工具）
 - 验收：对话输入城市范围 → 下载真实建筑 → 浏览器 3D 预览；单测 `tests/test_gis_3d_tools.py` 11 项覆盖
 
-### P3 — MCP/dsh 双入口同步
-- 确保 `src/gis_mcp` 与自研 Agent 使用同一套 32+ 工具 schema；把 HITL 审批（`approval_gate`）同步到 dsh/MCP 入口（见 `docs/dsh-接入方案.md`）
+### P3 — MCP/dsh 双入口同步 ✅
+- 确保 `src/gis_mcp` 与自研 Agent 使用同一套 41 工具 schema（均取自 `TOOL_SCHEMAS` 表驱动，3D 工具已同步注册，共 43 个 gis_* 工具）
+- HITL 审批已同步：`ApprovalGate` + `DANGEROUS_TOOLS` + `gis_approve` / `gis_permission_mode` 已在 dsh/MCP 入口可用（`tests/test_gis_mcp_tools.py` 覆盖）（Marvis 2026-08-25 确认）
 
 ## 6. 开发规范（必须遵守）
 
