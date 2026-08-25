@@ -212,3 +212,86 @@ export async function setGisPermission(
   )
   return data as { ok: boolean; mode: string }
 }
+
+// ════════════════════════════════════════════════════════════
+// Settings 设置模块（docs/GIS-智能助手-Settings模块设计文档.md）
+// ════════════════════════════════════════════════════════════
+
+export interface UserSettings {
+  model_id: string
+  theme: "dark" | "light"
+  permission_mode: "readonly" | "auto" | "ask"
+}
+
+export interface GisModelInfo {
+  id: string
+  label: string
+  provider: string
+  model: string
+  base_url: string
+  capabilities: string[]
+  requires_key: boolean
+  has_key: boolean
+  is_custom: boolean
+}
+
+export interface GisModelListResult {
+  models: GisModelInfo[]
+  default: string
+  user_model_id: string
+}
+
+/** 读取当前用户设置（默认模型 / 主题 / 默认权限模式） */
+export async function getUserSettings(): Promise<UserSettings> {
+  const { data } = await client.get("/settings")
+  return data as UserSettings
+}
+
+/** 更新用户设置（部分字段），返回合并后的完整快照 */
+export async function updateUserSettings(
+  patch: Partial<UserSettings>,
+): Promise<UserSettings> {
+  const { data } = await client.put("/settings", patch)
+  return data as UserSettings
+}
+
+/** 模型列表：内置 ⊕ 用户自定义合并 */
+export async function listGisModels(): Promise<GisModelListResult> {
+  const { data } = await client.get("/models")
+  return data as GisModelListResult
+}
+
+export interface AddGisModelPayload {
+  label: string
+  provider?: string
+  model: string
+  base_url: string
+  api_key?: string
+  capabilities?: string[]
+}
+
+/** 新增用户自定义模型，返回服务端生成的 id（slug） */
+export async function addGisModel(
+  payload: AddGisModelPayload,
+): Promise<GisModelInfo> {
+  const { data } = await client.post("/models", payload)
+  return data as GisModelInfo
+}
+
+/** 删除用户自定义模型（内置模型返回 403） */
+export async function deleteGisModel(modelId: string): Promise<{ ok: boolean }> {
+  const { data } = await client.delete(`/models/${encodeURIComponent(modelId)}`)
+  return data as { ok: boolean }
+}
+
+export interface GisModelTestResult {
+  ok: boolean
+  latency_ms?: number
+  message?: string
+}
+
+/** 连通性测试：发一条最小 chat 请求 */
+export async function testGisModel(modelId: string): Promise<GisModelTestResult> {
+  const { data } = await client.post(`/models/${encodeURIComponent(modelId)}/test`)
+  return data as GisModelTestResult
+}

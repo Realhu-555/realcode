@@ -11,14 +11,28 @@ import {
   deleteGisSession,
   approveGisApproval,
   setGisPermission,
+  getUserSettings,
+  updateUserSettings,
+  listGisModels,
+  addGisModel,
+  deleteGisModel,
+  testGisModel,
   type GisStreamEvent,
   type GisSessionSummary,
   type GisSessionDetail,
+  type UserSettings,
+  type GisModelInfo,
 } from "../api/gis"
 
 const isDark = useTheme()
-const toggleTheme = () => {
+const toggleTheme = async () => {
   isDark.value = !isDark.value
+  // 主题切换同步服务端（登录态持久化；刷新后仍保持一致）
+  try {
+    await updateUserSettings({ theme: isDark.value ? "dark" : "light" })
+  } catch {
+    // 同步失败不阻塞 UI（localStorage 仍即时生效）
+  }
 }
 
 const message = useMessage()
@@ -349,6 +363,116 @@ async function changePermission(mode: "readonly" | "auto" | "ask") {
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// Settings 设置面板（默认模型 / 自定义模型 / 主题 / 默认权限）
+// ════════════════════════════════════════════════════════════
+const settingsOpen = ref(false)
+const userSettings = ref<UserSettings | null>(null)
+const models = ref<GisModelInfo[]>([])
+const defaultModelId = ref("")
+const loadingSettings = ref(false)
+
+// 添加模型表单
+const addFormOpen = ref(false)
+const addingModel = ref(false)
+const addForm = ref({
+  label: "",
+  base_url: "",
+  model: "",
+  api_key: "",
+})
+
+// 连通性测试状态：modelId -> "testing" | "ok" | "fail"
+const testingMap = ref<Record<string, "testing" | "ok" | "fail">>({})
+const testMessages = ref<Record<string, string>>({})
+
+async function openSettings() {
+  settingsOpen.value = true
+  await refreshSettings()
+}
+
+async function refreshSettings() {
+  loadingSettings.value = true
+  try {
+    const [s, m] = await Promise.all([getUserSettings(), listGisModels()])
+    userSettings.value = s
+    defaultModelId.value = s.model_id || m.default
+    models.value = m.models
+  } catch (err) {
+    message.error(`设置加载失败：${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    loadingSettings.value = false
+  }
+}
+
+async function changeDefaultModel(modelId: string) {
+  defaultModelId.value = modelId
+  try {
+    await updateUserSettings({ model_id: modelId })
+    message.success("默认模型已更新，下次对话生效")
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+    await refreshSettings()
+  }
+}
+
+async function changeDefaultPermission(mode: "readonly" | "auto" | "ask") {
+  try {
+    await updateUserSettings({ permission_mode: mode })
+    message.success(`默认权限模式：${mode}`)
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function submitAddModel() {
+  const { label, base_url, model, api_key } = addForm.value
+  if (!label.trim() || !base_url.trim() || !model.trim()) {
+    message.warning("请填写 label / base_url / model")
+    return
+  }
+  addingModel.value = true
+  try {
+    await addGisModel({
+      label: label.trim(),
+      base_url: base_url.trim(),
+      model: model.trim(),
+      api_key: api_key.trim(),
+      capabilities: ["chat", "tools"],
+    })
+    message.success("模型已添加")
+    addForm.value = { label: "", base_url: "", model: "", api_key: "" }
+    addFormOpen.value = false
+    await refreshSettings()
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+  } finally {
+    addingModel.value = false
+  }
+}
+
+async function removeModel(modelId: string) {
+  try {
+    await deleteGisModel(modelId)
+    message.success("模型已删除")
+    await refreshSettings()
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+  }
+}
+
+async function runModelTest(modelId: string) {
+  testingMap.value = { ...testingMap.value, [modelId]: "testing" }
+  try {
+    const res = await testGisModel(modelId)
+    testingMap.value = { ...testingMap.value, [modelId]: res.ok ? "ok" : "fail" }
+    testMessages.value = { ...testMessages.value, [modelId]: res.message || "" }
+  } catch (err) {
+    testingMap.value = { ...testingMap.value, [modelId]: "fail" }
+    testMessages.value = { ...testMessages.value, [modelId]: String(err) }
+  }
+}
+
 function newConversation() {
   sessionId.value = ""
   messages.value = []
@@ -436,6 +560,16 @@ function download(url: string, name: string) {
               </svg>
               <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            </button>
+            <button
+              class="gis-theme-btn"
+              title="设置"
+              @click="openSettings"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </button>
             <select
@@ -612,6 +746,138 @@ function download(url: string, name: string) {
         </div>
       </footer>
     </div>
+
+    <!-- ===== 设置抽屉 ===== -->
+    <n-drawer
+      v-model:show="settingsOpen"
+      placement="right"
+      :width="380"
+      :trap-focus="false"
+      class="gis-settings-drawer"
+    >
+      <n-drawer-content title="设置" closable>
+        <n-spin :show="loadingSettings">
+          <div class="gis-settings-body">
+            <!-- 模型分区 -->
+            <section class="gis-settings-sec">
+              <h3 class="gis-settings-title">模型</h3>
+              <p class="gis-settings-desc">默认模型 · 自定义接入（含本地 Ollama）</p>
+
+              <div class="gis-settings-row">
+                <span class="gis-settings-label">默认模型</span>
+                <n-select
+                  :value="defaultModelId"
+                  :options="models.map((m) => ({ label: m.is_custom ? `${m.label}（自定义）` : m.label, value: m.id }))"
+                  size="small"
+                  class="gis-settings-select"
+                  @update:value="changeDefaultModel"
+                />
+              </div>
+
+              <div class="mt-3 space-y-1.5">
+                <div
+                  v-for="m in models"
+                  :key="m.id"
+                  class="gis-model-row"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      <span class="gis-model-label truncate">{{ m.label }}</span>
+                      <span v-if="m.is_custom" class="gis-chip gis-chip-accent">自定义</span>
+                    </div>
+                    <p class="gis-model-meta truncate">{{ m.base_url }}</p>
+                  </div>
+                  <button
+                    class="gis-model-test"
+                    :disabled="testingMap[m.id] === 'testing'"
+                    :title="testMessages[m.id]"
+                    @click="runModelTest(m.id)"
+                  >
+                    <span v-if="testingMap[m.id] === 'testing'" class="gis-spinner" />
+                    <span v-else-if="testingMap[m.id] === 'ok'">测试通过</span>
+                    <span v-else-if="testingMap[m.id] === 'fail'">测试失败</span>
+                    <span v-else>测试</span>
+                  </button>
+                  <button
+                    v-if="m.is_custom"
+                    class="gis-model-del"
+                    title="删除该模型"
+                    @click="removeModel(m.id)"
+                  >
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="testMessages[defaultModelId]" class="gis-model-test-msg">
+                {{ testMessages[defaultModelId] }}
+              </div>
+
+              <!-- 添加自定义模型 -->
+              <button
+                v-if="!addFormOpen"
+                class="gis-add-model-btn"
+                @click="addFormOpen = true"
+              >
+                + 添加模型
+              </button>
+              <div v-else class="gis-add-model-form">
+                <n-input v-model:value="addForm.label" placeholder="名称（如 My Gateway）" size="small" />
+                <n-input v-model:value="addForm.base_url" placeholder="Base URL（如 http://localhost:11434/v1）" size="small" />
+                <n-input v-model:value="addForm.model" placeholder="模型名（如 qwen2.5:7b）" size="small" />
+                <n-input
+                  v-model:value="addForm.api_key"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="API Key（本地 Ollama 可留空）"
+                  size="small"
+                />
+                <div class="flex items-center gap-2">
+                  <n-button size="small" type="primary" :loading="addingModel" @click="submitAddModel">
+                    保存
+                  </n-button>
+                  <n-button size="small" @click="addFormOpen = false; addForm = { label: '', base_url: '', model: '', api_key: '' }">
+                    取消
+                  </n-button>
+                </div>
+              </div>
+            </section>
+
+            <!-- 外观分区 -->
+            <section class="gis-settings-sec">
+              <h3 class="gis-settings-title">外观</h3>
+              <div class="gis-settings-row">
+                <span class="gis-settings-label">主题</span>
+                <n-switch :value="isDark" size="small" @update:value="toggleTheme">
+                  <template #checked>暗色</template>
+                  <template #unchecked>亮色</template>
+                </n-switch>
+              </div>
+            </section>
+
+            <!-- 偏好分区 -->
+            <section class="gis-settings-sec">
+              <h3 class="gis-settings-title">偏好</h3>
+              <p class="gis-settings-desc">会话默认权限模式（新会话生效，顶栏可临时切换）</p>
+              <div class="gis-settings-row">
+                <span class="gis-settings-label">默认权限</span>
+                <n-select
+                  :value="userSettings?.permission_mode ?? 'ask'"
+                  :options="[
+                    { label: '询问审批', value: 'ask' },
+                    { label: '自动执行', value: 'auto' },
+                    { label: '只读模式', value: 'readonly' },
+                  ]"
+                  size="small"
+                  class="gis-settings-select"
+                  @update:value="changeDefaultPermission"
+                />
+              </div>
+            </section>
+          </div>
+        </n-spin>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
@@ -1328,5 +1594,141 @@ function download(url: string, name: string) {
 }
 @keyframes gisSpin {
   to { transform: rotate(360deg); }
+}
+
+/* ---- 设置抽屉 ---- */
+.gis-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 4px 2px 24px;
+}
+.gis-settings-sec {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.gis-settings-sec:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.gis-settings-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin: 0 0 3px;
+}
+.gis-settings-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+.gis-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.gis-settings-label {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.gis-settings-select {
+  max-width: 200px;
+}
+.gis-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+}
+.gis-model-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.gis-model-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.gis-model-test {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.gis-model-test:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.gis-model-test:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.gis-model-del {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.gis-model-del:hover {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+.gis-model-test-msg {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.gis-add-model-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px dashed var(--border-light);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.gis-add-model-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.gis-add-model-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 </style>
