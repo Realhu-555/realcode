@@ -52,3 +52,18 @@ data/run_metrics.db
 # test temp dirs
 .pytest_tmp/
 tests/eval_output/
+
+# Marvis 运行时产物 / 临时文件
+data/gis_3d/
+*.qgs~
+basemap_demo_attachments.zip
+install.log
+pip_err.log
+sync.log
+sync2.log
+uv.lock
+
+# 禁止入库
+CLAUDE.md
+data/projects.db
+long_term_memory.db
