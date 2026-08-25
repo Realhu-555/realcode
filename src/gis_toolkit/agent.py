@@ -12,9 +12,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.gis_toolkit.approval import ApprovalGate
+from src.gis_toolkit.auditor import AuditReport, ResultAuditor
 from src.gis_toolkit.checker import check_outputs
 from src.gis_toolkit.engine import GisEngine, GisEngineError, _jsonable
 from src.gis_toolkit.schemas import TOOL_SCHEMAS
+from src.gis_toolkit.validate import validate_final_numbers
 from src.llm.provider import LLMProvider
 from src.utils.logger import agent_logger
 
@@ -185,6 +187,9 @@ class GisToolAgent:
         if not final.strip():
             final = self._ending_fallback(outputs, trajectory)
 
+        final, outputs, audit_report = self._audit_correction(
+            user_request, final, outputs, trajectory, messages
+        )
         if session is not None:
             session.append_round(
                 messages[1:],
@@ -198,7 +203,7 @@ class GisToolAgent:
                 },
             )
             self._maybe_roll_summary(session)
-        self._save_trace(user_request, final, outputs, trajectory)
+        self._save_trace(user_request, final, outputs, trajectory, audit_report=audit_report)
 
         return self._wrap(
             trajectory,
@@ -207,6 +212,7 @@ class GisToolAgent:
             outputs=outputs,
             last=last_result,
             timed_out=timed_out,
+            audit_report=audit_report,
         )
 
     def run_stream(
@@ -241,6 +247,7 @@ class GisToolAgent:
         timed_out = False
         steps_used = self.max_steps
         error: str | None = None
+        audit_report: dict | None = None
 
         for step in range(1, self.max_steps + 1):
             steps_used = step
@@ -317,6 +324,11 @@ class GisToolAgent:
         if error is not None:
             self._emit(on_event, {"type": "error", "error": error})
         else:
+            if not final.strip():
+                final = self._ending_fallback(outputs, trajectory)
+            final, outputs, audit_report = self._audit_correction(
+                user_request, final, outputs, trajectory, messages
+            )
             if session is not None:
                 session.append_round(
                     messages[1:],
@@ -330,7 +342,7 @@ class GisToolAgent:
                     },
                 )
                 self._maybe_roll_summary(session)
-            self._save_trace(user_request, final, outputs, trajectory)
+            self._save_trace(user_request, final, outputs, trajectory, audit_report=audit_report)
             self._emit(
                 on_event,
                 {
@@ -339,6 +351,7 @@ class GisToolAgent:
                     "outputs": outputs,
                     "steps": steps_used,
                     "timed_out": timed_out,
+                    "audit_report": audit_report,
                 },
             )
 
@@ -349,7 +362,100 @@ class GisToolAgent:
             outputs=outputs,
             last=last_result,
             timed_out=timed_out,
+            audit_report=audit_report,
         )
+
+    def _audit_correction(
+        self,
+        user_request: str,
+        final: str,
+        outputs: list[str],
+        trajectory: list[dict],
+        messages: list[dict],
+    ) -> tuple[str, list[str], dict | None]:
+        """结果审核（L1 规则 + L2 审核器），FAIL 时最多 2 轮修正 final。
+
+        设计依据：docs/GIS-智能助手-结果审核模块设计文档.md 5.3 / 6.3 / 6.4。
+        - L1=PASS（数字全部可溯源）→ 不跑 L2，返回 audit_report=None（无打扰）；
+        - 无产物 → 跳过 L2，仅按 L1 记录；
+        - L1=WARN/FAIL 且有产物 → 跑 L2；L2=FAIL → 带审核意见让主 Agent 只重写
+          final（重新调 finish，不重跑工具），最多 2 轮。
+        """
+        l1 = validate_final_numbers(final, trajectory)
+        if l1["verdict"] == "PASS":
+            return final, outputs, None
+
+        auditor = ResultAuditor(self.llm, max_rounds=2)
+        report: AuditReport | None = (
+            auditor.audit(user_request, final, trajectory, None, outputs) if outputs else None
+        )
+        verdict = report.verdict if report is not None else l1["verdict"]
+        rounds = 0
+        while verdict == "FAIL" and rounds < 2 and outputs:
+            rounds += 1
+            if report is not None:
+                advice = "\n".join(report.suggestions or report.reasons)
+            else:
+                advice = "\n".join(i["reason"] for i in l1["issues"])
+            correction_msg = {
+                "role": "system",
+                "content": (
+                    "【结果审核未通过】你上一条 final 汇报存在数据错误。"
+                    "请对照最近一次工具返回中的真实数据，仅重新调用 finish 工具修正"
+                    "explanation 与 outputs（不要重跑其他工具）。审核意见：\n"
+                    f"{advice}"
+                ),
+            }
+            try:
+                resp = self.llm.chat_with_tools(
+                    [*messages, correction_msg],
+                    TOOL_SCHEMAS,
+                    agent_type=self.agent_type,
+                    model_id=self.model_id,
+                )
+            except Exception:
+                break  # 修正调用失败，保留当前结果
+            content = resp.get("content")
+            new_final, new_outputs = final, outputs
+            for tc in resp.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                if fn.get("name") != "finish":
+                    continue
+                try:
+                    a = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    a = {}
+                if a.get("explanation"):
+                    new_final = str(a["explanation"])
+                if a.get("outputs"):
+                    new_outputs = [str(o) for o in a["outputs"]]
+            if not new_final.strip() or new_final == final:
+                if content and content.strip():
+                    new_final = content.strip()
+                else:
+                    break  # LLM 未重写，终止回环
+            final, outputs = new_final, new_outputs
+            l1 = validate_final_numbers(final, trajectory)
+            if l1["verdict"] == "PASS":
+                report = AuditReport("PASS", ["修正后数字可溯源"], [], rounds)
+                verdict = "PASS"
+                break
+            if outputs:
+                report = auditor.audit(user_request, final, trajectory, None, outputs)
+                verdict = report.verdict
+            else:
+                verdict = l1["verdict"]
+
+        if report is None:
+            audit_report = {
+                "verdict": l1["verdict"],
+                "reasons": [i["reason"] for i in l1["issues"]],
+                "rounds_used": 0,
+            }
+        else:
+            audit_report = report.to_dict()
+            audit_report["rounds_used"] = rounds
+        return final, outputs, audit_report
 
     def _save_trace(
         self,
@@ -357,6 +463,7 @@ class GisToolAgent:
         final: str,
         outputs: list[str],
         trajectory: list[dict],
+        audit_report: dict | None = None,
     ) -> None:
         """T11：轨迹落盘到 data/gis_traces/（.gitignore 已忽略），失败不阻断"""
         try:
@@ -365,17 +472,16 @@ class GisToolAgent:
             path = trace_dir / (
                 f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}.json"
             )
+            payload: dict = {
+                "user_request": user_request,
+                "final": final,
+                "outputs": outputs,
+                "trajectory": trajectory,
+            }
+            if audit_report is not None:
+                payload["audit_report"] = audit_report
             path.write_text(
-                json.dumps(
-                    {
-                        "user_request": user_request,
-                        "final": final,
-                        "outputs": outputs,
-                        "trajectory": trajectory,
-                    },
-                    ensure_ascii=False,
-                    default=_jsonable,
-                ),
+                json.dumps(payload, ensure_ascii=False, default=_jsonable),
                 encoding="utf-8",
             )
         except Exception:
@@ -558,8 +664,9 @@ class GisToolAgent:
         outputs: list[str],
         last: dict,
         timed_out: bool = False,
+        audit_report: dict | None = None,
     ) -> dict:
-        return {
+        result: dict = {
             "final": final,
             "outputs": outputs,
             "trajectory": trajectory,
@@ -567,3 +674,6 @@ class GisToolAgent:
             "timed_out": timed_out,
             "last_result": last,
         }
+        if audit_report is not None:
+            result["audit_report"] = audit_report
+        return result
