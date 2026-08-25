@@ -418,6 +418,7 @@ async function changeDefaultModel(modelId: string) {
   defaultModelId.value = modelId
   try {
     await updateUserSettings({ model_id: modelId })
+    userSettings.value = { ...(userSettings.value ?? {}), model_id: modelId } as UserSettings
     message.success("默认模型已更新，下次对话生效")
   } catch (err) {
     message.error(err instanceof Error ? err.message : String(err))
@@ -428,7 +429,11 @@ async function changeDefaultModel(modelId: string) {
 async function changeDefaultPermission(mode: "readonly" | "auto" | "ask") {
   try {
     await updateUserSettings({ permission_mode: mode })
-    message.success(`默认权限模式：${mode}`)
+    userSettings.value = {
+      ...(userSettings.value ?? {}),
+      permission_mode: mode,
+    } as UserSettings
+    message.success(`默认权限模式：${mode}，新会话生效`)
   } catch (err) {
     message.error(err instanceof Error ? err.message : String(err))
   }
