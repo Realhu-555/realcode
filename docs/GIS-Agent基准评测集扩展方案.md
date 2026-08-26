@@ -11,7 +11,12 @@
 | 口径 | 含义 | 成本 | 频率 |
 |---|---|---|---|
 | 层 1 工具正确性 | 引擎级：每个工具按最小用例调用，**断言返回结构与数据语义合格**（不调 LLM） | 低 | 每次提交（可接 check.bat） |
-| 层 2 Agent 端到端 | 真实 LLM 跑任务，**校验最终产物合格**（调 LLM） | 高 | 每周全量 / 关键改动后 |
+| 层 2 Agent 端到端 | 真实 LLM 跑任务，**校验最终产物合格 + 结果审核通过**（调 LLM） | 高 | 每周全量 / 关键改动后 |
+
+> **层 2「审核通过」维度**：任务跑完后不只校验产物/状态，还需读取 `result.audit_report`——
+> `verdict=PASS`（或 L1 全过未触发审核时 `audit_report=None`）视为审核通过；
+> `verdict=WARN/FAIL` 视为审核未通过。该维度把「数字正确性」由产物反推校验进一步升级为
+> Agent 自身的 L1 精确匹配 + L2 LLM 复核双重把关，重点拦截「有产物但数字错」的隐性失败。
 
 - **防泄漏**：任务答案不写入 prompt，只用 checker 从产物/状态反推校验（沿用现有设计）
 - **层 1 校验示例（“合格”标准）**：
@@ -22,7 +27,7 @@
   - `add_features`：图层行数 +1、新要素属性/几何与入参一致
 - **指标**：
   - 层 1：**工具正确率** = 返回合格数据的工具数 / 32（每个工具带 ≥1 条数据语义断言）
-  - 层 2：**任务通过率** = 通过任务 / 总任务；**组合任务链路覆盖** = 任务用到的工具链种类
+  - 层 2：**任务通过率** = 通过任务 / 总任务；**审核通过率** = 审核通过任务 / 总任务（口径见上）；**组合任务链路覆盖** = 任务用到的工具链种类
   - 公共：平均步数、平均耗时、失败原因归类（tool_error / check_fail / timeout / other）
 
 ## 2. 现状
@@ -74,7 +79,7 @@
 2. 层 1 `engine_selfcheck()`：不调 LLM，32 个工具按最小用例调用，**每个工具带「合格数据」断言**（行数/字段/几何/CRS/产物可解析）
 3. 组合任务：`request` 描述真实场景（多步），`checks` 校验**工具链顺序 + 最终产物合格**
 4. D 类/组合任务用 `ApprovalGate(mode="readonly")` 或 mock 审批，避免真实卡审批
-5. 报告升级：`report.json` 增加 `tool_correct_rate`（32 工具合格率）、`task_pass_rate`、`chain_covered`、`avg_steps`、`avg_duration_s`、`fail_reasons`
+5. 报告升级：`report.json` 增加 `tool_correct_rate`（32 工具合格率）、`task_pass_rate`、`audit_pass_rate`（审核通过率，层 2 每任务记录 `audit_pass`/`audit_verdict`）、`chain_covered`、`avg_steps`、`avg_duration_s`、`fail_reasons`
 6. 输出人类可读 `report.md` 摘要（表格：任务/工具链/通过/失败原因）
 7. 接入可选质量门：`GIS_BENCH=1 scripts\check.bat` 时追加跑层 1（工具正确性）
 
@@ -87,7 +92,8 @@
 
 - [ ] 32 个工具均有「合格数据」断言（层 1）；5 个组合任务定义完成，校验工具链顺序与最终产物
 - [ ] `python -m src.gis_toolkit.bench --category C` 可增量跑
-- [ ] report.json/report.md 字段齐全（工具正确率/任务通过率/链路覆盖/avg_steps/失败原因）
+- [ ] report.json/report.md 字段齐全（工具正确率/任务通过率/审核通过率/链路覆盖/avg_steps/失败原因）
+- [ ] 层 2 每任务记录 `audit_pass`/`audit_verdict`，对「产物合格但数字错」的任务能判定为审核未通过（自检用例含 1 个故意改错数字的对照）
 - [ ] 防泄漏自查：任务 request 中不含答案数值
 - [ ] 层 1 可无 LLM 跑通，且对「返回不合格数据」的实现能判定为失败（自检用例含 1 个故意错误对照）
 

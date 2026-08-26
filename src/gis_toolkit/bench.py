@@ -172,6 +172,13 @@ def run_one(task: dict, out_dir: Path) -> dict:
             ok, detail = False, f"检查异常: {exc}"
         all_pass = all_pass and ok
         checks.append({"name": c["name"], "pass": ok, "detail": detail})
+    # 审核通过维度：audit_report 为 None（L1 全过未触发 L2）或 verdict=PASS 均视为通过
+    audit = result.get("audit_report")
+    if audit is None:
+        audit_pass, audit_verdict = True, "PASS"
+    else:
+        audit_verdict = str(audit.get("verdict", "FAIL")).upper()
+        audit_pass = audit_verdict == "PASS"
     return {
         "task": task["id"],
         "pass": all_pass,
@@ -180,6 +187,9 @@ def run_one(task: dict, out_dir: Path) -> dict:
         "tools": [t["tool"] for t in result["trajectory"]],
         "outputs": result["outputs"],
         "checks": checks,
+        "audit_pass": audit_pass,
+        "audit_verdict": audit_verdict,
+        "audit_report": audit,
     }
 
 
@@ -193,6 +203,8 @@ def run_bench(task_ids: list[str] | None = None) -> dict:
         "timestamp": stamp,
         "total": len(results),
         "passed": sum(1 for r in results if r["pass"]),
+        "audit_passed": sum(1 for r in results if r["audit_pass"]),
+        "audit_total": len(results),
         "results": results,
     }
     report = out_dir / "report.json"
@@ -201,14 +213,18 @@ def run_bench(task_ids: list[str] | None = None) -> dict:
 
 
 def _print_report(summary: dict) -> None:
-    print(f"\n基准任务集结果: {summary['passed']}/{summary['total']} 通过\n")
+    print(f"\n基准任务集结果: {summary['passed']}/{summary['total']} 通过, "
+          f"审核通过: {summary['audit_passed']}/{summary['audit_total']}\n")
     for r in summary["results"]:
         mark = "PASS" if r["pass"] else "FAIL"
-        print(f"  [{mark}] {r['task']:<12} steps={r['steps']} tools={r['tools']}")
+        amark = "PASS" if r["audit_pass"] else "FAIL"
+        print(f"  [{mark}] {r['task']:<12} steps={r['steps']} audit={amark} tools={r['tools']}")
         if not r["pass"]:
             for c in r["checks"]:
                 if not c["pass"]:
                     print(f"        - {c['name']}: {c['detail']}")
+        if not r["audit_pass"]:
+            print(f"        - 审核未通过: verdict={r['audit_verdict']}")
     print(f"\n完整报告: data/gis_bench_results/{summary['timestamp']}/report.json")
 
 
