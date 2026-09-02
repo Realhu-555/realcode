@@ -16,6 +16,7 @@ import {
   listGisModels,
   addGisModel,
   deleteGisModel,
+  updateGisModelKey,
   testGisModel,
   type GisStreamEvent,
   type GisSessionSummary,
@@ -398,6 +399,10 @@ const addForm = ref({
   model: "",
   api_key: "",
 })
+// API Key 配置状态（内置模型写 .env / 自定义模型写库）
+const keyEditId = ref<string | null>(null)
+const keyInput = ref("")
+const savingKey = ref(false)
 
 // 连通性测试状态：modelId -> "testing" | "ok" | "fail"
 const testingMap = ref<Record<string, "testing" | "ok" | "fail">>({})
@@ -492,6 +497,31 @@ async function runModelTest(modelId: string) {
   } catch (err) {
     testingMap.value = { ...testingMap.value, [modelId]: "fail" }
     testMessages.value = { ...testMessages.value, [modelId]: String(err) }
+  }
+}
+
+function startKeyEdit(modelId: string) {
+  keyEditId.value = modelId
+  keyInput.value = ""
+}
+
+async function saveModelKey(modelId: string) {
+  const apiKey = keyInput.value.trim()
+  if (!apiKey) {
+    message.warning("请输入 API Key")
+    return
+  }
+  savingKey.value = true
+  try {
+    await updateGisModelKey(modelId, apiKey)
+    message.success("API Key 已保存")
+    keyEditId.value = null
+    keyInput.value = ""
+    await refreshSettings()
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err))
+  } finally {
+    savingKey.value = false
   }
 }
 
@@ -813,38 +843,68 @@ function download(url: string, name: string) {
               </div>
 
               <div class="mt-3 space-y-1.5">
-                <div
-                  v-for="m in models"
-                  :key="m.id"
-                  class="gis-model-row"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                      <span class="gis-model-label truncate">{{ m.label }}</span>
-                      <span v-if="m.is_custom" class="gis-chip gis-chip-accent">自定义</span>
+                <template v-for="m in models" :key="m.id">
+                  <div class="gis-model-row">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5">
+                        <span class="gis-model-label truncate">{{ m.label }}</span>
+                        <span v-if="m.is_custom" class="gis-chip gis-chip-accent">自定义</span>
+                        <span
+                          v-if="m.requires_key && !m.has_key"
+                          class="gis-chip gis-chip-warn"
+                          title="未配置 API Key"
+                        >缺 Key</span>
+                        <span
+                          v-else-if="m.has_key"
+                          class="gis-chip gis-chip-ok"
+                          title="API Key 已配置"
+                        >Key ✓</span>
+                      </div>
+                      <p class="gis-model-meta truncate">{{ m.base_url }}</p>
                     </div>
-                    <p class="gis-model-meta truncate">{{ m.base_url }}</p>
+                    <button
+                      v-if="m.requires_key || m.has_key"
+                      class="gis-model-test"
+                      :title="keyEditId === m.id ? '关闭输入' : '配置 / 修改 API Key'"
+                      @click="keyEditId === m.id ? (keyEditId = null) : startKeyEdit(m.id)"
+                    >
+                      {{ keyEditId === m.id ? "收起" : "配置 Key" }}
+                    </button>
+                    <button
+                      class="gis-model-test"
+                      :disabled="testingMap[m.id] === 'testing'"
+                      :title="testMessages[m.id]"
+                      @click="runModelTest(m.id)"
+                    >
+                      <span v-if="testingMap[m.id] === 'testing'" class="gis-spinner" />
+                      <span v-else-if="testingMap[m.id] === 'ok'">测试通过</span>
+                      <span v-else-if="testingMap[m.id] === 'fail'">测试失败</span>
+                      <span v-else>测试</span>
+                    </button>
+                    <button
+                      v-if="m.is_custom"
+                      class="gis-model-del"
+                      title="删除该模型"
+                      @click="removeModel(m.id)"
+                    >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+                    </button>
                   </div>
-                  <button
-                    class="gis-model-test"
-                    :disabled="testingMap[m.id] === 'testing'"
-                    :title="testMessages[m.id]"
-                    @click="runModelTest(m.id)"
-                  >
-                    <span v-if="testingMap[m.id] === 'testing'" class="gis-spinner" />
-                    <span v-else-if="testingMap[m.id] === 'ok'">测试通过</span>
-                    <span v-else-if="testingMap[m.id] === 'fail'">测试失败</span>
-                    <span v-else>测试</span>
-                  </button>
-                  <button
-                    v-if="m.is_custom"
-                    class="gis-model-del"
-                    title="删除该模型"
-                    @click="removeModel(m.id)"
-                  >
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
-                  </button>
-                </div>
+                  <div v-if="keyEditId === m.id" class="gis-key-edit">
+                    <n-input
+                      v-model:value="keyInput"
+                      type="password"
+                      show-password-on="click"
+                      placeholder="输入 API Key"
+                      size="small"
+                      class="flex-1"
+                    />
+                    <n-button size="tiny" type="primary" :loading="savingKey" @click="saveModelKey(m.id)">
+                      保存
+                    </n-button>
+                    <n-button size="tiny" @click="keyEditId = null; keyInput = ''">取消</n-button>
+                  </div>
+                </template>
               </div>
 
               <div v-if="testMessages[defaultModelId]" class="gis-model-test-msg">
@@ -1505,6 +1565,24 @@ function download(url: string, name: string) {
 .gis-chip-accent {
   color: var(--accent);
   background: var(--accent-dim);
+}
+.gis-chip-warn {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.gis-chip-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.gis-key-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: var(--bg);
 }
 
 /* ---- 空状态 ---- */

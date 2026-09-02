@@ -80,8 +80,12 @@ class ModelConfig:
 
     @property
     def has_key(self) -> bool:
-        """是否有可用 key（环境变量或用户自定义明文）"""
-        return bool(self.api_key_plain or self.api_key_env)
+        """是否有可用 key：自定义取明文；内置模型需环境变量真有值"""
+        if self.api_key_plain:
+            return True
+        if not self.api_key_env:
+            return False
+        return bool(os.getenv(self.api_key_env))
 
     @property
     def requires_key(self) -> bool:

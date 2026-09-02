@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import time
+from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
@@ -44,6 +46,29 @@ def _is_local_base_url(base_url: str) -> bool:
         return host in _LOCAL_HOSTS
     except Exception:
         return False
+
+
+def set_env_api_key(env_name: str, api_key: str, env_path: Path | None = None) -> None:
+    """把 API Key 写入项目 .env（保留注释与其他行），并更新当前进程 os.environ。
+
+    供前端设置页配置内置模型 key 使用，避免手动改配置文件。
+    """
+    api_key = (api_key or "").strip()
+    if not api_key or "\n" in api_key or "\r" in api_key:
+        raise ValueError("API Key 不能为空或包含换行")
+    path = env_path or (Path(__file__).resolve().parents[2] / ".env")
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    pattern = re.compile(rf"^{re.escape(env_name)}\s*=.*$")
+    replaced = False
+    for i, line in enumerate(lines):
+        if pattern.match(line.strip()):
+            lines[i] = f"{env_name}={api_key}"
+            replaced = True
+            break
+    if not replaced:
+        lines.append(f"{env_name}={api_key}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.environ[env_name] = api_key
 
 
 def _clean_text(value: str, field: str) -> str:
@@ -315,6 +340,23 @@ class UserSettings:
             "capabilities": caps,
             "is_custom": True,
         }
+
+    def update_model_key(self, user_id: str, model_id: str, api_key: str | None = None) -> bool:
+        """更新用户自定义模型的 API Key；归属不符/不存在返回 False。"""
+        api_key = (api_key or "").strip() or None
+        if api_key and ("\n" in api_key or "\r" in api_key or len(api_key) > _MAX_LEN):
+            raise ValueError("api_key 非法（长度或字符）")
+        key = self._user_key(user_id)
+        conn = self._conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE user_models SET api_key = ? WHERE id = ? AND user_key = ?",
+            (api_key, model_id, key),
+        )
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
 
     def delete_model(self, user_id: str, model_id: str) -> bool:
         """删除当前用户的模型；不存在返回 False。"""

@@ -36,7 +36,7 @@ from src.agents.gis_plan import PlanAgent
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.engine import _jsonable, create_gis_engine
 from src.gis_toolkit.session import GisSessionStore
-from src.gis_toolkit.user_settings import UserSettings, probe_model_connection
+from src.gis_toolkit.user_settings import UserSettings, probe_model_connection, set_env_api_key
 from src.orchestrator.graph import create_gis_graph
 from src.orchestrator.long_term_memory import Lesson, LongTermMemory
 from src.orchestrator.state import GisProjectState
@@ -225,6 +225,12 @@ class ModelCreate(BaseModel):
     capabilities: list[str] | None = None
 
 
+class ModelKeyUpdate(BaseModel):
+    """更新模型 API Key（内置模型写 .env；自定义模型写 user_models 表）"""
+
+    api_key: str
+
+
 @app.get("/api/v1/settings")
 async def get_settings(user_id: str = Depends(get_user_id)):
     """读取当前用户设置（默认模型 / 主题 / 权限模式）"""
@@ -302,6 +308,34 @@ async def test_model(model_id: str, user_id: str = Depends(get_user_id)):
 
     result = await loop.run_in_executor(_thread_pool, _run)
     return result
+
+
+@app.put("/api/v1/models/{model_id}/key")
+async def update_model_key(model_id: str, req: ModelKeyUpdate, user_id: str = Depends(get_user_id)):
+    """配置模型 API Key：
+    - 内置模型（models.yaml，带 api_key_env）→ 写入项目 .env 并更新当前进程 env；
+    - 用户自定义模型 → 更新 user_models 表；
+    key 不回显，前端只能看到 has_key 状态。
+    """
+    from src.llm.models import invalidate_registry, load_registry
+
+    cfg = load_registry().get(model_id)  # 内置基线
+    if cfg is not None and cfg.api_key_env:
+        try:
+            set_env_api_key(cfg.api_key_env, req.api_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"ok": True, "has_key": True}
+
+    # 用户自定义模型
+    try:
+        updated = usettings.update_model_key(user_id, model_id, req.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    invalidate_registry(f"settings:{user_id}")
+    return {"ok": True, "has_key": True}
 
 
 # ════════════════════════════════════════════════════════════

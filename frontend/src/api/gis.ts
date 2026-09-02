@@ -295,6 +295,15 @@ export async function deleteGisModel(modelId: string): Promise<{ ok: boolean }> 
   return data as { ok: boolean }
 }
 
+/** 配置模型 API Key：内置模型写 .env，自定义模型更新 user_models；key 不回显 */
+export async function updateGisModelKey(
+  modelId: string,
+  apiKey: string,
+): Promise<{ ok: boolean; has_key: boolean }> {
+  const { data } = await client.put(`/models/${encodeURIComponent(modelId)}/key`, { api_key: apiKey })
+  return data as { ok: boolean; has_key: boolean }
+}
+
 export interface GisModelTestResult {
   ok: boolean
   latency_ms?: number
