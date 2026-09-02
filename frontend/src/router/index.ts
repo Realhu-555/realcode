@@ -13,6 +13,12 @@ const router = createRouter({
       component: () => import("../views/GisAssistant.vue"),
       meta: { standalone: true },
     },
+    {
+      path: "/gis/models/add",
+      name: "add-model",
+      component: () => import("../views/AddModel.vue"),
+      meta: { standalone: true },
+    },
   ],
 })
 

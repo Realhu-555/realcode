@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { useMessage } from "naive-ui"
+import { useRouter } from "vue-router"
 import { useTheme } from "../composables/useTheme"
 import {
   uploadGisFile,
@@ -14,7 +15,6 @@ import {
   getUserSettings,
   updateUserSettings,
   listGisModels,
-  addGisModel,
   deleteGisModel,
   updateGisModelKey,
   testGisModel,
@@ -24,6 +24,8 @@ import {
   type UserSettings,
   type GisModelInfo,
 } from "../api/gis"
+
+const router = useRouter()
 
 const isDark = useTheme()
 const toggleTheme = async () => {
@@ -390,15 +392,6 @@ const models = ref<GisModelInfo[]>([])
 const defaultModelId = ref("")
 const loadingSettings = ref(false)
 
-// 添加模型表单
-const addFormOpen = ref(false)
-const addingModel = ref(false)
-const addForm = ref({
-  label: "",
-  base_url: "",
-  model: "",
-  api_key: "",
-})
 // API Key 配置状态（内置模型写 .env / 自定义模型写库）
 const keyEditId = ref<string | null>(null)
 const keyInput = ref("")
@@ -452,32 +445,6 @@ async function changeDefaultPermission(mode: "readonly" | "auto" | "ask") {
   }
 }
 
-async function submitAddModel() {
-  const { label, base_url, model, api_key } = addForm.value
-  if (!label.trim() || !base_url.trim() || !model.trim()) {
-    message.warning("请填写 label / base_url / model")
-    return
-  }
-  addingModel.value = true
-  try {
-    await addGisModel({
-      label: label.trim(),
-      base_url: base_url.trim(),
-      model: model.trim(),
-      api_key: api_key.trim(),
-      capabilities: ["chat", "tools"],
-    })
-    message.success("模型已添加")
-    addForm.value = { label: "", base_url: "", model: "", api_key: "" }
-    addFormOpen.value = false
-    await refreshSettings()
-  } catch (err) {
-    message.error(err instanceof Error ? err.message : String(err))
-  } finally {
-    addingModel.value = false
-  }
-}
-
 async function removeModel(modelId: string) {
   try {
     await deleteGisModel(modelId)
@@ -523,6 +490,10 @@ async function saveModelKey(modelId: string) {
   } finally {
     savingKey.value = false
   }
+}
+
+function goAddModel() {
+  router.push("/gis/models/add")
 }
 
 function newConversation() {
@@ -913,32 +884,12 @@ function download(url: string, name: string) {
 
               <!-- 添加自定义模型 -->
               <button
-                v-if="!addFormOpen"
                 class="gis-add-model-btn"
-                @click="addFormOpen = true"
+                title="前往独立页面添加模型（预置常见厂商，只需填 API Key）"
+                @click="goAddModel"
               >
-                + 添加模型
+                + 添加模型（新页面）
               </button>
-              <div v-else class="gis-add-model-form">
-                <n-input v-model:value="addForm.label" placeholder="名称（如 My Gateway）" size="small" />
-                <n-input v-model:value="addForm.base_url" placeholder="Base URL（如 http://localhost:11434/v1）" size="small" />
-                <n-input v-model:value="addForm.model" placeholder="模型名（如 qwen2.5:7b）" size="small" />
-                <n-input
-                  v-model:value="addForm.api_key"
-                  type="password"
-                  show-password-on="click"
-                  placeholder="API Key（本地 Ollama 可留空）"
-                  size="small"
-                />
-                <div class="flex items-center gap-2">
-                  <n-button size="small" type="primary" :loading="addingModel" @click="submitAddModel">
-                    保存
-                  </n-button>
-                  <n-button size="small" @click="addFormOpen = false; addForm = { label: '', base_url: '', model: '', api_key: '' }">
-                    取消
-                  </n-button>
-                </div>
-              </div>
             </section>
 
             <!-- 外观分区 -->
