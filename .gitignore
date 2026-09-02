@@ -67,3 +67,6 @@ uv.lock
 CLAUDE.md
 data/projects.db
 long_term_memory.db
+
+# 测试数据一律不入 git
+data/
