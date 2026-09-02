@@ -1,7 +1,8 @@
 # GIS 智能操作助手 — 项目深度理解与面试速查
 
 > 用途：在面试/答辩/对外介绍前快速复习，确保「被问到任何设计细节都能答上来」。
-> 版本：v1.0 ｜ 日期：2026-08-24 ｜ 分支：`feat/gis-mcp-server` ｜ 配套文档见文末「文档地图」。
+> 版本：v2.0 ｜ 日期：2026-09-02 ｜ 分支：`feat/gis-mcp-server` ｜ 配套文档见文末「文档地图」。
+> v2.0 变更：新增 Settings 模块（模型管理 / API Key 前端配置 / 添加模型页）、结果审核 L1+L2、记忆向量化完成、测试 407、data 移出版本控制。
 > 核心原则：**所有结论都能指向代码文件或设计文档，不靠记忆编造**。
 
 ---
@@ -20,17 +21,22 @@
 ## 1. 技术全景（30 秒版）
 
 ```
-Web 前端（Vue3 + Naive UI，SSE 流式）
+Web 前端（Vue3 + Naive UI，SSE 流式 + 设置抽屉 + 添加模型页 /gis/models/add）
         │  /api/v1/gis-assistant/run/stream
         ▼
 FastAPI 后端（src/web/server.py）
         │
         ▼
 GisToolAgent（src/gis_toolkit/agent.py）—— 单 Agent 工具循环
-   ├─ LLMProvider（src/llm/provider.py）  DeepSeek function calling
+   ├─ LLMProvider（src/llm/provider.py）  DeepSeek function calling（模型可切换/可配置）
    ├─ ApprovalGate（src/gis_toolkit/approval.py）  HITL 审批门
-   ├─ 记忆：短期滚动摘要 + LongTermMemory（长期 lesson）
+   ├─ 记忆：短期滚动摘要 + LongTermMemory（长期 lesson 向量检索）
    └─ TOOL_SCHEMAS（src/gis_toolkit/schemas.py）  41 个工具，表驱动
+        │
+        ▼ 任务结束自动过结果审核
+结果审核（src/gis_toolkit/validate.py + auditor.py）
+   ├─ L1 规则校验：final 数字与工具返回 stats 核对（零 LLM 成本）
+   └─ L2 审核 Agent：独立复核，FAIL 回主 Agent 修正（≤2 轮）
         │
         ▼
 GIS 引擎抽象层（接口契约不变，实现可换）
@@ -40,7 +46,7 @@ GIS 引擎抽象层（接口契约不变，实现可换）
         ▼
 产物：PNG / GeoJSON / CSV / 工程文件 → 输出目录 → 前端可下载
 
-另：src/gis_mcp/tools.py 把同一套 TOOL_SCHEMAS 映射为 gis_* MCP 工具（dsh 入口）
+模型管理（Settings）：config/models.yaml ⊕ user_models 表；内置模型 key 前端写 .env
 ```
 
 关键路径速查：
@@ -53,9 +59,12 @@ GIS 引擎抽象层（接口契约不变，实现可换）
 | Agent | `src/gis_toolkit/agent.py` | 工具循环 + 审批门 + 校验 + 上下文压缩 |
 | 工具注册 | `src/gis_toolkit/schemas.py` | `TOOL_SCHEMAS` 表驱动，新增即暴露给 MCP 与自研 Agent |
 | 审批 | `src/gis_toolkit/approval.py` | `ApprovalGate`，模式 `readonly/auto/ask` |
+| 用户设置/模型 | `src/gis_toolkit/user_settings.py` | 用户偏好 + `user_models` + `.env` key 写入 |
+| 结果审核 L1 | `src/gis_toolkit/validate.py` | `validate_final_numbers` 规则核对 |
+| 结果审核 L2 | `src/gis_toolkit/auditor.py` | `ResultAuditor` 独立复核 + 修正回环 |
 | 会话 | `src/gis_toolkit/session.py` | 图层状态 + 对话历史 + 权限模式 |
 | 记忆 | `src/orchestrator/long_term_memory.py` | `LongTermMemory`（lesson / LTM hint） |
-| 前端 | `frontend/` → `src/web/static/` | Vue3 + Naive UI，`GisAssistant.vue` |
+| 前端 | `frontend/` → `src/web/static/` | `GisAssistant.vue` + `AddModel.vue` + 路由 `/gis/models/add` |
 | 质量门 | `scripts/check.bat`、`scripts/smoke.py` | ruff + pytest + 冒烟 |
 
 ---
@@ -152,10 +161,9 @@ GIS 引擎抽象层（接口契约不变，实现可换）
 - **窗口对齐防 400**：`_history_window()` 裁剪时向前扩展对齐到非 tool 消息，否则 `role=tool` 消息没有前导 `tool_calls` 会触发「Messages with role 'tool' must be a response to a preceding message with 'tool_calls'」报错——这是实际踩过并修掉的坑；
 - **摘要失败不阻断**：`_maybe_roll_summary` 内 `try/except`，摘要失败下次再试，不中断会话。
 
-### 4.2 长期记忆（已实现基础，向量化待做）
+### 4.2 长期记忆（向量化已实现）
 
-- 现状：`LongTermMemory` 保存 lesson（经验教训），Agent 构建时注入 `ltm_hint`；
-- 规划（P1）：会话摘要/lesson **结构化提取后写入向量库**（轻量方案：本地 embedding + sqlite/faiss），按相关性 top-k 注入提示；
+- 机制：lesson 用字符 n-gram 哈希特征向量（256 维）+ 余弦相似度做 top-k 语义召回；Agent 构建时注入 `ltm_hint`；
 - 为什么这样设计：长期记忆的目的是**跨会话召回**（比如上次的成果引用、用户偏好、踩过的坑），用向量检索是为了「相关才注入」，而不是把全部历史塞进 prompt 烧 token。
 
 ### 4.3 记忆设计的取舍（可主动讲）
@@ -222,8 +230,10 @@ GIS 引擎抽象层（接口契约不变，实现可换）
 
 - `role=tool` 消息没有前导 `tool_calls` 导致 400：通过 `_history_window` 对齐修复；
 - 审批超时默认放行是反向的：改为默认拒绝；
-- fake agent 没接 `approval_gate` 参数导致 API 测试失败：待修 P0（交接文档 T1）；
-- ruff 0.16.3 在部分文件上崩溃（annotation range panic）：待处理（交接文档 T2）。
+- fake agent 没接 `approval_gate` 参数导致 API 测试失败：已修（fake 构造补默认参数）；
+- ruff 0.16.3 全量格式化 + UP038 现代化：已完成（单独 style 提交）；
+- 结论数字幻觉（12.6 vs 126 万亿）：prompt 约束是软约束，最终靠 L1 规则校验 + L2 审核兜底；
+- 设置改默认权限后前端新会话不跟随：修复为新会话读取用户设置（免刷新）。
 
 ---
 
@@ -241,7 +251,8 @@ GIS 引擎抽象层（接口契约不变，实现可换）
 ### L2 E2E 真实 LLM 任务
 - 15 个任务：10 个单工具（A–D 类）+ 5 个组合任务（E1–E5）；
 - 组合任务覆盖「不同工具在同一个任务里串行配合」的真实场景（对应你提的建议：评测口径要具体、任务要复合）；
-- 报告维度：pass-rate、coverage、avg-steps、fail-reasons。
+- 报告维度：pass-rate、coverage、avg-steps、fail-reasons；
+- 审核通过维度（已落地）：bench 记录 `audit_pass`/`audit_verdict`，报告审核通过率。
 
 ### 为什么评测口径要「合格数据」而不是「工具可调用」
 
@@ -253,12 +264,12 @@ GIS 引擎抽象层（接口契约不变，实现可换）
 
 - 运行：`start.bat` 启动后端（`http://localhost:8080`），前端为构建产物（`src/web/static/`）；
 - 质量门：`scripts/check.bat` = ruff check + ruff format + pytest；`scripts/smoke.py` 工具链路冒烟；
-- 测试现状：pytest 356 通过全绿；冒烟通过（`smoke.py` PASSED）；
+- 测试现状：pytest 407 通过全绿；冒烟通过（`smoke.py` PASSED）；
 - 提交规范：`<type>(<scope>): <描述>`，type ∈ feat/fix/docs/style/refactor/test/chore；
-- 禁止入库：`data/projects.db`、`long_term_memory.db`、`CLAUDE.md`、会话/日志/导出/轨迹/上传目录；
+- 禁止入库：`data/` 已整体移出版本控制（测试数据不入 git、本地保留）；`long_term_memory.db`/`CLAUDE.md`/日志/轨迹等继续忽略；
 - 上线方案：`docs/GIS-助手工程化与上线方案.md`（配置/密钥管理、结构化日志、健康检查、干净环境部署验证）；
-- 已完成（Marvis 2026-08-24/25 交付并经 Codex 审计）：Gate 4 记忆向量化、`calculate_field`/`join_by_attribute`/图层管理（P1）、Gate 8 排版底图（P2）、3D 城市可视化（P3，原冻结项超额完成）；
-- 剩余：按 `docs/部署指南.md` 干净环境完整部署（需 LLM 密钥）、P3 MCP 审批同步确认、QGIS 宿主嵌入（后续）。
+- 已完成（经 Codex 审计）：Gate 1-8、记忆向量化、操作能力补强、结果审核（L1+L2+前端徽标+评测维度）、Settings 模块（模型管理 / API Key 前端配置 / 添加模型独立页 / 默认权限同步）、3D 城市可视化；
+- 剩余：干净环境完整部署验证（Docker 真跑一次）、评测落地跑分（L1/L2 真实基线）、QGIS 宿主插件嵌入（Phase 4）、MCP 审批同步确认。
 
 ---
 
@@ -280,7 +291,7 @@ GIS 任务是串行决策链，无并行收益；单 Agent + 工具循环 + 步�
 表驱动 `TOOL_SCHEMAS`，一处定义三端生效（Agent / MCP / 前端）。新增走五步：schema → geopandas 引擎 → QGIS 引擎 → 自动暴露 → 单测。工具描述对照官方 API + 本地实测写，不靠臆想。
 
 ### Q6：记忆系统怎么设计的？
-短期：滚动摘要压缩（80% 阈值提前触发，保留产物/图层/数值/偏好，窗口 40 条）；长期：lesson + LTM hint，规划做向量化检索 top-k 注入。取舍：相关才注入，避免全量历史烧 token。
+短期：滚动摘要压缩（80% 阈值提前触发，保留产物/图层/数值/偏好，窗口 40 条）；长期：lesson 向量化检索（n-gram 哈希 256 维 + 余弦 top-k）注入提示，语义优先、旧库文本回退。取舍：相关才注入，避免全量历史烧 token。
 
 ### Q7：上下文爆炸怎么办？
 不会爆：估算 token 达阈值 80% 提前压缩；窗口限 40 条；工具返回控制在几百字节。即使异常也有 `try/except` 保证摘要失败不阻断会话。
@@ -307,7 +318,13 @@ HITL 审批门（危险操作 `pending_approval` 挂起，前端审批卡片，�
 （挑 2~3 个说）`role=tool` 400 对齐修复；审批超时默认改为拒绝；工具异常兜底不让会话中断；评测口径从「可调用」修正为「合格数据」。
 
 ### Q15：项目接下来做什么？
-P0/P1/P2 已全部完成（记忆向量化、操作能力补强、Gate 8 排版底图），P3 3D 城市可视化已超额完成。剩余：干净环境完整部署验证、QGIS 宿主插件嵌入（Phase 4）、评测集落地跑分（L1/L2 benchmark）。
+Gate 1-8、Settings、结果审核、3D 均已落地。剩余：干净环境完整部署验证、评测落地跑分（拿真实 pass-rate）、QGIS 宿主插件嵌入（Phase 4）、MCP 审批同步。
+
+### Q16：结果审核是怎么做的？
+两层：L1 规则校验（统计工具返回带 `stats`，`validate_final_numbers` 对 final 数字做精确/量级/单位换算匹配，能抓 12.6 vs 126 这类量级错，零 LLM 成本）；L2 审核 Agent（独立上下文复核，输出 PASS/WARN/FAIL + 证据，FAIL 回主 Agent 只重写 final ≤2 轮）。前端 `done` 事件带 `audit_report` 渲染徽标。
+
+### Q17：模型管理怎么做的（为什么能在 UI 配 Key）？
+两层模型源：内置 `models.yaml` 只读基线 + 用户自定义 `user_models` 表，运行时叠加（同名用户优先）；内置模型 key 经 `PUT /api/v1/models/{id}/key` 自动写入 `.env` 并即时生效，`has_key` 检查环境变量真有值；添加模型有独立页预置 8 家厂商（DeepSeek/通义/GLM/Kimi/MiniMax/OpenRouter/Ollama 等），填 Key 即可，支持「保存并测试」连通。
 
 ---
 
@@ -322,8 +339,10 @@ P0/P1/P2 已全部完成（记忆向量化、操作能力补强、Gate 8 排版�
 | 摘要硬阈值 / 警告比 | 24000 tokens / 0.8 |
 | 历史窗口 | 40 条消息 |
 | 审批超时 | 60s，默认拒绝 |
-| 权限模式 | readonly / auto / ask |
-| 测试 | pytest 356 通过全绿；冒烟通过 |
+| 权限模式 | readonly / auto / ask（会话默认可从设置配置） |
+| 结果审核 | L1 规则校验（零成本）+ L2 审核 Agent（FAIL 修正 ≤2 轮） |
+| 模型管理 | models.yaml（内置）⊕ user_models（自定义），UI 配 key 写 .env |
+| 测试 | pytest 407 通过全绿；冒烟通过 |
 | 引擎切换 | `GIS_ENGINE=qgis` |
 | 上传限制 | ≤10MB |
 | 提交规范 | `<type>(<scope>): <描述>` |
@@ -350,6 +369,10 @@ P0/P1/P2 已全部完成（记忆向量化、操作能力补强、Gate 8 排版�
 | `GIS-Agent基准评测集扩展方案.md` | L1/L2 两层评测 |
 | `GIS-助手工程化与上线方案.md` | 部署与上线 |
 | `GIS-智能助手-待开发交接文档.md` | P0–P3 待办 + 审计检查点 |
+| `GIS-智能助手-Settings模块设计文档.md` | Settings 模块（模型/主题/偏好 + Ollama） |
+| `GIS-智能助手-结果审核模块设计文档.md` | 结果审核 L1/L2 设计 |
+| `工程化检查清单.md` | 8 维度 × 5 问交付模板 |
+| `SQL-查询与联查速查.md` | 通用 SQL 速查 |
 | `改进计划.md` | 改进路线 |
 | `dsh-接入方案.md` | dsh/MCP 入口设计 |
 | `GIS-3D城市可视化-最小演示方案.md` | 3D 方案（冻结，最后做） |
