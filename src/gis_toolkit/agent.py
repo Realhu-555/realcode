@@ -6,7 +6,9 @@ LLM 通过 function calling 操作 GisEngine，每个工具调用的 (工具名,
 
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -67,6 +69,12 @@ class GisToolAgent:
         compact_model: str | None = None,  # 独立压缩模型 id；None = 随主模型压缩
         compact_source_cap_chars: int = ctx.DEFAULT_SOURCE_CAP_CHARS,
         compact_window_after: int = ctx.DEFAULT_WINDOW_AFTER,
+        # ── auto-compact（C4：Loop 内压缩，tail-keep）──
+        compact_loop_tail: int = ctx.DEFAULT_LOOP_KEEP_TAIL,
+        compact_loop_max: int = ctx.DEFAULT_LOOP_MAX_COMPACTS,
+        compact_loop_min_messages: int = ctx.DEFAULT_LOOP_MIN_MESSAGES,
+        # ── auto-compact（C5：压缩摘要同步长期记忆，跨会话召回）──
+        on_compact_summary: Callable[[str], None] | None = None,
     ) -> None:
         self.engine = engine or GisEngine()
         self.llm = LLMProvider()
@@ -87,6 +95,10 @@ class GisToolAgent:
         self.compact_model = compact_model
         self.compact_source_cap_chars = compact_source_cap_chars
         self.compact_window_after = compact_window_after
+        self.compact_loop_tail = compact_loop_tail
+        self.compact_loop_max = compact_loop_max
+        self.compact_loop_min_messages = compact_loop_min_messages
+        self.on_compact_summary = on_compact_summary
 
     @staticmethod
     def _demo_file_hint() -> str:
@@ -144,9 +156,15 @@ class GisToolAgent:
         outputs: list[str] = []
         timed_out = False
         steps_used = self.max_steps
+        loop_compacts = 0  # C4：本 run 内已执行的 Loop 压缩次数（上限 compact_loop_max）
 
         for step in range(1, self.max_steps + 1):
             steps_used = step
+            # C4：单 run 内累积步骤逼近窗口阈值时，压缩更早步骤（tail-keep + 恢复块）
+            if loop_compacts < self.compact_loop_max:
+                ret = self._maybe_compact_loop(messages, user_request, step - 1, loop_compacts)
+                if ret is not None:
+                    messages, loop_compacts = ret
             resp = self.llm.chat_with_tools(
                 messages, TOOL_SCHEMAS, agent_type=self.agent_type, model_id=self.model_id
             )
@@ -265,9 +283,15 @@ class GisToolAgent:
         steps_used = self.max_steps
         error: str | None = None
         audit_report: dict | None = None
+        loop_compacts = 0  # C4：本 run 内已执行的 Loop 压缩次数（上限 compact_loop_max）
 
         for step in range(1, self.max_steps + 1):
             steps_used = step
+            # C4：单 run 内累积步骤逼近窗口阈值时，压缩更早步骤（tail-keep + 恢复块）
+            if loop_compacts < self.compact_loop_max:
+                ret = self._maybe_compact_loop(messages, user_request, step - 1, loop_compacts)
+                if ret is not None:
+                    messages, loop_compacts = ret
             try:
                 resp = self.llm.chat_with_tools_stream(
                     messages,
@@ -570,6 +594,80 @@ class GisToolAgent:
         est += ctx.estimate_tokens_text(SYSTEM_PROMPT)
         return est
 
+    # ── auto-compact：C4 Loop 内压缩（tail-keep + 恢复块）──────
+    def _maybe_compact_loop(
+        self,
+        messages: list[dict],
+        user_request: str,
+        steps_done: int,
+        compacts_used: int,
+    ) -> tuple[list[dict], int] | None:
+        """C4：单次 run 内部、已累积步骤逼近窗口阈值时压缩更早步骤。
+
+        对标 Grok intra_compaction 的 tail-keep：保留最近 compact_loop_tail 条原文
+        （tool-pair-safe 切分），更早步骤整段压成摘要注入 system，并追加恢复块
+        （当前图层 / 进行中任务），让长任务不再依赖放大 max_steps。
+
+        护栏复用 C3：摘要退化拒绝 + 缩水率校验，任一不过放弃本次（返回 None），
+        不阻断 loop；调用方以 compacts_used 控制单 run 压缩次数上限。
+        """
+        try:
+            if messages is None or len(messages) < self.compact_loop_min_messages:
+                return None
+            if compacts_used >= self.compact_loop_max:
+                return None
+            trigger = ctx.trigger_threshold(
+                self._effective_context_window(), self.compact_trigger_pct
+            )
+            if ctx.estimate_tokens(messages) < trigger:
+                return None
+            s = ctx.loop_compact_split(messages, self.compact_loop_tail)
+            if s <= 1:
+                return None  # 无可压缩的对话前缀（保留区已覆盖全部）
+            old_system = messages[0].get("content") or ""
+            material = ctx.messages_to_text(
+                ctx.material_for_compact(messages[1:s], cap_chars=self.compact_source_cap_chars)
+            ).strip()
+            if not material:
+                return None
+            src_tokens = ctx.estimate_tokens_text(material)
+            for _ in range(2):
+                summary = self._summarize(material)
+                if not summary or ctx.is_degenerate_summary(summary):
+                    continue  # C3-1：空/敷衍摘要 → 重试一次
+                if not ctx.reduction_ok(
+                    src_tokens,
+                    ctx.estimate_tokens_text(summary),
+                    self.compact_max_reduction_ratio,
+                ):
+                    continue  # C3-2：缩水率不达标 → 重试一次
+                recovery = self._recovery_block(user_request, steps_done)
+                new_system = old_system
+                new_system += f"\n\n## 前期执行摘要（已完成 {steps_done} 步）\n{summary}"
+                if recovery:
+                    new_system += f"\n\n## 恢复状态\n{recovery}"
+                tail = messages[s:]
+                return [{"role": "system", "content": new_system}] + tail, compacts_used + 1
+            return None
+        except Exception:
+            return None  # Loop 压缩失败不阻断主循环
+
+    def _recovery_block(self, user_request: str, steps_done: int) -> str:
+        """C4 恢复块：把引擎状态与进行中任务结构化带回 system，防止压缩丢状态"""
+        parts: list[str] = []
+        layer_name = getattr(self.engine, "_layer_name", None)
+        if layer_name:
+            parts.append(
+                f"当前图层：{layer_name}（仍加载在引擎中，可直接继续操作，无需重新 load_data）"
+            )
+        elif getattr(self.engine, "_layer", None) is not None:
+            parts.append("当前图层仍加载在引擎中，可直接继续操作")
+        if user_request:
+            parts.append(
+                f"进行中任务：{user_request}（已完成 {steps_done} 步，继续执行直至调用 finish 收尾）"
+            )
+        return "\n".join(parts)
+
     def _maybe_compact(self, session) -> bool:
         """C1：轮末检查发送包是否越过 context×trigger_pct，是则执行 FullReplace 压缩。
 
@@ -602,9 +700,16 @@ class GisToolAgent:
             return False
         try:
             old_summary = session.summary or ""
-            limit = self._history_window_limit(session)
-            split = ctx.tool_pair_safe_start(session.messages, len(session.messages) - limit)
-            old_part = session.messages[:split] if split > 0 else []
+            keep = self._history_window_limit(session)
+            if len(session.messages) > keep:
+                split = ctx.tool_pair_safe_start(
+                    session.messages, len(session.messages) - keep
+                )
+                old_part = session.messages[:split] if split > 0 else []
+            else:
+                # 整个会话都在发送窗口内仍超阈值（单条消息过大/历史过肥）：
+                # 无窗口外可压，退化为以全部历史为材料（cap 内截断保底）
+                old_part = list(session.messages)
             # 材料文本 = 旧摘要 + 窗口外历史（tool-pair 完整切块，超长按 cap 截断）
             material = ctx.messages_to_text(
                 ctx.material_for_compact(old_part, cap_chars=self.compact_source_cap_chars)
@@ -630,6 +735,11 @@ class GisToolAgent:
                 # C2 落库：原文留档不动，仅替换摘要并收窄后续发送窗口
                 session.summary = new_summary
                 session.compacted = True
+                # C5：压缩摘要（含产物/图层/关键数值引用）同步进长期记忆，跨会话可召回
+                if self.on_compact_summary is not None:
+                    with contextlib.suppress(Exception):
+                        # 记忆同步失败不影响会话压缩
+                        self.on_compact_summary(new_summary)
                 return True
             return False
         except Exception:

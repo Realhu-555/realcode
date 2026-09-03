@@ -187,3 +187,70 @@ def test_session_compacted_default_false(tmp_path):
     d.pop("compacted", None)
     restored = GisSession.from_dict(d)
     assert restored.compacted is False
+
+
+# ── C4 loop_compact_split（Loop 内压缩切分点）────────────────────
+
+
+def _m(role: str, content: str | None = None, tool_calls=None) -> dict:
+    m = {"role": role}
+    if content is not None:
+        m["content"] = content
+    if tool_calls:
+        m["tool_calls"] = tool_calls
+    return m
+
+
+def _tc(n: int) -> dict:
+    return {"id": f"call{n}", "type": "function",
+            "function": {"name": "load_data", "arguments": "{}"}}
+
+
+def _history(rounds: int = 2) -> list[dict]:
+    """system + user + rounds×(assistant(tc)+tool) + 收尾 assistant"""
+    msgs = [_m("system", "你是 GIS 助手"), _m("user", "做分析")]
+    for i in range(rounds):
+        msgs.append(_m("assistant", None, [_tc(i), _tc(i + 100)]))
+        msgs.append(_m("tool", "结果A", None))
+        msgs.append(_m("tool", "结果B", None))
+    msgs.append(_m("assistant", "阶段小结"))
+    return msgs
+
+
+def test_loop_compact_split_keeps_recent_tail():
+    """切点尽量晚，保留最近原文且保留区从完整 tool-pair 边界开始"""
+    msgs = _history(rounds=2)  # 8 条：system,user,a1,t1,t2,a2,t3,t4,a3 → 共 9
+    assert len(msgs) == 9
+    s = ctx.loop_compact_split(msgs, keep_tail=3)
+    # n=9, s0=6 → msgs[6]=tool(第二轮 t3) 非法 → 回退到 5 → msgs[5]=a2(带 2 tc) 需 5+1+2=8<=9 合法
+    assert s == 5
+    kept = msgs[s:]
+    assert kept[0]["role"] == "assistant"
+    # 保留区结构合法：无 tool 开头、assistant+tool 对完整
+    assert kept[0].get("tool_calls")
+    assert kept[1]["role"] == "tool" and kept[2]["role"] == "tool"
+
+
+def test_loop_compact_split_no_orphan_tool():
+    """切点不得落在 tool 上（tool 无前导 assistant 会 400）"""
+    msgs = [_m("system", "sys"), _m("user", "u")]
+    msgs.append(_m("assistant", None, [_tc(1)]))
+    msgs.append(_m("tool", "r1", None))
+    msgs.append(_m("tool", "r2", None))  # 无前导的孤立 tool（异常结构）
+    s = ctx.loop_compact_split(msgs, keep_tail=2)
+    assert s >= 1
+    kept = msgs[s:]
+    assert not kept or kept[0].get("role") != "tool"
+
+
+def test_loop_compact_split_single_round_returns_one():
+    """消息太少时无压缩空间，返回 1（无可压缩前缀）"""
+    msgs = [_m("system", "sys"), _m("user", "hi")]
+    assert ctx.loop_compact_split(msgs, keep_tail=4) == 1
+    assert ctx.loop_compact_split([], keep_tail=4) == 0
+
+
+def test_loop_compact_split_keep_tail_covers_all():
+    """keep_tail 大于全部对话时保留全部（s==1）"""
+    msgs = _history(rounds=1)  # 6 条
+    assert ctx.loop_compact_split(msgs, keep_tail=50) == 1

@@ -22,6 +22,11 @@ DEFAULT_MIN_SUMMARY_CHARS = 20  # 摘要低于该长度视为退化
 DEFAULT_SOURCE_CAP_CHARS = 60000  # FullReplace 输入材料字符上限（防止单次压缩调用过大）
 DEFAULT_WINDOW_AFTER = 12  # 压缩后发送窗口条数（旧历史已进摘要，无需再发 40 条原文）
 
+# C4：Loop 内压缩（intra-loop compaction，对标 Grok intra_compaction tail-keep）
+DEFAULT_LOOP_KEEP_TAIL = 10  # 保留最近 N 条原文（tool-pair-safe 对齐），更早步骤进摘要
+DEFAULT_LOOP_MAX_COMPACTS = 3  # 单次 run 内 Loop 压缩次数上限（防止摘要调用失控）
+DEFAULT_LOOP_MIN_MESSAGES = 6  # 至少累积 N 条消息才值得做 Loop 压缩（避免过早开销）
+
 
 def estimate_tokens_text(
     text: str | None, chars_per_token: float = DEFAULT_CHARS_PER_TOKEN
@@ -101,8 +106,8 @@ def tool_pair_safe_start(messages: list[dict], limit: int) -> int:
     """
     if not messages:
         return 0
-    start = max(0, len(messages) - limit)
-    while start > 0 and messages[start].get("role") == "tool":
+    start = min(len(messages), max(0, len(messages) - limit))
+    while start > 0 and start < len(messages) and messages[start].get("role") == "tool":
         start -= 1
     return start
 
@@ -146,3 +151,41 @@ def messages_to_text(messages: list[dict]) -> str:
             content = str(content)
         lines.append(f"[{role}] {content}")
     return "\n".join(lines)
+
+
+def loop_compact_split(
+    messages: list[dict], keep_tail: int = DEFAULT_LOOP_KEEP_TAIL
+) -> int:
+    """C4：单次 run 内的 Loop 压缩切分点（tail-keep 语义）。
+
+    messages 形如 [system?, user, {assistant(tool_calls)+tool}×N ...]；
+    返回保留区起点下标 s：保留 messages[s:] 作为近期原文，
+    messages[1:s]（index 0 恒为 system 不参与）作为压缩材料。
+    尽量晚切（保留更多近期原文），但切点必须结构合法：
+    - 保留区不得以 role=tool 开头（避免 tool 无前导的 400 错误）；
+    - 保留区若以带 tool_calls 的 assistant 开头，其后续 tool 结果必须完整落在保留区内
+      （避免 assistant 声明调用却无对应 tool 回包的悬挂）。
+    """
+    if not messages:
+        return 0
+    n = len(messages)
+    if n <= 1:
+        return n
+    s = max(1, n - max(1, keep_tail))
+
+    def _valid(start: int) -> bool:
+        i = start
+        while i < n:
+            m = messages[i]
+            role = m.get("role")
+            if role == "tool":
+                return False  # tool 无前导 assistant（前一条不在区间内或非 tool_calls）
+            if role == "assistant" and m.get("tool_calls"):
+                i += 1 + len(m.get("tool_calls") or [])
+                continue
+            i += 1
+        return True
+
+    while s > 1 and not _valid(s):
+        s -= 1
+    return s

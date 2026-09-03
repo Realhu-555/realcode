@@ -10,6 +10,7 @@ import shutil
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,9 @@ from fastapi.staticfiles import StaticFiles
 
 _thread_pool = ThreadPoolExecutor(max_workers=4)
 from pydantic import BaseModel
+
+# 工具调用上限：长链编辑任务在工具执行后需再留一步生成最终总结（12 步会被截断）
+_GIS_AGENT_MAX_STEPS = 20
 
 from src.agents.gis_checker import CheckerAgent
 from src.agents.gis_codegen import CodegenAgent
@@ -445,9 +449,10 @@ async def run_gis_assistant_stream(
         try:
             agent = GisToolAgent(
                 engine=session.engine,
-                max_steps=12,
+                max_steps=_GIS_AGENT_MAX_STEPS,
                 model_id=model_preference,
                 approval_gate=session.approval_gate,
+                on_compact_summary=_summary_sink_for(user_id, session),
             )
             ltm_hint = _build_ltm_hint(user_request, user_id)
             result = agent.run_stream(
@@ -620,6 +625,34 @@ def _build_ltm_hint(user_request: str, user_id: str) -> str:
     return "你之前的 GIS 任务经验（仅作参考，按当前请求重新执行）：\n" + lines
 
 
+def _summary_sink_for(user_id: str, session=None) -> Callable[[str], None]:
+    """C5：把会话 FullReplace 压缩摘要的关键引用同步进长期记忆（跨会话可召回）。
+
+    摘要器已强制保留产物文件名/路径、当前图层、关键数值、审批决策与用户偏好，
+    落成 category="session_summary" 的 lesson 后，与既有 lesson 向量化同一通道，
+    下次同类请求经 get_relevant_lessons 语义召回注入 system。
+    """
+
+    project_id = getattr(session, "session_id", None) or uuid.uuid4().hex[:16]
+    agent_name = f"gis_assistant:{user_id}"
+
+    def _sink(summary: str) -> None:
+        try:
+            ltm.save_lesson(
+                Lesson(
+                    id=uuid.uuid4().hex[:16],
+                    project_id=project_id,
+                    agent_name=agent_name,
+                    category="session_summary",
+                    lesson=summary,
+                )
+            )
+        except Exception:
+            pass  # 记忆写入失败不影响会话压缩
+
+    return _sink
+
+
 def _save_gis_lesson(user_id: str, session_id: str, user_request: str, result: dict) -> None:
     """任务产出成功时，把用户请求 + 结论存入长期记忆"""
     outputs = result.get("outputs") or []
@@ -658,9 +691,10 @@ def _run_gis_assistant_sync(
         )
         agent = GisToolAgent(
             engine=engine,
-            max_steps=12,
+            max_steps=_GIS_AGENT_MAX_STEPS,
             model_id=model_preference,
             approval_gate=session.approval_gate if session is not None else None,
+            on_compact_summary=_summary_sink_for(user_id, session),
         )
         ltm_hint = _build_ltm_hint(user_request, user_id)
         result = agent.run(
