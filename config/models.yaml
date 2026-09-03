@@ -12,6 +12,7 @@ models:
     input_price_per_m: 0.27
     output_price_per_m: 1.10
     capabilities: [chat, tools]
+    context_window: 128000
 
   minimax-2.7:
     label: "MiniMax 2.7"
@@ -22,6 +23,7 @@ models:
     input_price_per_m: 0.20
     output_price_per_m: 1.00
     capabilities: [chat, tools]
+    context_window: 128000
 
   openrouter-auto:
     label: "OpenRouter 自动"
@@ -32,6 +34,7 @@ models:
     input_price_per_m: 0.00
     output_price_per_m: 0.00
     capabilities: [chat, tools]
+    context_window: 128000
 
   # 本地 Ollama（OpenAI 兼容端点 /v1）；无 api_key_env = 本地无 key
   ollama-local:
@@ -42,6 +45,7 @@ models:
     input_price_per_m: 0.0
     output_price_per_m: 0.0
     capabilities: [chat, tools]
+    context_window: 32768
 
 # Agent 默认模型路由
 agent_defaults:

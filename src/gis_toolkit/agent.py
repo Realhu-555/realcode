@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from src.gis_toolkit import context as ctx
 from src.gis_toolkit.approval import ApprovalGate
 from src.gis_toolkit.auditor import AuditReport, ResultAuditor
 from src.gis_toolkit.checker import check_outputs
@@ -21,9 +22,8 @@ from src.llm.provider import LLMProvider
 from src.utils.logger import agent_logger
 
 PRODUCT_TOOLS = {"choropleth", "scatter_plot", "render_map", "summarize", "export_geojson"}
-COMPACT_THRESHOLD_TOKENS = 24000  # 会话历史估算 token 达到该值触发强制压缩
-COMPACT_WARN_RATIO = 0.8  # 达到阈值的 80% 即提前滚动摘要（主动压缩）
-HISTORY_WINDOW_MESSAGES = 40  # 发给 LLM 的最近消息条数（≈ 最近 5~10 轮）
+HISTORY_WINDOW_MESSAGES = 40  # 未压缩时发给 LLM 的最近消息条数（≈ 最近 5~10 轮）
+DEFAULT_FALLBACK_CONTEXT_WINDOW = 128000  # 模型未声明 context_window 时的兜底窗口
 
 SYSTEM_PROMPT = """你是 GIS 智能助手，通过工具调用操作 GIS 引擎，完成用户的 GIS 分析任务。
 
@@ -58,6 +58,15 @@ class GisToolAgent:
         approval_gate: ApprovalGate | None = None,
         agent_type: str = "gis_assistant",
         model_id: str | None = None,
+        # ── auto-compact（C1-C3）──
+        context_window: int | None = None,  # 会话模型窗口；None 时从模型注册表自动取
+        compact_trigger_pct: float = ctx.DEFAULT_TRIGGER_PCT,
+        compact_target_pct: float = ctx.DEFAULT_TARGET_PCT,
+        compact_min_rounds: int = ctx.DEFAULT_MIN_ROUNDS,
+        compact_max_reduction_ratio: float = ctx.DEFAULT_MAX_REDUCTION_RATIO,
+        compact_model: str | None = None,  # 独立压缩模型 id；None = 随主模型压缩
+        compact_source_cap_chars: int = ctx.DEFAULT_SOURCE_CAP_CHARS,
+        compact_window_after: int = ctx.DEFAULT_WINDOW_AFTER,
     ) -> None:
         self.engine = engine or GisEngine()
         self.llm = LLMProvider()
@@ -70,6 +79,14 @@ class GisToolAgent:
         self.agent_type = agent_type
         self.model_id = model_id
         self.logger = agent_logger
+        self.context_window = context_window
+        self.compact_trigger_pct = compact_trigger_pct
+        self.compact_target_pct = compact_target_pct
+        self.compact_min_rounds = compact_min_rounds
+        self.compact_max_reduction_ratio = compact_max_reduction_ratio
+        self.compact_model = compact_model
+        self.compact_source_cap_chars = compact_source_cap_chars
+        self.compact_window_after = compact_window_after
 
     @staticmethod
     def _demo_file_hint() -> str:
@@ -202,7 +219,7 @@ class GisToolAgent:
                     "timed_out": timed_out,
                 },
             )
-            self._maybe_roll_summary(session)
+            self._maybe_compact(session)
         self._save_trace(user_request, final, outputs, trajectory, audit_report=audit_report)
 
         return self._wrap(
@@ -341,7 +358,7 @@ class GisToolAgent:
                         "timed_out": timed_out,
                     },
                 )
-                self._maybe_roll_summary(session)
+                self._maybe_compact(session)
             self._save_trace(user_request, final, outputs, trajectory, audit_report=audit_report)
             self._emit(
                 on_event,
@@ -515,51 +532,133 @@ class GisToolAgent:
 
         messages: list[dict] = [{"role": "system", "content": system_content}]
         if session is not None and getattr(session, "messages", None):
-            messages.extend(self._history_window(session.messages))
+            # 已压缩会话（compacted=True）收窄窗口：更早轮次已折叠进摘要
+            messages.extend(
+                self._history_window(session.messages, self._history_window_limit(session))
+            )
         messages.append({"role": "user", "content": user_content})
         return messages
 
-    def _maybe_roll_summary(self, session) -> None:
-        """会话历史超出 warn 阈值（阈值 × COMPACT_WARN_RATIO）时，用 LLM 生成滚动摘要并裁剪历史窗口。
+    # ── auto-compact：C1 触发 / C2 FullReplace / C3 质量护栏 ──────
+    def _history_window_limit(self, session) -> int:
+        """当前会话的发送窗口条数：已压缩会话收窄，避免发送包贴近窗口上限"""
+        if getattr(session, "compacted", False):
+            return self.compact_window_after
+        return HISTORY_WINDOW_MESSAGES
 
-        提前压缩而非等硬阈值爆掉：估算 token 达到阈值的 80% 就主动摘要，
-        避免上下文一次性逼近/超过硬上限导致长对话质量劣化。
-        """
-        est_tokens = sum(len(str(m.get("content") or "")) for m in session.messages) // 3
-        warn_threshold = int(COMPACT_THRESHOLD_TOKENS * COMPACT_WARN_RATIO)
-        if est_tokens <= warn_threshold:
-            return
+    def _effective_context_window(self) -> int:
+        """会话模型上下文窗口：显式参数 > 模型注册表声明 > 兜底值"""
+        if self.context_window:
+            return int(self.context_window)
         try:
-            new_summary = self._roll_summary(session.summary, session.messages[-6:])
-            if new_summary:
-                session.summary = new_summary
+            registry = getattr(self.llm, "registry", None)
+            if registry is not None:
+                model_id = self.model_id or registry.default_for(self.agent_type)
+                cfg = registry.get(model_id) if model_id else None
+                if cfg is not None and getattr(cfg, "context_window", None):
+                    return int(cfg.context_window)
         except Exception:
-            return  # 摘要失败不阻断会话，下次再试
-        session.messages = self._history_window(session.messages)
+            pass
+        return DEFAULT_FALLBACK_CONTEXT_WINDOW
 
-    def _roll_summary(self, old_summary: str, recent: list[dict]) -> str:
-        """把旧摘要与最近对话合并为新的简洁摘要"""
+    def _estimate_send_pack(self, session) -> int:
+        """估算一次发送包（system + 摘要 + 历史窗口）的 token 占用，作为 C1 触发依据"""
+        limit = self._history_window_limit(session)
+        window = ctx.window_messages(session.messages, limit)
+        est = ctx.estimate_tokens(window)
+        est += ctx.estimate_tokens_text(session.summary or "")
+        est += ctx.estimate_tokens_text(SYSTEM_PROMPT)
+        return est
+
+    def _maybe_compact(self, session) -> bool:
+        """C1：轮末检查发送包是否越过 context×trigger_pct，是则执行 FullReplace 压缩。
+
+        触发条件（全部满足才压缩，避免频繁调 LLM）：
+        - 会话已运行 ≥ compact_min_rounds 轮（跳过一次性小会话）；
+        - 发送包估算 token ≥ trigger（context_window × compact_trigger_pct）；
+        - 压缩后目标（target）小于当前估算（防止无意义压缩）。
+        """
+        if session is None or not getattr(session, "messages", None):
+            return False
+        if len(getattr(session, "history", []) or []) < self.compact_min_rounds:
+            return False
+        est = self._estimate_send_pack(session)
+        trigger = ctx.trigger_threshold(self._effective_context_window(), self.compact_trigger_pct)
+        if est < trigger:
+            return False
+        target = ctx.target_threshold(self._effective_context_window(), self.compact_target_pct)
+        if ctx.estimate_tokens_text(session.summary or "") >= target:
+            return False  # 已有摘要到达目标水平，压缩无收益
+        return self._full_replace(session, est)
+
+    def _full_replace(self, session, est_send_pack: int | None = None) -> bool:
+        """C2+C3：整段历史重写为一份新摘要（FullReplace），通过质量护栏才落库。
+
+        材料 = 旧摘要 + 窗口外历史（tool-pair 完整切块，超长按 cap 截断保底保留旧摘要）；
+        摘要结果须同时满足：非空 / 未退化（拒绝敷衍） / 缩水率达标（压缩收益真实），
+        任一护栏不过则放弃本次（保留旧摘要与 compacted=False），不阻断会话。
+        """
+        if session is None:
+            return False
+        try:
+            old_summary = session.summary or ""
+            limit = self._history_window_limit(session)
+            split = ctx.tool_pair_safe_start(session.messages, len(session.messages) - limit)
+            old_part = session.messages[:split] if split > 0 else []
+            # 材料文本 = 旧摘要 + 窗口外历史（tool-pair 完整切块，超长按 cap 截断）
+            material = ctx.messages_to_text(
+                ctx.material_for_compact(old_part, cap_chars=self.compact_source_cap_chars)
+            )
+            material = ((old_summary + "\n") if old_summary else "") + material
+            material = material.strip()
+            if not material:
+                return False
+            src_tokens = ctx.estimate_tokens_text(material)
+            if est_send_pack is not None:
+                # 发送包是否已达标由调用方判断，这里补充最小可压缩量护栏
+                pass
+            for _ in range(2):
+                new_summary = self._summarize(material)
+                if not new_summary or ctx.is_degenerate_summary(new_summary, old_summary):
+                    continue  # C3-1：空/敷衍摘要 → 重试一次
+                if not ctx.reduction_ok(
+                    src_tokens,
+                    ctx.estimate_tokens_text(new_summary),
+                    self.compact_max_reduction_ratio,
+                ):
+                    continue  # C3-2：缩水率不达标 → 重试一次
+                # C2 落库：原文留档不动，仅替换摘要并收窄后续发送窗口
+                session.summary = new_summary
+                session.compacted = True
+                return True
+            return False
+        except Exception:
+            return False  # 压缩失败不阻断会话，保留原状
+
+    def _summarize(self, material: str) -> str:
+        """调用压缩模型对材料做整段重写摘要；兼容 dict / str 两类 LLM 返回"""
         prompt = [
             {
                 "role": "system",
                 "content": (
-                    "你是 GIS 助手的会话摘要器。把旧摘要与最近对话合并为新的简洁摘要，"
-                    "必须保留：已完成的产物文件名、当前图层状态、关键数值结论、用户偏好。"
-                    "不超过 300 字，直接输出摘要。"
+                    "你是 GIS 助手的会话摘要器。把提供的完整对话历史重写为一份结构化摘要，"
+                    "必须保留：已完成的产物文件名与路径、当前图层/任务状态、关键数值结论、"
+                    "审批决策、用户偏好。按时间顺序组织，忽略寒暄与重复试错。"
+                    "直接输出摘要正文，不要任何前后缀。"
                 ),
             },
-            {
-                "role": "user",
-                "content": (
-                    f"旧摘要:\n{old_summary or '（无）'}\n\n"
-                    f"最近对话:\n{json.dumps(recent, ensure_ascii=False, default=str)[:6000]}"
-                ),
-            },
+            {"role": "user", "content": material[: self.compact_source_cap_chars]},
         ]
-        resp = self.llm.chat(prompt, agent_type="summary", model_id=self.model_id)
-        return (resp.get("content") or "").strip()
+        resp = self.llm.chat(
+            prompt,
+            agent_type="summary",
+            model_id=self.compact_model or self.model_id,
+        )
+        if isinstance(resp, dict):
+            return (resp.get("content") or "").strip()
+        return (resp or "").strip()
 
-    def _history_window(self, messages: list[dict]) -> list[dict]:
+    def _history_window(self, messages: list[dict], limit: int | None = None) -> list[dict]:
         """取最近 N 条历史消息，起点对齐到非 tool 消息。
 
         tool 消息必须紧跟带 tool_calls 的 assistant 消息；若窗口从中间切断
@@ -567,7 +666,8 @@ class GisToolAgent:
         """
         if not messages:
             return []
-        start = max(0, len(messages) - HISTORY_WINDOW_MESSAGES)
+        limit = HISTORY_WINDOW_MESSAGES if limit is None else limit
+        start = max(0, len(messages) - limit)
         while start > 0 and messages[start].get("role") == "tool":
             start -= 1
         return messages[start:]

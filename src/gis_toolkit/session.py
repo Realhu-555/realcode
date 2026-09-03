@@ -40,8 +40,9 @@ class GisSession:
             allowed_roots=list(settings.gis_allowed_roots) or ["data"],
         )
         self.approval_gate = ApprovalGate(mode=permission_mode)  # HITL：危险操作审批门
-        self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外）
-        self.summary: str = ""  # 滚动摘要（超出上下文阈值时由 agent 生成）
+        self.messages: list[dict] = []  # 完整 LLM 对话消息（system 之外），原文留档
+        self.summary: str = ""  # 滚动摘要（超出 context 阈值时由 agent 触发 FullReplace 生成）
+        self.compacted: bool = False  # 最近一次 FullReplace 是否成功（决定发送窗口大小）
         self.history: list[dict] = []  # 每轮摘要（user_request + final）
         self.rounds: list[dict] = []  # 每轮展示数据（前端恢复用）
         self.title = title
@@ -112,6 +113,7 @@ class GisSession:
             "updated_at": self.last_active,
             "messages": self.messages,
             "summary": self.summary,
+            "compacted": self.compacted,
             "history": self.history,
             "rounds": self.rounds,
             "has_layer": self.has_layer,
@@ -127,6 +129,7 @@ class GisSession:
         sess.last_active = data.get("updated_at", time.time())
         sess.messages = data.get("messages", [])
         sess.summary = data.get("summary", "")
+        sess.compacted = data.get("compacted", False)
         sess.history = data.get("history", [])
         sess.rounds = data.get("rounds", [])
         sess.has_layer = data.get("has_layer", False)

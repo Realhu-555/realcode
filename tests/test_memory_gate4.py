@@ -12,7 +12,6 @@
 import json
 
 from src.gis_toolkit.agent import (
-    COMPACT_THRESHOLD_TOKENS,
     HISTORY_WINDOW_MESSAGES,
     GisToolAgent,
 )
@@ -49,9 +48,11 @@ class FakeLLM:
         return self.responses.pop(0)
 
 
-def _agent(tmp_path):
+def _agent(tmp_path, context_window=20000):
     engine = GisEngine(out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
-    agent = GisToolAgent(engine=engine, max_steps=12)
+    agent = GisToolAgent(
+        engine=engine, max_steps=12, context_window=context_window
+    )
     agent.llm = FakeLLM([])
     return agent
 
@@ -165,27 +166,29 @@ def _long_session(total_chars: int, n_msgs: int = 15, summary: str = ""):
     per = max(1, total_chars // n_msgs)
     body = "数据图层已加载并完成分析。" * (per // 11 + 1)
     messages = [{"role": "user", "content": body[:per]} for _ in range(n_msgs)]
-    return types.SimpleNamespace(messages=messages, summary=summary)
+    history = [{"user_request": "q", "final": "a"} for _ in range(n_msgs)]
+    return types.SimpleNamespace(messages=messages, summary=summary, history=history)
 
 
 def test_roll_summary_triggers_before_hard_threshold(tmp_path):
-    """历史接近阈值（≥80%）即主动压缩，不必等超限"""
-    agent = _agent(tmp_path)
-    # est_tokens = total_chars // 3；选 20000 ∈ [19200, 24000)
-    session = _long_session(total_chars=60000)
-    est = sum(len(str(m.get("content") or "")) for m in session.messages) // 3
-    assert 19200 <= est < COMPACT_THRESHOLD_TOKENS
-    agent._maybe_roll_summary(session)
-    assert session.summary, "主动压缩应生成滚动摘要"
-    assert len(session.messages) <= HISTORY_WINDOW_MESSAGES, "压缩后历史窗口应被裁剪"
+    """发送包估算越过 context×85% 即触发 FullReplace，不必等硬限爆掉"""
+    agent = _agent(tmp_path, context_window=50000)
+    # est_tokens = total_chars // 3；窗口 40 条约 44k token > 50k×0.85
+    session = _long_session(total_chars=200000, n_msgs=60)
+    ok = agent._maybe_compact(session)
+    assert ok, "越过 85% 触发阈值应压缩成功"
+    assert session.summary, "FullReplace 应生成新摘要"
+    assert session.compacted is True
+    assert len(session.messages) == 60, "原文留档不裁剪"
 
 
 def test_roll_summary_not_triggered_under_warn_threshold(tmp_path):
     """远低于阈值时不压缩（避免频繁调用 LLM）"""
-    agent = _agent(tmp_path)
-    session = _long_session(total_chars=45000)  # est = 15000 < 19200
-    agent._maybe_roll_summary(session)
-    assert session.summary == "", "未达 warn 阈值不应压缩"
+    agent = _agent(tmp_path, context_window=20000)
+    session = _long_session(total_chars=45000)  # est = 15000 < 17000
+    ok = agent._maybe_compact(session)
+    assert ok is False, "未达触发阈值不应压缩"
+    assert session.summary == ""
     assert len(session.messages) == 15
 
 

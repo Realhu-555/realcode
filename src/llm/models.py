@@ -38,6 +38,7 @@ BUILTIN_MODELS: dict[str, dict[str, Any]] = {
         "input_price_per_m": 0.27,
         "output_price_per_m": 1.10,
         "capabilities": ["chat", "tools"],
+        "context_window": 128000,
     },
 }
 BUILTIN_AGENT_DEFAULTS: dict[str, str] = {
@@ -71,6 +72,7 @@ class ModelConfig:
     capabilities: list[str] = field(default_factory=lambda: ["chat", "tools"])
     is_custom: bool = False  # 用户自定义模型（user_models 表）标记
     api_key_plain: str | None = None  # 用户自定义模型的明文 key（本地单机 MVP）
+    context_window: int | None = None  # 上游 context 大小（配置缺失时 auto-compact C1 用兜底）
 
     @property
     def api_key(self) -> str:
@@ -115,6 +117,7 @@ class ModelConfig:
             "is_custom": self.is_custom,
             "requires_key": self.requires_key,
             "has_key": self.has_key,
+            "context_window": self.context_window,
         }
 
 
@@ -167,6 +170,7 @@ def _parse_models(
             input_price_per_m=float(cfg.get("input_price_per_m", 0.0)),
             output_price_per_m=float(cfg.get("output_price_per_m", 0.0)),
             capabilities=list(cfg.get("capabilities", ["chat", "tools"])),
+            context_window=cfg.get("context_window"),
         )
     agent_defaults = dict(data.get("agent_defaults") or {})
     fallback = {k: list(v) for k, v in (data.get("fallback_chains") or {}).items()}
@@ -196,6 +200,7 @@ def _custom_model_config(custom: dict[str, Any]) -> ModelConfig:
         api_key_plain=custom.get("api_key"),
         capabilities=list(custom.get("capabilities", ["chat", "tools"])),
         is_custom=True,
+        context_window=custom.get("context_window"),
     )
 
 

@@ -5,10 +5,23 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from src.gis_toolkit.agent import GisToolAgent
 from src.gis_toolkit.approval import ApprovalGate
 from src.gis_toolkit.engine import GisEngine
 from src.gis_toolkit.session import GisSession
+
+
+@pytest.fixture(autouse=True)
+def _session_engine_local(monkeypatch):
+    """GisSession 构造按 .env 的 GIS_ENGINE=live 会连 QGIS 插件（8756）；
+    测试环境统一替换为本地 geopandas 引擎，不依赖 QGIS 是否打开。"""
+
+    def _fake_engine(**kwargs):
+        kwargs.pop("engine", None)
+        return GisEngine(**kwargs)
+
+    monkeypatch.setattr("src.gis_toolkit.session.create_gis_engine", _fake_engine)
 
 
 class FakeLLM:
@@ -55,9 +68,9 @@ def _tc(tool_id, name, args):
     }
 
 
-def _agent(tmp_path, responses, max_steps=12):
+def _agent(tmp_path, responses, max_steps=12, **kwargs):
     engine = GisEngine(out_dir=str(tmp_path / "out"), allowed_roots=[str(tmp_path)])
-    agent = GisToolAgent(engine=engine, max_steps=max_steps)
+    agent = GisToolAgent(engine=engine, max_steps=max_steps, **kwargs)
     agent.llm = FakeLLM(responses)
     return agent
 
@@ -158,7 +171,7 @@ def test_run_recover_after_check_failure(tmp_path):
     assert tools_called[-1] == "finish"
 
 
-# ── T7 滚动摘要（短期记忆压缩）────────────────────────
+# ── T7 auto-compact（C1-C3 FullReplace 压缩）─────────────────
 
 
 def _session_with_history(tmp_path, n_messages: int):
@@ -169,25 +182,79 @@ def _session_with_history(tmp_path, n_messages: int):
         {"role": "user", "content": f"第 {i} 轮问题：加载数据并做分析" + "长文本" * 500}
         for i in range(n_messages)
     ]
+    sess.history = [
+        {"user_request": f"q{i}", "final": f"a{i}"} for i in range(n_messages)
+    ]
     return sess
 
 
-def test_roll_summary_when_over_threshold(tmp_path):
-    """历史超阈值时生成滚动摘要并裁剪到窗口"""
+_LONG_SUMMARY = (
+    "会话摘要：已完成第 1 轮 GDP 分级设色（产物 gdp_map.png）；"
+    "第 2 轮缓冲分析完成（产物 buffer.geojson）；当前图层状态已保留；"
+    "结论：广东省受灾最重，经济损失约 120 亿。"
+)
+
+
+def test_full_replace_when_over_threshold(tmp_path):
+    """发送包估算越过 context×85% 时触发 FullReplace：摘要更新、compacted=True、原文留档不裁剪"""
     sess = _session_with_history(tmp_path, 60)
-    agent = _agent(tmp_path, [])
-    agent._maybe_roll_summary(sess)
-    assert sess.summary  # 摘要已生成
-    assert len(sess.messages) <= 40  # 已裁剪
+    agent = _agent(tmp_path, [_LONG_SUMMARY], context_window=16000)
+    ok = agent._maybe_compact(sess)
+    assert ok
+    assert sess.summary == _LONG_SUMMARY  # 新摘要已落库
+    assert sess.compacted is True  # 发送窗口应收窄
+    assert len(sess.messages) == 60  # 原文留档不裁剪（压缩发生在发送窗口层）
 
 
 def test_roll_summary_skips_below_threshold(tmp_path):
-    """历史未超阈值时不触发压缩"""
+    """远低于触发阈值时不压缩（避免频繁调 LLM）"""
     sess = _session_with_history(tmp_path, 3)
-    agent = _agent(tmp_path, [])
-    agent._maybe_roll_summary(sess)
+    agent = _agent(tmp_path, [], context_window=16000)
+    assert agent._maybe_compact(sess) is False
     assert sess.summary == ""
     assert len(sess.messages) == 3
+
+
+def test_compact_rejects_degenerate_summary(tmp_path):
+    """C3 护栏：压缩模型返回空/过短摘要时放弃压缩，保留旧摘要"""
+    sess = _session_with_history(tmp_path, 60)
+    sess.summary = "旧摘要：已完成的产物与状态。"
+    agent = _agent(tmp_path, [""], context_window=16000)  # 压缩模型返回空串
+    ok = agent._maybe_compact(sess)
+    assert ok is False
+    assert sess.summary == "旧摘要：已完成的产物与状态。"
+    assert sess.compacted is False
+
+
+def test_compact_send_window_narrows_after_compact(tmp_path):
+    """压缩成功后发送窗口收窄为 compact_window_after 且无孤立 tool"""
+    sess = _session_with_history(tmp_path, 0)
+    # 25 轮 × (user+asst+tool)，content 足够大以越过 16000×85% 触发线
+    sess.messages = []
+    for i in range(25):
+        pad = "长文本" * 1200
+        sess.messages.append({"role": "user", "content": f"第{i}轮：加载并分析 {pad}"})
+        sess.messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"c{i}",
+                        "type": "function",
+                        "function": {"name": "load_data", "arguments": f'{{"f": "{i}"}}'},
+                    }
+                ],
+            }
+        )
+        sess.messages.append({"role": "tool", "tool_call_id": f"c{i}", "content": f"ok{i} {pad}"})
+    sess.history = [{"user_request": f"q{i}", "final": f"a{i}"} for i in range(25)]
+    agent = _agent(tmp_path, [_LONG_SUMMARY], context_window=16000)
+    assert agent._maybe_compact(sess) is True
+    msgs = agent._prepare_messages("继续", None, sess, "")
+    # system + 收窄窗口 + user
+    assert len(msgs) == 1 + 12 + 1
+    _assert_no_orphan_tool(msgs)
 
 
 def test_prepare_messages_injects_summary_and_window(tmp_path):
