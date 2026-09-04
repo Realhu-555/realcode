@@ -320,6 +320,13 @@ class GisEngine:
             **info,
             "bounds": bounds,
             "sample_rows": sample,
+            "stats": {
+                "rows": int(len(gdf)),
+                "columns": info.get("columns") or [],
+                "crs": str(gdf.crs) if gdf.crs else None,
+                "geometry_type": info.get("geometry_type"),
+                "bounds": bounds,
+            },
         }
 
     def buffer(self, distance: float) -> dict:
@@ -369,6 +376,8 @@ class GisEngine:
         out = self.out_dir / _sanitize_filename(output)
         fig, ax = plt.subplots(figsize=(10, 8))
         note = ""
+        aggregated = False
+        missing_provinces: list[str] = []
         try:
             layer = self._layer
             is_points = bool(len(layer)) and bool(layer.geometry.geom_type.eq("Point").all())
@@ -405,7 +414,10 @@ class GisEngine:
                         "title_fontsize": 9,
                     },
                 )
-                note = f"（按省份聚合省界底图，{len(missing)} 个无数据省份）"
+                aggregated = True
+                missing_provinces = list(missing)
+                missing_note = "、".join(missing[:10]) + (" 等" if len(missing) > 10 else "")
+                note = f"（按省份聚合省界底图，{len(missing)} 个无数据省份：{missing_note}）"
             elif is_points and self._base_map is not None:
                 # 底图 + 点叠加着色
                 self._base_map.plot(ax=ax, color="#f0e9dd", edgecolor="#9a9082", linewidth=0.5)
@@ -449,7 +461,16 @@ class GisEngine:
         fig.savefig(out, dpi=150, bbox_inches="tight")
         plt.close(fig)
         self.outputs.append(output)
-        return self._result(f"已保存分级设色图 {output}{note}", size_bytes=out.stat().st_size)
+        size_bytes = int(out.stat().st_size)
+        stats = {
+            "output": output,
+            "size_bytes": size_bytes,
+            "scheme": scheme,
+            "k": int(k),
+            "aggregated": aggregated,
+            "missing_provinces": missing_provinces,
+        }
+        return self._result(f"已保存分级设色图 {output}{note}", size_bytes=size_bytes, stats=stats)
 
     def scatter_plot(self, x: str, y: str, output: str = "scatter.png") -> dict:
         """两个数值列的散点图"""
@@ -665,6 +686,8 @@ class GisEngine:
                 "min": _jsonable(desc["min"]),
                 "max": _jsonable(desc["max"]),
                 "mean": _jsonable(desc["mean"]),
+                "std": _jsonable(desc["std"]),
+                "median": _jsonable(desc["50%"]),
                 "sum": _jsonable(float(col.sum())),
             },
         }
