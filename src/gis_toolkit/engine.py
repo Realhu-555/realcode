@@ -336,8 +336,15 @@ class GisEngine:
         gdf = self._layer.copy()
         gdf.geometry = gdf.geometry.buffer(distance)
         self._layer = gdf
+        stats = {
+            "distance": float(distance),
+            "features": int(len(gdf)),
+            "geometry_type": str(gdf.geometry.geom_type.mode().iloc[0]) if len(gdf) else None,
+            "crs": str(gdf.crs) if gdf.crs else None,
+        }
         return self._result(
-            f"已生成 {distance} 单位缓冲区（CRS: {self._layer.crs}，单位以坐标系为准）"
+            f"已生成 {distance} 单位缓冲区（CRS: {self._layer.crs}，单位以坐标系为准）",
+            stats=stats,
         )
 
     def overlay(self, other_path: str, how: str = "intersection") -> dict:
@@ -489,7 +496,12 @@ class GisEngine:
         fig.savefig(out, dpi=150)
         plt.close(fig)
         self.outputs.append(output)
-        return self._result(f"已保存散点图 {output}", size_bytes=out.stat().st_size)
+        size_bytes = int(out.stat().st_size)
+        return self._result(
+            f"已保存散点图 {output}",
+            size_bytes=size_bytes,
+            stats={"output": output, "x": x, "y": y, "size_bytes": size_bytes},
+        )
 
     def summarize(
         self,
@@ -553,7 +565,12 @@ class GisEngine:
         out = self.out_dir / _sanitize_filename(output)
         self._layer.to_file(out, driver="GeoJSON")
         self.outputs.append(output)
-        return self._result(f"已导出 {output}", size_bytes=out.stat().st_size)
+        size_bytes = int(out.stat().st_size)
+        return self._result(
+            f"已导出 {output}",
+            size_bytes=size_bytes,
+            stats={"output": output, "size_bytes": size_bytes, "features": int(len(self._layer))},
+        )
 
     def join_by_location(self, other_path: str, predicate: str = "intersects") -> dict:
         """把另一图层按空间关系并入当前图层（结果成为新的当前图层）"""
@@ -1099,6 +1116,12 @@ class GisEngine:
             f"已保存分类设色图 {output}（{len(cats)} 个类别）",
             size_bytes=out.stat().st_size,
             classes=len(cats),
+            stats={
+                "output": output,
+                "classes": len(cats),
+                "class_values": cats[:20],
+                "size_bytes": int(out.stat().st_size),
+            },
         )
 
     def set_labeling(self, label_field: str, enabled: bool = True) -> dict:
@@ -1188,7 +1211,10 @@ class GisEngine:
         if self._editing is not None:
             raise GisEngineError("已在编辑会话中，先 commit_edits 或 rollback_edits")
         self._editing = self._layer.copy()
-        return self._result("已开始编辑会话（修改在 commit 前不生效）")
+        return self._result(
+            "已开始编辑会话（修改在 commit 前不生效）",
+            stats={"rows": int(len(self._editing)), "editing": True},
+        )
 
     def _require_editing(self) -> gpd.GeoDataFrame:
         if self._editing is None:
@@ -1207,7 +1233,10 @@ class GisEngine:
         attrs = dict(attributes or {})
         new_row = gpd.GeoDataFrame([attrs], geometry=[geom], crs=editing.crs)
         self._editing = pd.concat([editing, new_row], ignore_index=True)
-        return self._result("已新增 1 个要素（待 commit）")
+        return self._result(
+            "已新增 1 个要素（待 commit）",
+            stats={"added": 1, "rows": int(len(self._editing))},
+        )
 
     def update_features(self, where: str, attributes: dict) -> dict:
         """编辑会话中按条件更新属性"""
@@ -1218,12 +1247,15 @@ class GisEngine:
             raise GisEngineError(f"条件表达式无效: {exc}") from exc
         n = int(mask.sum())
         if n == 0:
-            return self._result("没有要素满足条件，未做修改")
+            return self._result("没有要素满足条件，未做修改", stats={"updated": 0, "rows": int(len(editing))})
         for key, value in (attributes or {}).items():
             if key not in editing.columns:
                 raise GisEngineError(f"列不存在: {key}（可用列: {list(editing.columns)}）")
             editing.loc[mask, key] = value
-        return self._result(f"已更新 {n} 个要素（待 commit）")
+        return self._result(
+            f"已更新 {n} 个要素（待 commit）",
+            stats={"updated": n, "rows": int(len(editing))},
+        )
 
     def update_geometry(self, feature_id: int, geometry: str) -> dict:
         """编辑会话中修改指定要素几何"""
@@ -1249,7 +1281,10 @@ class GisEngine:
         if not valid:
             raise GisEngineError("所有行号越界")
         self._editing = editing.drop(index=valid).reset_index(drop=True)
-        return self._result(f"已删除 {len(valid)} 个要素（待 commit）")
+        return self._result(
+            f"已删除 {len(valid)} 个要素（待 commit）",
+            stats={"deleted": len(valid), "rows": int(len(self._editing))},
+        )
 
     def calculate_field(self, expression: str, field_name: str, where: str | None = None) -> dict:
         """编辑会话中按表达式生成新列，如 'gdp / population'。可选 where 限定范围。"""
@@ -1267,28 +1302,40 @@ class GisEngine:
                 raise GisEngineError(f"条件表达式无效: {exc}") from exc
             values = values.where(mask)
         self._editing[field_name] = values
-        return self._result(f"已新增字段 {field_name}（待 commit）")
+        return self._result(
+            f"已新增字段 {field_name}（待 commit）",
+            stats={"field": field_name, "rows": int(len(self._editing))},
+        )
 
     def commit_edits(self) -> dict:
         """提交编辑：缓冲区生效为当前图层"""
         editing = self._require_editing()
         self._layer = editing
         self._editing = None
-        return self._result("已提交编辑，修改已生效")
+        return self._result(
+            "已提交编辑，修改已生效",
+            stats={"committed": True, "rows": int(len(self._layer))},
+        )
 
     def rollback_edits(self) -> dict:
         """回滚编辑：丢弃所有未提交修改"""
         if self._editing is None:
             raise GisEngineError("当前没有未提交的编辑会话")
         self._editing = None
-        return self._result("已回滚编辑，修改已丢弃")
+        return self._result(
+            "已回滚编辑，修改已丢弃",
+            stats={"rolled_back": True, "rows": int(len(self._layer))},
+        )
 
     def duplicate_layer(self) -> dict:
         """复制当前图层为新的当前图层（编辑前备份）"""
         if self._layer is None:
             raise GisEngineError("当前没有图层，请先 load_data")
         self._layer = self._layer.copy()
-        return self._result("已复制当前图层")
+        return self._result(
+            "已复制当前图层",
+            stats={"rows": int(len(self._layer))},
+        )
 
     def get_project_info(self) -> dict:
         """获取当前工程信息（引擎状态摘要）"""
