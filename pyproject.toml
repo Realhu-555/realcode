@@ -64,6 +64,8 @@ ignore = [
 "src/recovery/retry.py" = ["UP047"]
 # QGIS 插件要求固定回调名 classFactory/initGui（PEP8 命名豁免）
 "qgis_plugin/gis_assistant/*.py" = ["N802"]
+# 评测任务构造器 T()/数据元组未用计数（N802 约定命名；B007 元组含人工可读计数）
+"src/gis_toolkit/eval_tasks.py" = ["N802", "B007"]
 
 [tool.ruff.format]
 quote-style = "double"
