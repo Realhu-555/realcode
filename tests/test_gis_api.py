@@ -184,7 +184,14 @@ def test_run_gis_assistant_sync_wraps_agent(monkeypatch, tmp_path):
     """helper 层：GisToolAgent 异常时返回 error，不抛出"""
 
     class BoomAgent:
-        def __init__(self, engine, max_steps=12, model_id=None, approval_gate=None):
+        def __init__(
+            self,
+            engine,
+            max_steps=12,
+            model_id=None,
+            approval_gate=None,
+            on_compact_summary=None,
+        ):
             self.engine = engine
 
         def run(self, request, data_file=None, session=None, ltm_hint=""):
@@ -240,7 +247,14 @@ def test_gis_assistant_stream_ok(monkeypatch):
     """SSE 端点按序推送事件：session_start 在前，工具事件居中，done 收尾"""
 
     class FakeAgent:
-        def __init__(self, engine, max_steps=12, model_id=None, approval_gate=None):
+        def __init__(
+            self,
+            engine,
+            max_steps=12,
+            model_id=None,
+            approval_gate=None,
+            on_compact_summary=None,
+        ):
             self.engine = engine
 
         def run_stream(

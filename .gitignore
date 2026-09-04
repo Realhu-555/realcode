@@ -70,3 +70,6 @@ long_term_memory.db
 
 # 测试数据一律不入 git
 data/
+
+# QGIS headless style cache generated in cwd
+symbology-style.db
