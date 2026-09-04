@@ -62,6 +62,8 @@ ignore = [
 "src/web/server.py" = ["E402", "SIM105", "B008"]
 # 泛型函数建议（UP047）不影响行为，暂豁免
 "src/recovery/retry.py" = ["UP047"]
+# QGIS 插件要求固定回调名 classFactory/initGui（PEP8 命名豁免）
+"qgis_plugin/gis_assistant/*.py" = ["N802"]
 
 [tool.ruff.format]
 quote-style = "double"

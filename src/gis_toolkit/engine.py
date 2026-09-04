@@ -1316,12 +1316,16 @@ class GisEngine:
 
 
 def create_gis_engine(engine: str | None = None, **kwargs) -> GisEngine:
-    """按 GIS_ENGINE 环境变量（geopandas 默认 / qgis）创建引擎"""
+    """按 GIS_ENGINE 环境变量（geopandas 默认 / qgis / live）创建引擎"""
     name = (engine or os.environ.get("GIS_ENGINE") or "geopandas").strip().lower()
     if name == "qgis":
         from src.gis_toolkit.qgis_engine import QgsEngine  # 延迟导入，无 QGIS 环境不报错
 
         return QgsEngine(**kwargs)
+    if name == "live":
+        from src.gis_toolkit.live_engine import LiveEngine  # 延迟导入
+
+        return LiveEngine(**kwargs)
     if name != "geopandas":
-        raise GisEngineError(f"未知引擎: {name}（可选 geopandas/qgis）")
+        raise GisEngineError(f"未知引擎: {name}（可选 geopandas/qgis/live）")
     return GisEngine(**kwargs)

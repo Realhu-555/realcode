@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ── GIS / MCP 配置 ────────────────────────────────
-    gis_engine: Literal["geopandas", "qgis"] = "geopandas"
+    gis_engine: Literal["geopandas", "qgis", "live"] = "geopandas"
     gis_out_root: str = "data/gis_toolkit_out"
     gis_allowed_roots: list[str] = ["data"]
+    live_qgis_url: str = "http://127.0.0.1:8756"
+    live_qgis_token: str = ""
     mcp_tool_timeout_ms: int = 120000
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "case_sensitive": False}

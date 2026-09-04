@@ -1,0 +1,15 @@
+[general]
+name=GIS Assistant Live
+qgisMinimumVersion=3.34
+description=把 GIS 智能助手接到当前 QGIS 工程：提供工程图层状态与本地控制通道（Live Engine）
+version=0.1.0
+author=Hu Zhenhu
+email=zhenhu@example.com
+about=GIS 智能操作助手的 QGIS 实时执行端（M1：停靠面板 + 本地只读状态端点）
+tracker=
+repository=
+tags=GIS,agent,assistant,remote
+category=Vector
+icon=
+experimental=True
+deprecated=False
